@@ -1,0 +1,35 @@
+{
+  "name": "@atelier/catalog-lookbook",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Catalog, SKU Matrix, Occasion Lookbooks, Seasonal Collections, Size Recommender and Hybrid RAG microservice",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "@atelier/ai-harness": "workspace:*",
+    "@atelier/contracts": "workspace:*",
+    "@atelier/db-client": "workspace:*",
+    "@atelier/observability": "workspace:*",
+    "@aws-sdk/client-s3": "^3.750.0",
+    "@nestjs/common": "^11.0.12",
+    "@nestjs/core": "^11.0.12",
+    "@nestjs/platform-express": "^11.0.12",
+    "meilisearch": "^0.48.2",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "sharp": "^0.33.5",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@atelier/typescript-config": "workspace:*",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.2"
+  }
+}

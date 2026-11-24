@@ -1,0 +1,32 @@
+[project]
+name = "atelier-ai-tryon"
+version = "3.0.0"
+description = "Fashion Atelier AI Platform (v3.0) - Virtual Try-On (VTON) FastAPI Microservice"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic-settings>=2.6.0",
+    "httpx>=0.27.2",
+    "psycopg[binary]>=3.2.3",
+    "redis>=5.2.0",
+    "boto3>=1.35.0",
+    "aio-pika>=9.4.3",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "alembic>=1.14.0",
+    "aiosqlite>=0.20.0",
+    "Pillow>=11.0.0",
+    "python-multipart>=0.0.17",
+    "gradio_client>=1.5.0",
+    "opencv-python-headless>=4.10.0",
+    "numpy>=1.26.0",
+    "scipy>=1.13.0",
+    "rembg>=2.0.59",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

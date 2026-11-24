@@ -1,0 +1,33 @@
+# Centralized project-local D: data, volumes, caches & AI models
+.project-data/
+.project-data/**
+
+# Local dev harness storage & temp
+.local-pgdata/
+.local-minio/
+.secrets/
+services/ai-tryon/.tmp_vton/
+
+# Dependencies & Build artifacts
+node_modules/
+.pnpm-store/
+.next/
+.turbo/
+dist/
+build/
+out/
+coverage/
+
+# Python environments & caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Version control & local secrets
+.git/
+.env
+.env.local
+.env.*.local
+*.log

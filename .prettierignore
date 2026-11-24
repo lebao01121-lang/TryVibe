@@ -1,0 +1,14 @@
+.project-data/
+.local-pgdata/
+.local-minio/
+.secrets/
+.next/
+.turbo/
+.venv/
+node_modules/
+dist/
+build/
+out/
+coverage/
+pnpm-lock.yaml
+services/ai-tryon/.tmp_vton/

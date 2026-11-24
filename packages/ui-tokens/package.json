@@ -1,0 +1,27 @@
+{
+  "name": "@atelier/ui-tokens",
+  "version": "3.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tokens.css": "./src/tokens.css",
+    "./theme.css": "./src/theme.css",
+    "./editorial.css": "./src/editorial.css",
+    "./src/tokens.css": "./src/tokens.css",
+    "./src/theme.css": "./src/theme.css",
+    "./src/editorial.css": "./src/editorial.css"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@atelier/typescript-config": "workspace:*",
+    "typescript": "^5.8.3"
+  }
+}

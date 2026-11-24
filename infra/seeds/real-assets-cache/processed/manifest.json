@@ -1,0 +1,824 @@
+{
+  "version": "3.1.0-real-photography",
+  "generatedAt": "2026-11-24T02:28:56.397Z",
+  "hangerAnchorX": 0.5,
+  "hangerAnchorY": 0.14,
+  "heroPoster": "campaign/atelier-hero-poster.webp",
+  "campaign": {
+    "heroPoster": "campaign/atelier-hero-poster.webp",
+    "step1": "campaign/atelier-step-1-fabric.webp",
+    "step2": "campaign/atelier-step-2-pattern.webp",
+    "step3": "campaign/atelier-step-3-tailoring.webp",
+    "step4": "campaign/atelier-step-4-packaging.webp",
+    "atelierSteps": {
+      "step1": "campaign/atelier-step-1-fabric.webp",
+      "step2": "campaign/atelier-step-2-pattern.webp",
+      "step3": "campaign/atelier-step-3-tailoring.webp",
+      "step4": "campaign/atelier-step-4-packaging.webp"
+    }
+  },
+  "seasons": {
+    "xuan-tam-xuan": "seasons/xuan-tam-xuan.webp",
+    "ha-pho-co": "seasons/ha-pho-co.webp",
+    "thu-hoang-hon": "seasons/thu-hoang-hon.webp",
+    "dong-cashmere": "seasons/dong-cashmere.webp",
+    "resort-ban-mai": "seasons/resort-ban-mai.webp",
+    "atelier-di-san": "seasons/atelier-di-san.webp"
+  },
+  "packaging": {
+    "tui-vai-linen-moc": {
+      "image": "packaging/tui-vai-linen-moc.webp",
+      "front": "packaging/tui-vai-linen-moc.webp",
+      "back": "packaging/tui-vai-linen-moc.webp",
+      "width": 360,
+      "height": 360
+    },
+    "hop-lua-co-dien": {
+      "image": "packaging/hop-lua-co-dien.webp",
+      "front": "packaging/hop-lua-co-dien.webp",
+      "back": "packaging/hop-lua-co-dien.webp",
+      "width": 360,
+      "height": 360
+    },
+    "hop-qua-khac-ten-gold": {
+      "image": "packaging/hop-qua-khac-ten-gold.webp",
+      "front": "packaging/hop-qua-khac-ten-gold.webp",
+      "back": "packaging/hop-qua-khac-ten-gold.webp",
+      "width": 360,
+      "height": 360
+    }
+  },
+  "occasionMacros": {
+    "silk-pearl-cuff": "occasion-macro/silk-pearl-cuff.webp",
+    "pleated-silk": "occasion-macro/pleated-silk.webp",
+    "cashmere-knit": "occasion-macro/cashmere-knit.webp",
+    "organic-linen": "occasion-macro/organic-linen.webp",
+    "artisan-tweed": "occasion-macro/artisan-tweed.webp",
+    "silk-satin-champagne": "occasion-macro/silk-satin-champagne.webp",
+    "silk-satin-crimson": "occasion-macro/silk-satin-crimson.webp"
+  },
+  "products": {
+    "ao-blazer-linen-dang-suong": {
+      "slug": "ao-blazer-linen-dang-suong",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-rack-2x3.webp",
+      "rackBack": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-rack-back-2x3.webp",
+      "tryonFlat": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-flat-3x4.webp",
+      "lookbookMain": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Cát Ngà",
+          "colorHex": "#D8C9B4",
+          "rackFront": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-rack-2x3.webp",
+          "rackBack": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-flat-3x4.webp",
+          "lookbookMain": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-lookbook-3x4.webp",
+          "rackCoverage": 0.4015,
+          "rackTopY": 151,
+          "flatCoverage": 0.49
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Cacao Đậm",
+          "colorHex": "#3A2A22",
+          "rackFront": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-v1-rack-2x3.webp",
+          "rackBack": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-v1-flat-3x4.webp",
+          "lookbookMain": "products/ao-blazer-linen-dang-suong/ao-blazer-linen-dang-suong-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.4015,
+          "rackTopY": 151,
+          "flatCoverage": 0.49
+        }
+      ]
+    },
+    "ao-so-mi-lua-to-tam-tam-xuan": {
+      "slug": "ao-so-mi-lua-to-tam-tam-xuan",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-rack-2x3.webp",
+      "rackBack": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-rack-back-2x3.webp",
+      "tryonFlat": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-flat-3x4.webp",
+      "lookbookMain": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Trắng Ngà",
+          "colorHex": "#EFE7DA",
+          "rackFront": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-rack-2x3.webp",
+          "rackBack": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-flat-3x4.webp",
+          "lookbookMain": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-lookbook-3x4.webp",
+          "rackCoverage": 0.2757,
+          "rackTopY": 152,
+          "flatCoverage": 0.3363
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Champagne Ấm",
+          "colorHex": "#DFCAA6",
+          "rackFront": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-v1-rack-2x3.webp",
+          "rackBack": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-v1-flat-3x4.webp",
+          "lookbookMain": "products/ao-so-mi-lua-to-tam-tam-xuan/ao-so-mi-lua-to-tam-tam-xuan-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.2757,
+          "rackTopY": 152,
+          "flatCoverage": 0.3363
+        }
+      ]
+    },
+    "dam-du-tiec-lua-satin-co-do": {
+      "slug": "dam-du-tiec-lua-satin-co-do",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-rack-2x3.webp",
+      "rackBack": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-rack-back-2x3.webp",
+      "tryonFlat": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-flat-3x4.webp",
+      "lookbookMain": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Đỏ Rượu Vang",
+          "colorHex": "#6E262B",
+          "rackFront": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-rack-2x3.webp",
+          "rackBack": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-rack-back-2x3.webp",
+          "tryonFlat": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-flat-3x4.webp",
+          "lookbookMain": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-lookbook-3x4.webp",
+          "rackCoverage": 0.2121,
+          "rackTopY": 152,
+          "flatCoverage": 0.2352
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Đen Huyền",
+          "colorHex": "#201B19",
+          "rackFront": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-v1-rack-2x3.webp",
+          "rackBack": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-v1-flat-3x4.webp",
+          "lookbookMain": "products/dam-du-tiec-lua-satin-co-do/dam-du-tiec-lua-satin-co-do-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.2121,
+          "rackTopY": 152,
+          "flatCoverage": 0.2352
+        }
+      ]
+    },
+    "quan-tay-ong-suong-xep-ly-doi": {
+      "slug": "quan-tay-ong-suong-xep-ly-doi",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-rack-2x3.webp",
+      "rackBack": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-rack-back-2x3.webp",
+      "tryonFlat": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-flat-3x4.webp",
+      "lookbookMain": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Xám Than",
+          "colorHex": "#3B3D40",
+          "rackFront": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-rack-2x3.webp",
+          "rackBack": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-rack-back-2x3.webp",
+          "tryonFlat": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-flat-3x4.webp",
+          "lookbookMain": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-lookbook-3x4.webp",
+          "rackCoverage": 0.3465,
+          "rackTopY": 152,
+          "flatCoverage": 0.383
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Be Đá",
+          "colorHex": "#C9BEA9",
+          "rackFront": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-v1-rack-2x3.webp",
+          "rackBack": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-v1-flat-3x4.webp",
+          "lookbookMain": "products/quan-tay-ong-suong-xep-ly-doi/quan-tay-ong-suong-xep-ly-doi-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.3465,
+          "rackTopY": 152,
+          "flatCoverage": 0.383
+        }
+      ]
+    },
+    "chan-vay-xep-ly-midi-cap-cao": {
+      "slug": "chan-vay-xep-ly-midi-cap-cao",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-rack-2x3.webp",
+      "rackBack": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-rack-back-2x3.webp",
+      "tryonFlat": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-flat-3x4.webp",
+      "lookbookMain": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Kem Sữa",
+          "colorHex": "#EDE3D1",
+          "rackFront": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-rack-2x3.webp",
+          "rackBack": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-rack-back-2x3.webp",
+          "tryonFlat": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-flat-3x4.webp",
+          "lookbookMain": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-lookbook-3x4.webp",
+          "rackCoverage": 0.2404,
+          "rackTopY": 152,
+          "flatCoverage": 0.2281
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Xanh Khói",
+          "colorHex": "#617172",
+          "rackFront": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-v1-rack-2x3.webp",
+          "rackBack": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-v1-flat-3x4.webp",
+          "lookbookMain": "products/chan-vay-xep-ly-midi-cap-cao/chan-vay-xep-ly-midi-cap-cao-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.2404,
+          "rackTopY": 152,
+          "flatCoverage": 0.2281
+        }
+      ]
+    },
+    "ao-khoac-trench-gabardine-co-dien": {
+      "slug": "ao-khoac-trench-gabardine-co-dien",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-rack-2x3.webp",
+      "rackBack": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-rack-back-2x3.webp",
+      "tryonFlat": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-flat-3x4.webp",
+      "lookbookMain": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Kaki Cổ Điển",
+          "colorHex": "#BDA686",
+          "rackFront": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-rack-2x3.webp",
+          "rackBack": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-flat-3x4.webp",
+          "lookbookMain": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-lookbook-3x4.webp",
+          "rackCoverage": 0.2122,
+          "rackTopY": 152,
+          "flatCoverage": 0.2347
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Ô Liu Trầm",
+          "colorHex": "#59604D",
+          "rackFront": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-v1-rack-2x3.webp",
+          "rackBack": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-v1-flat-3x4.webp",
+          "lookbookMain": "products/ao-khoac-trench-gabardine-co-dien/ao-khoac-trench-gabardine-co-dien-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.2122,
+          "rackTopY": 152,
+          "flatCoverage": 0.2347
+        }
+      ]
+    },
+    "ao-kieu-lua-organza-phoi-no": {
+      "slug": "ao-kieu-lua-organza-phoi-no",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/ao-kieu-lua-organza-phoi-no/ao-kieu-lua-organza-phoi-no-rack-2x3.webp",
+      "rackBack": "products/ao-kieu-lua-organza-phoi-no/ao-kieu-lua-organza-phoi-no-rack-back-2x3.webp",
+      "tryonFlat": "products/ao-kieu-lua-organza-phoi-no/ao-kieu-lua-organza-phoi-no-flat-3x4.webp",
+      "lookbookMain": "products/ao-kieu-lua-organza-phoi-no/ao-kieu-lua-organza-phoi-no-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Hồng Phấn Đất",
+          "colorHex": "#DFC5BE",
+          "rackFront": "products/ao-kieu-lua-organza-phoi-no/ao-kieu-lua-organza-phoi-no-rack-2x3.webp",
+          "rackBack": "products/ao-kieu-lua-organza-phoi-no/ao-kieu-lua-organza-phoi-no-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-kieu-lua-organza-phoi-no/ao-kieu-lua-organza-phoi-no-flat-3x4.webp",
+          "lookbookMain": "products/ao-kieu-lua-organza-phoi-no/ao-kieu-lua-organza-phoi-no-lookbook-3x4.webp",
+          "rackCoverage": 0.301,
+          "rackTopY": 151,
+          "flatCoverage": 0.3674
+        }
+      ]
+    },
+    "dam-midi-co-vuong-chiet-eo": {
+      "slug": "dam-midi-co-vuong-chiet-eo",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-rack-2x3.webp",
+      "rackBack": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-rack-back-2x3.webp",
+      "tryonFlat": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-flat-3x4.webp",
+      "lookbookMain": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Trắng Ngọc",
+          "colorHex": "#F3ECE0",
+          "rackFront": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-rack-2x3.webp",
+          "rackBack": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-rack-back-2x3.webp",
+          "tryonFlat": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-flat-3x4.webp",
+          "lookbookMain": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-lookbook-3x4.webp",
+          "rackCoverage": 0.2154,
+          "rackTopY": 153,
+          "flatCoverage": 0.2385
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Nâu Espresso",
+          "colorHex": "#46332A",
+          "rackFront": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-v1-rack-2x3.webp",
+          "rackBack": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-v1-flat-3x4.webp",
+          "lookbookMain": "products/dam-midi-co-vuong-chiet-eo/dam-midi-co-vuong-chiet-eo-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.2154,
+          "rackTopY": 153,
+          "flatCoverage": 0.2385
+        }
+      ]
+    },
+    "ao-cardigan-len-merino-khuy-sung": {
+      "slug": "ao-cardigan-len-merino-khuy-sung",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/ao-cardigan-len-merino-khuy-sung/ao-cardigan-len-merino-khuy-sung-rack-2x3.webp",
+      "rackBack": "products/ao-cardigan-len-merino-khuy-sung/ao-cardigan-len-merino-khuy-sung-rack-back-2x3.webp",
+      "tryonFlat": "products/ao-cardigan-len-merino-khuy-sung/ao-cardigan-len-merino-khuy-sung-flat-3x4.webp",
+      "lookbookMain": "products/ao-cardigan-len-merino-khuy-sung/ao-cardigan-len-merino-khuy-sung-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Yến Mạch",
+          "colorHex": "#DFD4C2",
+          "rackFront": "products/ao-cardigan-len-merino-khuy-sung/ao-cardigan-len-merino-khuy-sung-rack-2x3.webp",
+          "rackBack": "products/ao-cardigan-len-merino-khuy-sung/ao-cardigan-len-merino-khuy-sung-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-cardigan-len-merino-khuy-sung/ao-cardigan-len-merino-khuy-sung-flat-3x4.webp",
+          "lookbookMain": "products/ao-cardigan-len-merino-khuy-sung/ao-cardigan-len-merino-khuy-sung-lookbook-3x4.webp",
+          "rackCoverage": 0.2925,
+          "rackTopY": 151,
+          "flatCoverage": 0.3572
+        }
+      ]
+    },
+    "quan-culottes-linen-huu-co": {
+      "slug": "quan-culottes-linen-huu-co",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/quan-culottes-linen-huu-co/quan-culottes-linen-huu-co-rack-2x3.webp",
+      "rackBack": "products/quan-culottes-linen-huu-co/quan-culottes-linen-huu-co-rack-back-2x3.webp",
+      "tryonFlat": "products/quan-culottes-linen-huu-co/quan-culottes-linen-huu-co-flat-3x4.webp",
+      "lookbookMain": "products/quan-culottes-linen-huu-co/quan-culottes-linen-huu-co-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Cát Biển",
+          "colorHex": "#D7C7B2",
+          "rackFront": "products/quan-culottes-linen-huu-co/quan-culottes-linen-huu-co-rack-2x3.webp",
+          "rackBack": "products/quan-culottes-linen-huu-co/quan-culottes-linen-huu-co-rack-back-2x3.webp",
+          "tryonFlat": "products/quan-culottes-linen-huu-co/quan-culottes-linen-huu-co-flat-3x4.webp",
+          "lookbookMain": "products/quan-culottes-linen-huu-co/quan-culottes-linen-huu-co-lookbook-3x4.webp",
+          "rackCoverage": 0.3229,
+          "rackTopY": 152,
+          "flatCoverage": 0.3571
+        }
+      ]
+    },
+    "ao-khoac-tweed-det-thu-cong": {
+      "slug": "ao-khoac-tweed-det-thu-cong",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-rack-2x3.webp",
+      "rackBack": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-rack-back-2x3.webp",
+      "tryonFlat": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-flat-3x4.webp",
+      "lookbookMain": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Ngà Ánh Đồng",
+          "colorHex": "#E6DCC8",
+          "rackFront": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-rack-2x3.webp",
+          "rackBack": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-flat-3x4.webp",
+          "lookbookMain": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-lookbook-3x4.webp",
+          "rackCoverage": 0.4245,
+          "rackTopY": 151,
+          "flatCoverage": 0.5177
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Cacao Đêm",
+          "colorHex": "#2C211C",
+          "rackFront": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-v1-rack-2x3.webp",
+          "rackBack": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-v1-flat-3x4.webp",
+          "lookbookMain": "products/ao-khoac-tweed-det-thu-cong/ao-khoac-tweed-det-thu-cong-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.4245,
+          "rackTopY": 151,
+          "flatCoverage": 0.5177
+        }
+      ]
+    },
+    "ao-polo-det-kim-bong-ai-cap": {
+      "slug": "ao-polo-det-kim-bong-ai-cap",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/ao-polo-det-kim-bong-ai-cap/ao-polo-det-kim-bong-ai-cap-rack-2x3.webp",
+      "rackBack": "products/ao-polo-det-kim-bong-ai-cap/ao-polo-det-kim-bong-ai-cap-rack-back-2x3.webp",
+      "tryonFlat": "products/ao-polo-det-kim-bong-ai-cap/ao-polo-det-kim-bong-ai-cap-flat-3x4.webp",
+      "lookbookMain": "products/ao-polo-det-kim-bong-ai-cap/ao-polo-det-kim-bong-ai-cap-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Xanh Navy Trầm",
+          "colorHex": "#24303C",
+          "rackFront": "products/ao-polo-det-kim-bong-ai-cap/ao-polo-det-kim-bong-ai-cap-rack-2x3.webp",
+          "rackBack": "products/ao-polo-det-kim-bong-ai-cap/ao-polo-det-kim-bong-ai-cap-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-polo-det-kim-bong-ai-cap/ao-polo-det-kim-bong-ai-cap-flat-3x4.webp",
+          "lookbookMain": "products/ao-polo-det-kim-bong-ai-cap/ao-polo-det-kim-bong-ai-cap-lookbook-3x4.webp",
+          "rackCoverage": 0.3149,
+          "rackTopY": 153,
+          "flatCoverage": 0.3842
+        }
+      ]
+    },
+    "ao-so-mi-lua-to-tam-bao-loc": {
+      "slug": "ao-so-mi-lua-to-tam-bao-loc",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-rack-2x3.webp",
+      "rackBack": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-rack-back-2x3.webp",
+      "tryonFlat": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-flat-3x4.webp",
+      "lookbookMain": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Ngà Sữa",
+          "colorHex": "#F5EFE4",
+          "rackFront": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-rack-2x3.webp",
+          "rackBack": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-flat-3x4.webp",
+          "lookbookMain": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-lookbook-3x4.webp",
+          "rackCoverage": 0.268,
+          "rackTopY": 151,
+          "flatCoverage": 0.3268
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Hồng Cánh Sen",
+          "colorHex": "#E6D0CC",
+          "rackFront": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-v1-rack-2x3.webp",
+          "rackBack": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-v1-flat-3x4.webp",
+          "lookbookMain": "products/ao-so-mi-lua-to-tam-bao-loc/ao-so-mi-lua-to-tam-bao-loc-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.268,
+          "rackTopY": 151,
+          "flatCoverage": 0.3268
+        }
+      ]
+    },
+    "ao-dai-cach-tan-gam-lua": {
+      "slug": "ao-dai-cach-tan-gam-lua",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-rack-2x3.webp",
+      "rackBack": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-rack-back-2x3.webp",
+      "tryonFlat": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-flat-3x4.webp",
+      "lookbookMain": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Vàng Champagne",
+          "colorHex": "#E5CFA3",
+          "rackFront": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-rack-2x3.webp",
+          "rackBack": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-flat-3x4.webp",
+          "lookbookMain": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-lookbook-3x4.webp",
+          "rackCoverage": 0.2644,
+          "rackTopY": 152,
+          "flatCoverage": 0.293
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Đỏ Son Trầm",
+          "colorHex": "#822F32",
+          "rackFront": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-v1-rack-2x3.webp",
+          "rackBack": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-v1-flat-3x4.webp",
+          "lookbookMain": "products/ao-dai-cach-tan-gam-lua/ao-dai-cach-tan-gam-lua-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.2644,
+          "rackTopY": 152,
+          "flatCoverage": 0.293
+        }
+      ]
+    },
+    "trench-coat-kaki-co-dien": {
+      "slug": "trench-coat-kaki-co-dien",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/trench-coat-kaki-co-dien/trench-coat-kaki-co-dien-rack-2x3.webp",
+      "rackBack": "products/trench-coat-kaki-co-dien/trench-coat-kaki-co-dien-rack-back-2x3.webp",
+      "tryonFlat": "products/trench-coat-kaki-co-dien/trench-coat-kaki-co-dien-flat-3x4.webp",
+      "lookbookMain": "products/trench-coat-kaki-co-dien/trench-coat-kaki-co-dien-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Kaki Cát",
+          "colorHex": "#C7B293",
+          "rackFront": "products/trench-coat-kaki-co-dien/trench-coat-kaki-co-dien-rack-2x3.webp",
+          "rackBack": "products/trench-coat-kaki-co-dien/trench-coat-kaki-co-dien-rack-back-2x3.webp",
+          "tryonFlat": "products/trench-coat-kaki-co-dien/trench-coat-kaki-co-dien-flat-3x4.webp",
+          "lookbookMain": "products/trench-coat-kaki-co-dien/trench-coat-kaki-co-dien-lookbook-3x4.webp",
+          "rackCoverage": 0.3366,
+          "rackTopY": 153,
+          "flatCoverage": 0.3723
+        }
+      ]
+    },
+    "chan-vay-lua-vat-cheo": {
+      "slug": "chan-vay-lua-vat-cheo",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-rack-2x3.webp",
+      "rackBack": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-rack-back-2x3.webp",
+      "tryonFlat": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-flat-3x4.webp",
+      "lookbookMain": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Sâm Panh Ngà",
+          "colorHex": "#E9DBBE",
+          "rackFront": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-rack-2x3.webp",
+          "rackBack": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-rack-back-2x3.webp",
+          "tryonFlat": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-flat-3x4.webp",
+          "lookbookMain": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-lookbook-3x4.webp",
+          "rackCoverage": 0.3006,
+          "rackTopY": 152,
+          "flatCoverage": 0.333
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Nâu Cacao",
+          "colorHex": "#3D2B22",
+          "rackFront": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-v1-rack-2x3.webp",
+          "rackBack": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-v1-flat-3x4.webp",
+          "lookbookMain": "products/chan-vay-lua-vat-cheo/chan-vay-lua-vat-cheo-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.3006,
+          "rackTopY": 152,
+          "flatCoverage": 0.333
+        }
+      ]
+    },
+    "dam-midi-linen-phoi-dai": {
+      "slug": "dam-midi-linen-phoi-dai",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/dam-midi-linen-phoi-dai/dam-midi-linen-phoi-dai-rack-2x3.webp",
+      "rackBack": "products/dam-midi-linen-phoi-dai/dam-midi-linen-phoi-dai-rack-back-2x3.webp",
+      "tryonFlat": "products/dam-midi-linen-phoi-dai/dam-midi-linen-phoi-dai-flat-3x4.webp",
+      "lookbookMain": "products/dam-midi-linen-phoi-dai/dam-midi-linen-phoi-dai-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Lanh Tự Nhiên",
+          "colorHex": "#DDD1BD",
+          "rackFront": "products/dam-midi-linen-phoi-dai/dam-midi-linen-phoi-dai-rack-2x3.webp",
+          "rackBack": "products/dam-midi-linen-phoi-dai/dam-midi-linen-phoi-dai-rack-back-2x3.webp",
+          "tryonFlat": "products/dam-midi-linen-phoi-dai/dam-midi-linen-phoi-dai-flat-3x4.webp",
+          "lookbookMain": "products/dam-midi-linen-phoi-dai/dam-midi-linen-phoi-dai-lookbook-3x4.webp",
+          "rackCoverage": 0.2769,
+          "rackTopY": 153,
+          "flatCoverage": 0.3064
+        }
+      ]
+    },
+    "ao-khoac-tweed-nut-dong": {
+      "slug": "ao-khoac-tweed-nut-dong",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/ao-khoac-tweed-nut-dong/ao-khoac-tweed-nut-dong-rack-2x3.webp",
+      "rackBack": "products/ao-khoac-tweed-nut-dong/ao-khoac-tweed-nut-dong-rack-back-2x3.webp",
+      "tryonFlat": "products/ao-khoac-tweed-nut-dong/ao-khoac-tweed-nut-dong-flat-3x4.webp",
+      "lookbookMain": "products/ao-khoac-tweed-nut-dong/ao-khoac-tweed-nut-dong-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Kem Dệt Vàng",
+          "colorHex": "#ECE3D3",
+          "rackFront": "products/ao-khoac-tweed-nut-dong/ao-khoac-tweed-nut-dong-rack-2x3.webp",
+          "rackBack": "products/ao-khoac-tweed-nut-dong/ao-khoac-tweed-nut-dong-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-khoac-tweed-nut-dong/ao-khoac-tweed-nut-dong-flat-3x4.webp",
+          "lookbookMain": "products/ao-khoac-tweed-nut-dong/ao-khoac-tweed-nut-dong-lookbook-3x4.webp",
+          "rackCoverage": 0.3029,
+          "rackTopY": 155,
+          "flatCoverage": 0.3702
+        }
+      ]
+    },
+    "quan-ong-suong-wool-blend": {
+      "slug": "quan-ong-suong-wool-blend",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/quan-ong-suong-wool-blend/quan-ong-suong-wool-blend-rack-2x3.webp",
+      "rackBack": "products/quan-ong-suong-wool-blend/quan-ong-suong-wool-blend-rack-back-2x3.webp",
+      "tryonFlat": "products/quan-ong-suong-wool-blend/quan-ong-suong-wool-blend-flat-3x4.webp",
+      "lookbookMain": "products/quan-ong-suong-wool-blend/quan-ong-suong-wool-blend-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Nâu Khói",
+          "colorHex": "#52463E",
+          "rackFront": "products/quan-ong-suong-wool-blend/quan-ong-suong-wool-blend-rack-2x3.webp",
+          "rackBack": "products/quan-ong-suong-wool-blend/quan-ong-suong-wool-blend-rack-back-2x3.webp",
+          "tryonFlat": "products/quan-ong-suong-wool-blend/quan-ong-suong-wool-blend-flat-3x4.webp",
+          "lookbookMain": "products/quan-ong-suong-wool-blend/quan-ong-suong-wool-blend-lookbook-3x4.webp",
+          "rackCoverage": 0.3099,
+          "rackTopY": 152,
+          "flatCoverage": 0.3784
+        }
+      ]
+    },
+    "ao-len-cashmere-co-lo": {
+      "slug": "ao-len-cashmere-co-lo",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-rack-2x3.webp",
+      "rackBack": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-rack-back-2x3.webp",
+      "tryonFlat": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-flat-3x4.webp",
+      "lookbookMain": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Kem Cashmere",
+          "colorHex": "#EFE6D8",
+          "rackFront": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-rack-2x3.webp",
+          "rackBack": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-flat-3x4.webp",
+          "lookbookMain": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-lookbook-3x4.webp",
+          "rackCoverage": 0.4213,
+          "rackTopY": 153,
+          "flatCoverage": 0.5053
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Cacao Đậm",
+          "colorHex": "#2E221B",
+          "rackFront": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-v1-rack-2x3.webp",
+          "rackBack": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-v1-flat-3x4.webp",
+          "lookbookMain": "products/ao-len-cashmere-co-lo/ao-len-cashmere-co-lo-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.4213,
+          "rackTopY": 153,
+          "flatCoverage": 0.5053
+        }
+      ]
+    },
+    "vi-cam-tay-clutch-champagne": {
+      "slug": "vi-cam-tay-clutch-champagne",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-rack-2x3.webp",
+      "rackBack": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-rack-back-2x3.webp",
+      "tryonFlat": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-flat-3x4.webp",
+      "lookbookMain": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Champagne Ánh Kim",
+          "colorHex": "#DFCAA6",
+          "rackFront": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-rack-2x3.webp",
+          "rackBack": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-rack-back-2x3.webp",
+          "tryonFlat": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-flat-3x4.webp",
+          "lookbookMain": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-lookbook-3x4.webp",
+          "rackCoverage": 0.2248,
+          "rackTopY": 153,
+          "flatCoverage": 0.1999
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Nâu Espresso",
+          "colorHex": "#2A1E17",
+          "rackFront": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-v1-rack-2x3.webp",
+          "rackBack": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-v1-flat-3x4.webp",
+          "lookbookMain": "products/vi-cam-tay-clutch-champagne/vi-cam-tay-clutch-champagne-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.2248,
+          "rackTopY": 153,
+          "flatCoverage": 0.1999
+        }
+      ]
+    },
+    "khan-lua-hoa-tiet-tam-xuan": {
+      "slug": "khan-lua-hoa-tiet-tam-xuan",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-rack-2x3.webp",
+      "rackBack": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-rack-back-2x3.webp",
+      "tryonFlat": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-flat-3x4.webp",
+      "lookbookMain": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Kem Hoa Mai",
+          "colorHex": "#EFE5D2",
+          "rackFront": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-rack-2x3.webp",
+          "rackBack": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-rack-back-2x3.webp",
+          "tryonFlat": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-flat-3x4.webp",
+          "lookbookMain": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-lookbook-3x4.webp",
+          "rackCoverage": 0.1465,
+          "rackTopY": 153,
+          "flatCoverage": 0.1726
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Đỏ Son Trầm",
+          "colorHex": "#843133",
+          "rackFront": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-v1-rack-2x3.webp",
+          "rackBack": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-v1-flat-3x4.webp",
+          "lookbookMain": "products/khan-lua-hoa-tiet-tam-xuan/khan-lua-hoa-tiet-tam-xuan-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.1465,
+          "rackTopY": 153,
+          "flatCoverage": 0.1726
+        }
+      ]
+    },
+    "that-lung-da-khoa-dong": {
+      "slug": "that-lung-da-khoa-dong",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "rackFront": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-rack-2x3.webp",
+      "rackBack": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-rack-back-2x3.webp",
+      "tryonFlat": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-flat-3x4.webp",
+      "lookbookMain": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-lookbook-3x4.webp",
+      "variants": [
+        {
+          "index": 0,
+          "variantIndex": 0,
+          "colorName": "Cacao Cổ Điển",
+          "colorHex": "#3B281E",
+          "rackFront": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-rack-2x3.webp",
+          "rackBack": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-rack-back-2x3.webp",
+          "tryonFlat": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-flat-3x4.webp",
+          "lookbookMain": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-lookbook-3x4.webp",
+          "rackCoverage": 0.2178,
+          "rackTopY": 152,
+          "flatCoverage": 0.1936
+        },
+        {
+          "index": 1,
+          "variantIndex": 1,
+          "colorName": "Be Cát",
+          "colorHex": "#C9B596",
+          "rackFront": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-v1-rack-2x3.webp",
+          "rackBack": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-v1-rack-back-2x3.webp",
+          "tryonFlat": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-v1-flat-3x4.webp",
+          "lookbookMain": "products/that-lung-da-khoa-dong/that-lung-da-khoa-dong-v1-lookbook-3x4.webp",
+          "rackCoverage": 0.2178,
+          "rackTopY": 152,
+          "flatCoverage": 0.1936
+        }
+      ]
+    }
+  },
+  "occasionCutouts": {
+    "dam-du-tiec-lua-satin-co-do": "occasion-cutouts/dam-du-tiec-lua-satin-co-do-cutout-3x4.webp",
+    "ao-kieu-lua-organza-phoi-no": "occasion-cutouts/ao-kieu-lua-organza-phoi-no-cutout-3x4.webp",
+    "dam-midi-co-vuong-chiet-eo": "occasion-cutouts/dam-midi-co-vuong-chiet-eo-cutout-3x4.webp",
+    "ao-khoac-tweed-det-thu-cong": "occasion-cutouts/ao-khoac-tweed-det-thu-cong-cutout-3x4.webp",
+    "ao-blazer-linen-dang-suong": "occasion-cutouts/ao-blazer-linen-dang-suong-cutout-3x4.webp",
+    "ao-so-mi-lua-to-tam-tam-xuan": "occasion-cutouts/ao-so-mi-lua-to-tam-tam-xuan-cutout-3x4.webp",
+    "quan-tay-ong-suong-xep-ly-doi": "occasion-cutouts/quan-tay-ong-suong-xep-ly-doi-cutout-3x4.webp",
+    "chan-vay-xep-ly-midi-cap-cao": "occasion-cutouts/chan-vay-xep-ly-midi-cap-cao-cutout-3x4.webp",
+    "ao-cardigan-len-merino-khuy-sung": "occasion-cutouts/ao-cardigan-len-merino-khuy-sung-cutout-3x4.webp",
+    "quan-culottes-linen-huu-co": "occasion-cutouts/quan-culottes-linen-huu-co-cutout-3x4.webp",
+    "ao-polo-det-kim-bong-ai-cap": "occasion-cutouts/ao-polo-det-kim-bong-ai-cap-cutout-3x4.webp",
+    "dam-midi-linen-phoi-dai": "occasion-cutouts/dam-midi-linen-phoi-dai-cutout-3x4.webp",
+    "ao-khoac-trench-gabardine-co-dien": "occasion-cutouts/ao-khoac-trench-gabardine-co-dien-cutout-3x4.webp"
+  }
+}

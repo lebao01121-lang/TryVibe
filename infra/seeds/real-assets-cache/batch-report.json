@@ -1,0 +1,1110 @@
+{
+  "editorial": [
+    {
+      "id": "atelier-hero-poster",
+      "output": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\campaign\\atelier-hero-poster.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "step1",
+      "output": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\campaign\\atelier-step-1-fabric.webp",
+      "width": 960,
+      "height": 1200
+    },
+    {
+      "id": "step2",
+      "output": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\campaign\\atelier-step-2-pattern.webp",
+      "width": 960,
+      "height": 1200
+    },
+    {
+      "id": "step3",
+      "output": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\campaign\\atelier-step-3-tailoring.webp",
+      "width": 960,
+      "height": 1200
+    },
+    {
+      "id": "step4",
+      "output": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\campaign\\atelier-step-4-packaging.webp",
+      "width": 960,
+      "height": 1200
+    },
+    {
+      "id": "xuan-tam-xuan",
+      "output": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\seasons\\xuan-tam-xuan.webp",
+      "width": 900,
+      "height": 1200
+    },
+    {
+      "id": "ha-pho-co",
+      "output": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\seasons\\ha-pho-co.webp",
+      "width": 900,
+      "height": 1200
+    },
+    {
+      "id": "thu-hoang-hon",
+      "output": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\seasons\\thu-hoang-hon.webp",
+      "width": 900,
+      "height": 1200
+    },
+    {
+      "id": "dong-cashmere",
+      "output": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\seasons\\dong-cashmere.webp",
+      "width": 900,
+      "height": 1200
+    },
+    {
+      "id": "resort-ban-mai",
+      "output": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\seasons\\resort-ban-mai.webp",
+      "width": 900,
+      "height": 1200
+    },
+    {
+      "id": "atelier-di-san",
+      "output": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\seasons\\atelier-di-san.webp",
+      "width": 900,
+      "height": 1200
+    }
+  ],
+  "packaging": [
+    {
+      "code": "tui-vai-linen-moc",
+      "front": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\packaging\\tui-vai-linen-moc-front-2x3.webp",
+      "back": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\packaging\\tui-vai-linen-moc-back-2x3.webp",
+      "metrics": {
+        "width": 720,
+        "height": 1080,
+        "coverage": 0.2251,
+        "topY": 189,
+        "hangerAnchorX": 0.5,
+        "hangerAnchorY": 0.14
+      }
+    },
+    {
+      "code": "hop-lua-co-dien",
+      "front": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\packaging\\hop-lua-co-dien-front-2x3.webp",
+      "back": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\packaging\\hop-lua-co-dien-back-2x3.webp",
+      "metrics": {
+        "width": 720,
+        "height": 1080,
+        "coverage": 0.2612,
+        "topY": 326,
+        "hangerAnchorX": 0.5,
+        "hangerAnchorY": 0.14
+      }
+    },
+    {
+      "code": "hop-qua-khac-ten-gold",
+      "front": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\packaging\\hop-qua-khac-ten-gold-front-2x3.webp",
+      "back": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\packaging\\hop-qua-khac-ten-gold-back-2x3.webp",
+      "metrics": {
+        "width": 720,
+        "height": 1080,
+        "coverage": 0.2556,
+        "topY": 349,
+        "hangerAnchorX": 0.5,
+        "hangerAnchorY": 0.14
+      }
+    }
+  ],
+  "products": [
+    {
+      "slug": "ao-blazer-linen-dang-suong",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Cát Ngà",
+          "colorHex": "#D8C9B4",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-blazer-linen-dang-suong\\ao-blazer-linen-dang-suong-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-blazer-linen-dang-suong\\ao-blazer-linen-dang-suong-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-blazer-linen-dang-suong\\ao-blazer-linen-dang-suong-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-blazer-linen-dang-suong\\ao-blazer-linen-dang-suong-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.4015,
+            "topY": 151,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.49
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Cacao Đậm",
+          "colorHex": "#3A2A22",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-blazer-linen-dang-suong\\ao-blazer-linen-dang-suong-v1-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-blazer-linen-dang-suong\\ao-blazer-linen-dang-suong-v1-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-blazer-linen-dang-suong\\ao-blazer-linen-dang-suong-v1-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-blazer-linen-dang-suong\\ao-blazer-linen-dang-suong-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.4015,
+            "topY": 151,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.49
+          }
+        }
+      ]
+    },
+    {
+      "slug": "ao-so-mi-lua-to-tam-tam-xuan",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Trắng Ngà",
+          "colorHex": "#EFE7DA",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-tam-xuan\\ao-so-mi-lua-to-tam-tam-xuan-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-tam-xuan\\ao-so-mi-lua-to-tam-tam-xuan-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-tam-xuan\\ao-so-mi-lua-to-tam-tam-xuan-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-tam-xuan\\ao-so-mi-lua-to-tam-tam-xuan-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.1996,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.2353
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Champagne Ấm",
+          "colorHex": "#DFCAA6",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-tam-xuan\\ao-so-mi-lua-to-tam-tam-xuan-v1-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-tam-xuan\\ao-so-mi-lua-to-tam-tam-xuan-v1-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-tam-xuan\\ao-so-mi-lua-to-tam-tam-xuan-v1-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-tam-xuan\\ao-so-mi-lua-to-tam-tam-xuan-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.1996,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.2353
+          }
+        }
+      ]
+    },
+    {
+      "slug": "dam-du-tiec-lua-satin-co-do",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Đỏ Rượu Vang",
+          "colorHex": "#6E262B",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-du-tiec-lua-satin-co-do\\dam-du-tiec-lua-satin-co-do-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-du-tiec-lua-satin-co-do\\dam-du-tiec-lua-satin-co-do-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-du-tiec-lua-satin-co-do\\dam-du-tiec-lua-satin-co-do-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-du-tiec-lua-satin-co-do\\dam-du-tiec-lua-satin-co-do-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2078,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.2295
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Đen Huyền",
+          "colorHex": "#201B19",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-du-tiec-lua-satin-co-do\\dam-du-tiec-lua-satin-co-do-v1-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-du-tiec-lua-satin-co-do\\dam-du-tiec-lua-satin-co-do-v1-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-du-tiec-lua-satin-co-do\\dam-du-tiec-lua-satin-co-do-v1-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-du-tiec-lua-satin-co-do\\dam-du-tiec-lua-satin-co-do-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2078,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.2295
+          }
+        }
+      ]
+    },
+    {
+      "slug": "quan-tay-ong-suong-xep-ly-doi",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Xám Than",
+          "colorHex": "#3B3D40",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-tay-ong-suong-xep-ly-doi\\quan-tay-ong-suong-xep-ly-doi-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-tay-ong-suong-xep-ly-doi\\quan-tay-ong-suong-xep-ly-doi-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-tay-ong-suong-xep-ly-doi\\quan-tay-ong-suong-xep-ly-doi-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-tay-ong-suong-xep-ly-doi\\quan-tay-ong-suong-xep-ly-doi-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.33,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.365
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Be Đá",
+          "colorHex": "#C9BEA9",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-tay-ong-suong-xep-ly-doi\\quan-tay-ong-suong-xep-ly-doi-v1-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-tay-ong-suong-xep-ly-doi\\quan-tay-ong-suong-xep-ly-doi-v1-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-tay-ong-suong-xep-ly-doi\\quan-tay-ong-suong-xep-ly-doi-v1-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-tay-ong-suong-xep-ly-doi\\quan-tay-ong-suong-xep-ly-doi-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.33,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.365
+          }
+        }
+      ]
+    },
+    {
+      "slug": "chan-vay-xep-ly-midi-cap-cao",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Kem Sữa",
+          "colorHex": "#EDE3D1",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-xep-ly-midi-cap-cao\\chan-vay-xep-ly-midi-cap-cao-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-xep-ly-midi-cap-cao\\chan-vay-xep-ly-midi-cap-cao-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-xep-ly-midi-cap-cao\\chan-vay-xep-ly-midi-cap-cao-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-xep-ly-midi-cap-cao\\chan-vay-xep-ly-midi-cap-cao-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.294,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.3425
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Xanh Khói",
+          "colorHex": "#617172",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-xep-ly-midi-cap-cao\\chan-vay-xep-ly-midi-cap-cao-v1-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-xep-ly-midi-cap-cao\\chan-vay-xep-ly-midi-cap-cao-v1-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-xep-ly-midi-cap-cao\\chan-vay-xep-ly-midi-cap-cao-v1-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-xep-ly-midi-cap-cao\\chan-vay-xep-ly-midi-cap-cao-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.294,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.3425
+          }
+        }
+      ]
+    },
+    {
+      "slug": "ao-khoac-trench-gabardine-co-dien",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Kaki Cổ Điển",
+          "colorHex": "#BDA686",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-trench-gabardine-co-dien\\ao-khoac-trench-gabardine-co-dien-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-trench-gabardine-co-dien\\ao-khoac-trench-gabardine-co-dien-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-trench-gabardine-co-dien\\ao-khoac-trench-gabardine-co-dien-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-trench-gabardine-co-dien\\ao-khoac-trench-gabardine-co-dien-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2817,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.3442
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Ô Liu Trầm",
+          "colorHex": "#59604D",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-trench-gabardine-co-dien\\ao-khoac-trench-gabardine-co-dien-v1-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-trench-gabardine-co-dien\\ao-khoac-trench-gabardine-co-dien-v1-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-trench-gabardine-co-dien\\ao-khoac-trench-gabardine-co-dien-v1-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-trench-gabardine-co-dien\\ao-khoac-trench-gabardine-co-dien-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2817,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.3442
+          }
+        }
+      ]
+    },
+    {
+      "slug": "ao-kieu-lua-organza-phoi-no",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Hồng Phấn Đất",
+          "colorHex": "#DFC5BE",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-kieu-lua-organza-phoi-no\\ao-kieu-lua-organza-phoi-no-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-kieu-lua-organza-phoi-no\\ao-kieu-lua-organza-phoi-no-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-kieu-lua-organza-phoi-no\\ao-kieu-lua-organza-phoi-no-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-kieu-lua-organza-phoi-no\\ao-kieu-lua-organza-phoi-no-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2021,
+            "topY": 151,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.2464
+          }
+        }
+      ]
+    },
+    {
+      "slug": "dam-midi-co-vuong-chiet-eo",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Trắng Ngọc",
+          "colorHex": "#F3ECE0",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-co-vuong-chiet-eo\\dam-midi-co-vuong-chiet-eo-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-co-vuong-chiet-eo\\dam-midi-co-vuong-chiet-eo-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-co-vuong-chiet-eo\\dam-midi-co-vuong-chiet-eo-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-co-vuong-chiet-eo\\dam-midi-co-vuong-chiet-eo-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2088,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.2314
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Nâu Espresso",
+          "colorHex": "#46332A",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-co-vuong-chiet-eo\\dam-midi-co-vuong-chiet-eo-v1-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-co-vuong-chiet-eo\\dam-midi-co-vuong-chiet-eo-v1-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-co-vuong-chiet-eo\\dam-midi-co-vuong-chiet-eo-v1-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-co-vuong-chiet-eo\\dam-midi-co-vuong-chiet-eo-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2088,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.2314
+          }
+        }
+      ]
+    },
+    {
+      "slug": "ao-cardigan-len-merino-khuy-sung",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Yến Mạch",
+          "colorHex": "#DFD4C2",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-cardigan-len-merino-khuy-sung\\ao-cardigan-len-merino-khuy-sung-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-cardigan-len-merino-khuy-sung\\ao-cardigan-len-merino-khuy-sung-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-cardigan-len-merino-khuy-sung\\ao-cardigan-len-merino-khuy-sung-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-cardigan-len-merino-khuy-sung\\ao-cardigan-len-merino-khuy-sung-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2471,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.2733
+          }
+        }
+      ]
+    },
+    {
+      "slug": "quan-culottes-linen-huu-co",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Cát Biển",
+          "colorHex": "#D7C7B2",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-culottes-linen-huu-co\\quan-culottes-linen-huu-co-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-culottes-linen-huu-co\\quan-culottes-linen-huu-co-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-culottes-linen-huu-co\\quan-culottes-linen-huu-co-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-culottes-linen-huu-co\\quan-culottes-linen-huu-co-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2103,
+            "topY": 151,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.2326
+          }
+        }
+      ]
+    },
+    {
+      "slug": "ao-khoac-tweed-det-thu-cong",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Ngà Ánh Đồng",
+          "colorHex": "#E6DCC8",
+          "rackFront": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-det-thu-cong\\ao-khoac-tweed-det-thu-cong-rack-2x3.webp",
+          "rackBack": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-det-thu-cong\\ao-khoac-tweed-det-thu-cong-rack-back-2x3.webp",
+          "tryonFlat": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-det-thu-cong\\ao-khoac-tweed-det-thu-cong-flat-3x4.webp",
+          "lookbookMain": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-det-thu-cong\\ao-khoac-tweed-det-thu-cong-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.4245,
+            "topY": 151,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.5177
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Cacao Đêm",
+          "colorHex": "#2C211C",
+          "rackFront": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-det-thu-cong\\ao-khoac-tweed-det-thu-cong-v1-rack-2x3.webp",
+          "rackBack": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-det-thu-cong\\ao-khoac-tweed-det-thu-cong-v1-rack-back-2x3.webp",
+          "tryonFlat": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-det-thu-cong\\ao-khoac-tweed-det-thu-cong-v1-flat-3x4.webp",
+          "lookbookMain": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-det-thu-cong\\ao-khoac-tweed-det-thu-cong-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.4245,
+            "topY": 151,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.5177
+          }
+        }
+      ]
+    },
+    {
+      "slug": "ao-polo-det-kim-bong-ai-cap",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Xanh Navy Trầm",
+          "colorHex": "#24303C",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-polo-det-kim-bong-ai-cap\\ao-polo-det-kim-bong-ai-cap-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-polo-det-kim-bong-ai-cap\\ao-polo-det-kim-bong-ai-cap-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-polo-det-kim-bong-ai-cap\\ao-polo-det-kim-bong-ai-cap-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-polo-det-kim-bong-ai-cap\\ao-polo-det-kim-bong-ai-cap-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.3149,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.3842
+          }
+        }
+      ]
+    },
+    {
+      "slug": "ao-so-mi-lua-to-tam-bao-loc",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Ngà Sữa",
+          "colorHex": "#F5EFE4",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-bao-loc\\ao-so-mi-lua-to-tam-bao-loc-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-bao-loc\\ao-so-mi-lua-to-tam-bao-loc-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-bao-loc\\ao-so-mi-lua-to-tam-bao-loc-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-bao-loc\\ao-so-mi-lua-to-tam-bao-loc-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.268,
+            "topY": 151,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.3268
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Hồng Cánh Sen",
+          "colorHex": "#E6D0CC",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-bao-loc\\ao-so-mi-lua-to-tam-bao-loc-v1-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-bao-loc\\ao-so-mi-lua-to-tam-bao-loc-v1-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-bao-loc\\ao-so-mi-lua-to-tam-bao-loc-v1-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-so-mi-lua-to-tam-bao-loc\\ao-so-mi-lua-to-tam-bao-loc-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.268,
+            "topY": 151,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.3268
+          }
+        }
+      ]
+    },
+    {
+      "slug": "ao-dai-cach-tan-gam-lua",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Vàng Champagne",
+          "colorHex": "#E5CFA3",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-dai-cach-tan-gam-lua\\ao-dai-cach-tan-gam-lua-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-dai-cach-tan-gam-lua\\ao-dai-cach-tan-gam-lua-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-dai-cach-tan-gam-lua\\ao-dai-cach-tan-gam-lua-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-dai-cach-tan-gam-lua\\ao-dai-cach-tan-gam-lua-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2864,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.3165
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Đỏ Son Trầm",
+          "colorHex": "#822F32",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-dai-cach-tan-gam-lua\\ao-dai-cach-tan-gam-lua-v1-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-dai-cach-tan-gam-lua\\ao-dai-cach-tan-gam-lua-v1-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-dai-cach-tan-gam-lua\\ao-dai-cach-tan-gam-lua-v1-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-dai-cach-tan-gam-lua\\ao-dai-cach-tan-gam-lua-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2864,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.3165
+          }
+        }
+      ]
+    },
+    {
+      "slug": "trench-coat-kaki-co-dien",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Kaki Cát",
+          "colorHex": "#C7B293",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\trench-coat-kaki-co-dien\\trench-coat-kaki-co-dien-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\trench-coat-kaki-co-dien\\trench-coat-kaki-co-dien-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\trench-coat-kaki-co-dien\\trench-coat-kaki-co-dien-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\trench-coat-kaki-co-dien\\trench-coat-kaki-co-dien-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.268,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.297
+          }
+        }
+      ]
+    },
+    {
+      "slug": "chan-vay-lua-vat-cheo",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Sâm Panh Ngà",
+          "colorHex": "#E9DBBE",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-lua-vat-cheo\\chan-vay-lua-vat-cheo-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-lua-vat-cheo\\chan-vay-lua-vat-cheo-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-lua-vat-cheo\\chan-vay-lua-vat-cheo-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-lua-vat-cheo\\chan-vay-lua-vat-cheo-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2177,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.2658
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Nâu Cacao",
+          "colorHex": "#3D2B22",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-lua-vat-cheo\\chan-vay-lua-vat-cheo-v1-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-lua-vat-cheo\\chan-vay-lua-vat-cheo-v1-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-lua-vat-cheo\\chan-vay-lua-vat-cheo-v1-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\chan-vay-lua-vat-cheo\\chan-vay-lua-vat-cheo-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2177,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.2658
+          }
+        }
+      ]
+    },
+    {
+      "slug": "dam-midi-linen-phoi-dai",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Lanh Tự Nhiên",
+          "colorHex": "#DDD1BD",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-linen-phoi-dai\\dam-midi-linen-phoi-dai-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-linen-phoi-dai\\dam-midi-linen-phoi-dai-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-linen-phoi-dai\\dam-midi-linen-phoi-dai-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\dam-midi-linen-phoi-dai\\dam-midi-linen-phoi-dai-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.3933,
+            "topY": 151,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.4352
+          }
+        }
+      ]
+    },
+    {
+      "slug": "ao-khoac-tweed-nut-dong",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Kem Dệt Vàng",
+          "colorHex": "#ECE3D3",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-nut-dong\\ao-khoac-tweed-nut-dong-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-nut-dong\\ao-khoac-tweed-nut-dong-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-nut-dong\\ao-khoac-tweed-nut-dong-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-khoac-tweed-nut-dong\\ao-khoac-tweed-nut-dong-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.3698,
+            "topY": 151,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.409
+          }
+        }
+      ]
+    },
+    {
+      "slug": "quan-ong-suong-wool-blend",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Nâu Khói",
+          "colorHex": "#52463E",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-ong-suong-wool-blend\\quan-ong-suong-wool-blend-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-ong-suong-wool-blend\\quan-ong-suong-wool-blend-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-ong-suong-wool-blend\\quan-ong-suong-wool-blend-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\quan-ong-suong-wool-blend\\quan-ong-suong-wool-blend-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.325,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.3596
+          }
+        }
+      ]
+    },
+    {
+      "slug": "ao-len-cashmere-co-lo",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Kem Cashmere",
+          "colorHex": "#EFE6D8",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-len-cashmere-co-lo\\ao-len-cashmere-co-lo-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-len-cashmere-co-lo\\ao-len-cashmere-co-lo-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-len-cashmere-co-lo\\ao-len-cashmere-co-lo-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-len-cashmere-co-lo\\ao-len-cashmere-co-lo-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.4213,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.5053
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Cacao Đậm",
+          "colorHex": "#2E221B",
+          "rackFront": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-len-cashmere-co-lo\\ao-len-cashmere-co-lo-v1-rack-2x3.webp",
+          "rackBack": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-len-cashmere-co-lo\\ao-len-cashmere-co-lo-v1-rack-back-2x3.webp",
+          "tryonFlat": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-len-cashmere-co-lo\\ao-len-cashmere-co-lo-v1-flat-3x4.webp",
+          "lookbookMain": "d:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\ao-len-cashmere-co-lo\\ao-len-cashmere-co-lo-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.4213,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.5053
+          }
+        }
+      ]
+    },
+    {
+      "slug": "vi-cam-tay-clutch-champagne",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Champagne Ánh Kim",
+          "colorHex": "#DFCAA6",
+          "rackFront": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\vi-cam-tay-clutch-champagne\\vi-cam-tay-clutch-champagne-rack-2x3.webp",
+          "rackBack": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\vi-cam-tay-clutch-champagne\\vi-cam-tay-clutch-champagne-rack-back-2x3.webp",
+          "tryonFlat": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\vi-cam-tay-clutch-champagne\\vi-cam-tay-clutch-champagne-flat-3x4.webp",
+          "lookbookMain": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\vi-cam-tay-clutch-champagne\\vi-cam-tay-clutch-champagne-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2248,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.1999
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Nâu Espresso",
+          "colorHex": "#2A1E17",
+          "rackFront": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\vi-cam-tay-clutch-champagne\\vi-cam-tay-clutch-champagne-v1-rack-2x3.webp",
+          "rackBack": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\vi-cam-tay-clutch-champagne\\vi-cam-tay-clutch-champagne-v1-rack-back-2x3.webp",
+          "tryonFlat": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\vi-cam-tay-clutch-champagne\\vi-cam-tay-clutch-champagne-v1-flat-3x4.webp",
+          "lookbookMain": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\vi-cam-tay-clutch-champagne\\vi-cam-tay-clutch-champagne-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2248,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.1999
+          }
+        }
+      ]
+    },
+    {
+      "slug": "khan-lua-hoa-tiet-tam-xuan",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Kem Hoa Mai",
+          "colorHex": "#EFE5D2",
+          "rackFront": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\khan-lua-hoa-tiet-tam-xuan\\khan-lua-hoa-tiet-tam-xuan-rack-2x3.webp",
+          "rackBack": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\khan-lua-hoa-tiet-tam-xuan\\khan-lua-hoa-tiet-tam-xuan-rack-back-2x3.webp",
+          "tryonFlat": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\khan-lua-hoa-tiet-tam-xuan\\khan-lua-hoa-tiet-tam-xuan-flat-3x4.webp",
+          "lookbookMain": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\khan-lua-hoa-tiet-tam-xuan\\khan-lua-hoa-tiet-tam-xuan-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.1465,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.1726
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Đỏ Son Trầm",
+          "colorHex": "#843133",
+          "rackFront": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\khan-lua-hoa-tiet-tam-xuan\\khan-lua-hoa-tiet-tam-xuan-v1-rack-2x3.webp",
+          "rackBack": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\khan-lua-hoa-tiet-tam-xuan\\khan-lua-hoa-tiet-tam-xuan-v1-rack-back-2x3.webp",
+          "tryonFlat": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\khan-lua-hoa-tiet-tam-xuan\\khan-lua-hoa-tiet-tam-xuan-v1-flat-3x4.webp",
+          "lookbookMain": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\khan-lua-hoa-tiet-tam-xuan\\khan-lua-hoa-tiet-tam-xuan-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.1465,
+            "topY": 153,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.1726
+          }
+        }
+      ]
+    },
+    {
+      "slug": "that-lung-da-khoa-dong",
+      "hangerAnchorX": 0.5,
+      "hangerAnchorY": 0.14,
+      "variants": [
+        {
+          "variantIndex": 0,
+          "colorName": "Cacao Cổ Điển",
+          "colorHex": "#3B281E",
+          "rackFront": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\that-lung-da-khoa-dong\\that-lung-da-khoa-dong-rack-2x3.webp",
+          "rackBack": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\that-lung-da-khoa-dong\\that-lung-da-khoa-dong-rack-back-2x3.webp",
+          "tryonFlat": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\that-lung-da-khoa-dong\\that-lung-da-khoa-dong-flat-3x4.webp",
+          "lookbookMain": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\that-lung-da-khoa-dong\\that-lung-da-khoa-dong-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2178,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.1936
+          }
+        },
+        {
+          "variantIndex": 1,
+          "colorName": "Be Cát",
+          "colorHex": "#C9B596",
+          "rackFront": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\that-lung-da-khoa-dong\\that-lung-da-khoa-dong-v1-rack-2x3.webp",
+          "rackBack": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\that-lung-da-khoa-dong\\that-lung-da-khoa-dong-v1-rack-back-2x3.webp",
+          "tryonFlat": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\that-lung-da-khoa-dong\\that-lung-da-khoa-dong-v1-flat-3x4.webp",
+          "lookbookMain": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\that-lung-da-khoa-dong\\that-lung-da-khoa-dong-v1-lookbook-3x4.webp",
+          "rackMetrics": {
+            "width": 720,
+            "height": 1080,
+            "coverage": 0.2178,
+            "topY": 152,
+            "hangerAnchorX": 0.5,
+            "hangerAnchorY": 0.14
+          },
+          "flatMetrics": {
+            "width": 768,
+            "height": 1024,
+            "coverage": 0.1936
+          }
+        }
+      ]
+    }
+  ]
+}

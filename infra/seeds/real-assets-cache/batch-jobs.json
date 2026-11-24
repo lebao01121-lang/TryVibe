@@ -1,0 +1,109 @@
+{
+  "editorial": [],
+  "packaging": [],
+  "products": [
+    {
+      "slug": "vi-cam-tay-clutch-champagne",
+      "input": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\raw\\prod-21-champagne-clutch.jpg",
+      "outDir": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\vi-cam-tay-clutch-champagne",
+      "cutoutMode": "isnet",
+      "cutoutCrop": [
+        0.14,
+        0.3,
+        0.86,
+        0.805
+      ],
+      "lookbookCrop": [
+        0.05,
+        0.12,
+        0.95,
+        0.94
+      ],
+      "lookbookBiasY": 0.52,
+      "baseTintHex": "#DFCAA6",
+      "baseTintStrength": 0.22,
+      "erodePx": 1,
+      "variants": [
+        {
+          "index": 0,
+          "colorName": "Champagne Ánh Kim",
+          "colorHex": "#DFCAA6"
+        },
+        {
+          "index": 1,
+          "colorName": "Nâu Espresso",
+          "colorHex": "#2A1E17"
+        }
+      ]
+    },
+    {
+      "slug": "khan-lua-hoa-tiet-tam-xuan",
+      "input": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\raw\\prod-22-silk-floral-scarf.jpg",
+      "outDir": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\khan-lua-hoa-tiet-tam-xuan",
+      "cutoutMode": "isnet",
+      "cutoutCrop": [
+        0.01,
+        0.3,
+        0.9,
+        0.79
+      ],
+      "lookbookCrop": [
+        0,
+        0.22,
+        0.96,
+        0.86
+      ],
+      "lookbookBiasY": 0.5,
+      "baseTintHex": "#EFE5D2",
+      "baseTintStrength": 0.32,
+      "erodePx": 1,
+      "variants": [
+        {
+          "index": 0,
+          "colorName": "Kem Hoa Mai",
+          "colorHex": "#EFE5D2"
+        },
+        {
+          "index": 1,
+          "colorName": "Đỏ Son Trầm",
+          "colorHex": "#843133"
+        }
+      ]
+    },
+    {
+      "slug": "that-lung-da-khoa-dong",
+      "input": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\raw\\prod-23-leather-brass-belt.jpg",
+      "outDir": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\processed\\products\\that-lung-da-khoa-dong",
+      "cutoutMode": "isnet",
+      "cutoutCrop": [
+        0.1,
+        0.08,
+        0.85,
+        0.92
+      ],
+      "lookbookCrop": [
+        0.04,
+        0.02,
+        0.96,
+        0.98
+      ],
+      "lookbookBiasY": 0.5,
+      "baseTintHex": "#3B281E",
+      "baseTintStrength": 0.68,
+      "erodePx": 1,
+      "variants": [
+        {
+          "index": 0,
+          "colorName": "Cacao Cổ Điển",
+          "colorHex": "#3B281E"
+        },
+        {
+          "index": 1,
+          "colorName": "Be Cát",
+          "colorHex": "#C9B596"
+        }
+      ]
+    }
+  ],
+  "reportOutput": "D:\\doancosothue\\TryVibe\\infra\\seeds\\real-assets-cache\\batch-report-partial.json"
+}

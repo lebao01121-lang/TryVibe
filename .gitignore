@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# Environment & Local Secrets / Dev Harness Storage
+.env
+.env.local
+.env.*.local
+.secrets/
+.local-pgdata/
+.local-minio/
+.project-data/
+services/ai-tryon/.tmp_vton/
+
+# Generated local TLS certificates
+infra/nginx/certs/*.crt
+infra/nginx/certs/*.key
+infra/nginx/certs/*.pem
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Coverage & Logs
+coverage/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS & Editor artifacts
+.DS_Store
+Thumbs.db
+.idea/
+*.swp

@@ -1,0 +1,288 @@
+import { randomUUID } from 'node:crypto';
+import type { RouterTier } from '../layer7-cache-router';
+
+export type TelemetryOutcomeStatus =
+  | 'SUCCESS'
+  | 'BLOCKED_GUARDRAIL'
+  | 'BLOCKED_RBAC'
+  | 'ERROR';
+
+export type AiTelemetryProvider = 'ollama' | 'rule_fallback';
+export type VtonTelemetryProvider = 'MOCK' | 'FAL_CATVTON' | 'CACHE_HIT';
+
+export const DEFAULT_VTON_COST_USD: Readonly<
+  Record<VtonTelemetryProvider, number>
+> = {
+  MOCK: 0,
+  CACHE_HIT: 0,
+  FAL_CATVTON: 0.04,
+};
+
+export interface AiTelemetryRecord {
+  id: string;
+  timestamp: string;
+  actor_type: 'AI_COPILOT';
+  aiProvider: AiTelemetryProvider;
+  modelUsed: string;
+  userId: string;
+  roles: readonly string[];
+  toolName: string;
+  tier: RouterTier;
+  latencyMs: number;
+  promptTokens: number;
+  completionTokens: number;
+  promptEvalCount: number;
+  evalCount: number;
+  totalDurationMs: number;
+  tokensPerSec: number;
+  costUsd: 0;
+  estimatedCostUsd: number;
+  vtonCostUsd: number;
+  cacheHit: boolean;
+  vtonProvider?: VtonTelemetryProvider;
+  correlationId: string;
+  status: TelemetryOutcomeStatus;
+  usedFallback: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface RecordTelemetryInput {
+  userId: string;
+  roles: readonly string[];
+  toolName: string;
+  tier: RouterTier;
+  latencyMs: number;
+  aiProvider?: AiTelemetryProvider;
+  modelUsed?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  promptEvalCount?: number;
+  evalCount?: number;
+  totalDurationMs?: number;
+  tokensPerSec?: number;
+  costUsd?: number;
+  estimatedCostUsd?: number;
+  vtonCostUsd?: number;
+  cacheHit?: boolean;
+  vtonProvider?: VtonTelemetryProvider;
+  correlationId: string;
+  status?: TelemetryOutcomeStatus;
+  usedFallback?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AiTelemetrySummary {
+  aiProvider: 'ollama';
+  totalCalls: number;
+  successCount: number;
+  blockedGuardrailCount: number;
+  blockedRbacCount: number;
+  errorCount: number;
+  cacheHitCount: number;
+  cacheMissCount: number;
+  cacheHitRatePct: number;
+  vtonCallsCount: number;
+  vtonCacheHitCount: number;
+  vtonPaidCallsCount: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalPromptEvalCount: number;
+  totalEvalCount: number;
+  averageTokensPerSec: number;
+  totalCostUsd: 0;
+  totalEstimatedCostUsd: number;
+  totalVtonCostUsd: number;
+  averageLatencyMs: number;
+  byTier: Record<RouterTier, number>;
+  byTool: Record<string, number>;
+}
+
+export interface AiTelemetryRecorderOptions {
+  maxEntries?: number;
+  onRecord?: (entry: AiTelemetryRecord) => void;
+}
+
+/**
+ * Local Ollama LLM inference always incurs $0.00 API cost.
+ */
+export function estimateOllamaCostUsd(): 0 {
+  return 0;
+}
+
+export function estimateVtonCostUsd(
+  provider: VtonTelemetryProvider,
+  customFalCostUsd = DEFAULT_VTON_COST_USD.FAL_CATVTON,
+): number {
+  if (provider === 'CACHE_HIT' || provider === 'MOCK') {
+    return 0;
+  }
+  return Number(Math.max(0, customFalCostUsd).toFixed(6));
+}
+
+export class AiTelemetryRecorder {
+  private readonly maxEntries: number;
+  private readonly onRecord?: (entry: AiTelemetryRecord) => void;
+  private readonly records: AiTelemetryRecord[] = [];
+
+  constructor(options: AiTelemetryRecorderOptions = {}) {
+    this.maxEntries = Math.max(10, options.maxEntries ?? 1000);
+    this.onRecord = options.onRecord;
+  }
+
+  public record(input: RecordTelemetryInput): AiTelemetryRecord {
+    const promptEvalCount = Math.max(
+      0,
+      input.promptEvalCount ?? input.promptTokens ?? 0,
+    );
+    const evalCount = Math.max(
+      0,
+      input.evalCount ?? input.completionTokens ?? 0,
+    );
+    const totalDurationMs = Number(
+      Math.max(0, input.totalDurationMs ?? input.latencyMs).toFixed(2),
+    );
+    const tokensPerSec = Number(Math.max(0, input.tokensPerSec ?? 0).toFixed(2));
+    const cacheHit = input.cacheHit === true || input.vtonProvider === 'CACHE_HIT';
+    const rawVtonCost = cacheHit
+      ? 0
+      : (input.vtonCostUsd ??
+        (input.vtonProvider ? estimateVtonCostUsd(input.vtonProvider) : 0));
+    const vtonCostUsd = Number(Math.max(0, rawVtonCost).toFixed(6));
+    const usedFallback = input.usedFallback ?? false;
+    const aiProvider: AiTelemetryProvider =
+      input.aiProvider ?? (usedFallback ? 'rule_fallback' : 'ollama');
+
+    const entry: AiTelemetryRecord = {
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+      actor_type: 'AI_COPILOT',
+      aiProvider,
+      modelUsed: input.modelUsed ?? (usedFallback ? 'rule-based-fallback' : 'qwen2.5:3b'),
+      userId: input.userId,
+      roles: [...input.roles],
+      toolName: input.toolName,
+      tier: input.tier,
+      latencyMs: Math.max(0, Math.round(input.latencyMs)),
+      promptTokens: promptEvalCount,
+      completionTokens: evalCount,
+      promptEvalCount,
+      evalCount,
+      totalDurationMs,
+      tokensPerSec,
+      costUsd: 0,
+      estimatedCostUsd: 0,
+      vtonCostUsd,
+      cacheHit,
+      ...(input.vtonProvider ? { vtonProvider: input.vtonProvider } : {}),
+      correlationId: input.correlationId,
+      status: input.status ?? 'SUCCESS',
+      usedFallback,
+      metadata: input.metadata,
+    };
+
+    if (this.records.length >= this.maxEntries) {
+      this.records.shift();
+    }
+    this.records.push(entry);
+
+    if (this.onRecord) {
+      this.onRecord(entry);
+    }
+
+    return entry;
+  }
+
+  public getRecords(): readonly AiTelemetryRecord[] {
+    return [...this.records];
+  }
+
+  public getSummary(): AiTelemetrySummary {
+    const byTier: Record<RouterTier, number> = { 0: 0, 1: 0, 2: 0 };
+    const byTool: Record<string, number> = {};
+
+    let successCount = 0;
+    let blockedGuardrailCount = 0;
+    let blockedRbacCount = 0;
+    let errorCount = 0;
+    let cacheHitCount = 0;
+    let cacheMissCount = 0;
+    let vtonCallsCount = 0;
+    let vtonCacheHitCount = 0;
+    let vtonPaidCallsCount = 0;
+    let totalPromptEvalCount = 0;
+    let totalEvalCount = 0;
+    let tokensPerSecSum = 0;
+    let tokensPerSecSamples = 0;
+    let totalVtonCostUsd = 0;
+    let totalLatencyMs = 0;
+
+    for (const item of this.records) {
+      byTier[item.tier] = (byTier[item.tier] ?? 0) + 1;
+      byTool[item.toolName] = (byTool[item.toolName] ?? 0) + 1;
+
+      if (item.status === 'SUCCESS') successCount += 1;
+      else if (item.status === 'BLOCKED_GUARDRAIL') blockedGuardrailCount += 1;
+      else if (item.status === 'BLOCKED_RBAC') blockedRbacCount += 1;
+      else errorCount += 1;
+
+      if (item.cacheHit) cacheHitCount += 1;
+      else cacheMissCount += 1;
+
+      if (item.vtonProvider !== undefined || item.toolName === 'ai_tryon_vton') {
+        vtonCallsCount += 1;
+        if (item.cacheHit || item.vtonProvider === 'CACHE_HIT') {
+          vtonCacheHitCount += 1;
+        } else if (item.vtonCostUsd > 0) {
+          vtonPaidCallsCount += 1;
+        }
+      }
+
+      totalPromptEvalCount += item.promptEvalCount;
+      totalEvalCount += item.evalCount;
+      if (item.tokensPerSec > 0) {
+        tokensPerSecSum += item.tokensPerSec;
+        tokensPerSecSamples += 1;
+      }
+      totalVtonCostUsd += item.vtonCostUsd;
+      totalLatencyMs += item.latencyMs;
+    }
+
+    const totalCalls = this.records.length;
+    return {
+      aiProvider: 'ollama',
+      totalCalls,
+      successCount,
+      blockedGuardrailCount,
+      blockedRbacCount,
+      errorCount,
+      cacheHitCount,
+      cacheMissCount,
+      cacheHitRatePct:
+        totalCalls > 0
+          ? Number(((cacheHitCount / totalCalls) * 100).toFixed(2))
+          : 0,
+      vtonCallsCount,
+      vtonCacheHitCount,
+      vtonPaidCallsCount,
+      totalPromptTokens: totalPromptEvalCount,
+      totalCompletionTokens: totalEvalCount,
+      totalPromptEvalCount,
+      totalEvalCount,
+      averageTokensPerSec:
+        tokensPerSecSamples > 0
+          ? Number((tokensPerSecSum / tokensPerSecSamples).toFixed(2))
+          : 0,
+      totalCostUsd: 0,
+      totalEstimatedCostUsd: 0,
+      totalVtonCostUsd: Number(totalVtonCostUsd.toFixed(6)),
+      averageLatencyMs:
+        totalCalls > 0 ? Number((totalLatencyMs / totalCalls).toFixed(2)) : 0,
+      byTier,
+      byTool,
+    };
+  }
+
+  public clear(): void {
+    this.records.length = 0;
+  }
+}

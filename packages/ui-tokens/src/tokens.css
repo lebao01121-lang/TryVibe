@@ -1,0 +1,171 @@
+/* ============================================================================
+ * @atelier/ui-tokens — Editorial Quiet Luxury Design Tokens
+ * Faithfully ported from reference css/style.css & extended for Fashion Atelier
+ * ============================================================================ */
+
+:root {
+  /* Core Editorial Quiet Luxury Palette (ported 1:1 from css/style.css) */
+  --ivory: #FBF7EF;
+  --cream: #F4EBDA;
+  --champagne: #EBD9B4;
+  --gold: #B08A4A;
+  --gold-hi: #EBCF8F;
+  --gold-deep: #8A672C;
+  --cocoa: #1C1410;
+  --cocoa-2: #2A1E17;
+  --ink: #2B2019;
+  --muted: #7A6A5B;
+
+  /* Vietnamese Editorial Typography (aligned with next/font/google CSS vars) */
+  --serif: var(--font-cormorant, "Cormorant Garamond"), "Cormorant Garamond", Georgia, serif;
+  --sans: var(--font-be-vietnam-pro, "Be Vietnam Pro"), "Be Vietnam Pro", system-ui, sans-serif;
+  --cursive: var(--font-dancing-script, "Dancing Script"), "Dancing Script", cursive;
+  --script: var(--cursive);
+
+  /* Signature Motion Curve */
+  --ease: cubic-bezier(0.22, 0.8, 0.22, 1);
+  --duration-fast: 240ms;
+  --duration-base: 450ms;
+  --duration-editorial: 700ms;
+
+  /* Semantic Fashion & Operational Ledger Tokens */
+  --surface-page: var(--ivory);
+  --surface-elevated: var(--cream);
+  --surface-dark: var(--cocoa);
+  --surface-dark-elevated: var(--cocoa-2);
+  --surface-glass-dark: rgba(36, 26, 20, 0.56);
+  --surface-glass-ivory: rgba(251, 247, 239, 0.86);
+
+  --border-gold-subtle: rgba(176, 138, 74, 0.22);
+  --border-gold: rgba(176, 138, 74, 0.42);
+  --border-gold-hi: rgba(235, 207, 143, 0.48);
+
+  /* Stock, Fit & Human-in-the-Loop AI Status Tokens */
+  --status-in-stock: #2F5D46;
+  --status-in-stock-bg: rgba(47, 93, 70, 0.12);
+  --status-low-stock: #B87424;
+  --status-low-stock-bg: rgba(184, 116, 36, 0.14);
+  --status-out-of-stock: #9A3B3B;
+  --status-out-of-stock-bg: rgba(154, 59, 59, 0.12);
+  --status-ai-draft: #8A672C;
+  --status-ai-draft-bg: rgba(176, 138, 74, 0.16);
+
+  /* Elevation & Metallic Shimmer */
+  --shadow-gold: 0 10px 40px -12px rgba(176, 138, 74, 0.7);
+  --shadow-card: 0 30px 80px -30px rgba(0, 0, 0, 0.6);
+  --shadow-drawer: -30px 0 80px -20px rgba(0, 0, 0, 0.45);
+  --gradient-gold-shimmer: linear-gradient(
+    100deg,
+    #9C7535,
+    #E9CF95 22%,
+    #FFF3D6 30%,
+    #D9B46E 40%,
+    #9C7535 58%,
+    #E9CF95 78%,
+    #9C7535
+  );
+  --gradient-gold-button: linear-gradient(
+    120deg,
+    #9C7535,
+    #D9B46E 45%,
+    #F3DFAE 55%,
+    #B08A4A
+  );
+
+  /* Radii */
+  --radius-arch: 999px 999px 24px 24px;
+  --radius-card: 22px;
+  --radius-control: 14px;
+  --radius-pill: 999px;
+}
+
+/* Signature Editorial Keyframes (ported 1:1 from css/style.css) */
+@keyframes shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -130% 0;
+  }
+}
+
+@keyframes btnsheen {
+  0% {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+@keyframes pulse {
+  70% {
+    box-shadow: 0 0 0 10px rgba(235, 207, 143, 0);
+  }
+  to {
+    box-shadow: 0 0 0 0 rgba(235, 207, 143, 0);
+  }
+}
+
+@keyframes drip {
+  0% {
+    transform: scaleY(0);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 0;
+  }
+}
+
+@keyframes drift {
+  0% {
+    transform: scale(1.02);
+  }
+  to {
+    transform: scale(1.12) translateY(-2%);
+  }
+}
+
+/* Legacy alias utility */
+.atelier-shimmer-text {
+  background: var(--gradient-gold-shimmer);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 7s linear infinite;
+}
+
+/* Reduced Motion Accessibility Guard (mirrors css/style.css) */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 10ms;
+    --duration-base: 10ms;
+    --duration-editorial: 10ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+
+  .atelier-shimmer-text,
+  .shimmer,
+  .shimmer .ch,
+  .finale__lit,
+  .step__media img,
+  .hero__scroll span,
+  .autoplay__dot,
+  .scard__now {
+    animation: none !important;
+  }
+
+  .order__panel,
+  .order__card {
+    transition-duration: 0.01s !important;
+  }
+}

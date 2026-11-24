@@ -1,0 +1,286 @@
+/* ============================================================================
+ * @atelier/ui-tokens/editorial.css — Editorial Quiet Luxury Primitives
+ * Faithfully ported from reference css/style.css for apps/storefront
+ * ============================================================================ */
+
+@keyframes shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -130% 0;
+  }
+}
+
+@keyframes btnsheen {
+  0% {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+@keyframes pulse {
+  70% {
+    box-shadow: 0 0 0 10px rgba(235, 207, 143, 0);
+  }
+  to {
+    box-shadow: 0 0 0 0 rgba(235, 207, 143, 0);
+  }
+}
+
+@keyframes drip {
+  0% {
+    transform: scaleY(0);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 0;
+  }
+}
+
+@keyframes drift {
+  0% {
+    transform: scale(1.02);
+  }
+  to {
+    transform: scale(1.12) translateY(-2%);
+  }
+}
+
+/* Typography primitives */
+.eyebrow {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+  font-weight: 500;
+}
+
+.hero .eyebrow,
+.rack .eyebrow,
+.atelier .eyebrow,
+.finale .eyebrow,
+.order__card .eyebrow {
+  color: var(--gold-hi);
+  font-weight: 400;
+}
+
+.h2 {
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: clamp(40px, 6vw, 88px);
+  line-height: 0.98;
+  letter-spacing: -0.01em;
+  margin-top: 14px;
+}
+
+.h2 em {
+  color: var(--gold);
+  font-weight: 300;
+}
+
+.ch {
+  display: inline-block;
+}
+
+.word {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* Metallic Gold Shimmer & Split Grapheme Offsets */
+.shimmer {
+  background: linear-gradient(
+    100deg,
+    #9c7535,
+    #e9cf95 22%,
+    #fff3d6 30%,
+    #d9b46e 40%,
+    #9c7535 58%,
+    #e9cf95 78%,
+    #9c7535
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 7s linear infinite;
+}
+
+.shimmer:has(.ch) {
+  background: none;
+  animation: none;
+  color: inherit;
+}
+
+.shimmer .ch {
+  background: linear-gradient(
+    100deg,
+    #9c7535,
+    #e9cf95 22%,
+    #fff3d6 30%,
+    #d9b46e 40%,
+    #9c7535 58%,
+    #e9cf95 78%,
+    #9c7535
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 7s linear infinite;
+  padding: 0 0.02em 0.06em;
+}
+
+.shimmer .ch:nth-child(2n),
+.shimmer .ch:nth-child(3n + 2) {
+  animation-delay: -0.35s;
+}
+
+.shimmer .ch:nth-child(3n),
+.shimmer .word:nth-child(2) .ch {
+  animation-delay: -0.9s;
+}
+
+/* Editorial Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 15px 28px;
+  border-radius: 999px;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 400;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition: color 0.4s var(--ease);
+}
+
+.btn--gold {
+  background: linear-gradient(120deg, #9c7535, #d9b46e 45%, #f3dfae 55%, #b08a4a);
+  background-size: 220% 100%;
+  color: #1c1410;
+  box-shadow: 0 10px 40px -12px rgba(176, 138, 74, 0.7);
+}
+
+.btn--gold:hover {
+  animation: btnsheen 1.2s var(--ease);
+}
+
+.btn--line {
+  border: 1px solid currentColor;
+  color: var(--gold-deep);
+}
+
+.btn--line::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--gold);
+  transform: translateY(101%);
+  transition: transform 0.5s var(--ease);
+  z-index: -1;
+}
+
+.btn--line:hover {
+  color: var(--ivory);
+}
+
+.btn--line:hover::before {
+  transform: none;
+}
+
+/* Signature Motion Elements */
+.hero__scroll span {
+  animation: drip 2.2s var(--ease) infinite;
+  transform-origin: top;
+}
+
+.autoplay__dot,
+.scard__now {
+  animation: pulse 2s infinite;
+}
+
+.step:not(:nth-child(4)) .step__media img {
+  animation: drift 16s ease-in-out infinite alternate;
+  transform-origin: 50% 60%;
+}
+
+/* Cinematic Letterbox during Lookbook Auto Tour */
+.letterbox i {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 9vh;
+  background: #000;
+  z-index: 95;
+  transform: scaleY(0);
+  transition: transform 0.9s var(--ease);
+  pointer-events: none;
+}
+
+.letterbox i:first-child {
+  top: 0;
+  transform-origin: top;
+}
+
+.letterbox i:last-child {
+  bottom: 0;
+  transform-origin: bottom;
+}
+
+body.is-auto .letterbox i {
+  transform: scaleY(1);
+}
+
+body.is-auto .autoplay,
+body.is-auto .cursor,
+body.is-loading .autoplay {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Camera GPU Guard CSS Freeze */
+body[data-camera-active="true"] .shimmer,
+body[data-camera-active="true"] .shimmer .ch,
+body[data-camera-active="true"] .finale__lit,
+body[data-camera-active="true"] .step__media img,
+body[data-camera-active="true"] .hero__scroll span,
+body[data-camera-active="true"] .autoplay__dot,
+body[data-camera-active="true"] .scard__now {
+  animation-play-state: paused !important;
+}
+
+/* Reduced Motion Accessibility Guard */
+@media (prefers-reduced-motion: reduce) {
+  .shimmer,
+  .shimmer .ch,
+  .finale__lit,
+  .step__media img,
+  .hero__scroll span,
+  .autoplay__dot,
+  .scard__now {
+    animation: none !important;
+  }
+
+  .btn--gold:hover {
+    animation: none !important;
+  }
+
+  .btn--line::before,
+  .letterbox i,
+  .order__panel,
+  .order__card {
+    transition-duration: 0.01s !important;
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@atelier/ai-harness",
+  "version": "3.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "eval": "tsx evals/run-eval.ts"
+  },
+  "dependencies": {
+    "@atelier/contracts": "workspace:*",
+    "@atelier/db-client": "workspace:*",
+    "@atelier/observability": "workspace:*",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@atelier/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "@atelier/bff",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Zero-Trust API Gateway, 3-Branch Fashion BFF and Socket.io Realtime Hub for Fashion Atelier AI Platform",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "@atelier/ai-harness": "workspace:*",
+    "@atelier/contracts": "workspace:*",
+    "@atelier/db-client": "workspace:*",
+    "@atelier/observability": "workspace:*",
+    "@nestjs/common": "^11.0.12",
+    "@nestjs/core": "^11.0.12",
+    "@nestjs/platform-express": "^11.0.12",
+    "@nestjs/platform-socket.io": "^11.0.12",
+    "@nestjs/websockets": "^11.0.12",
+    "cookie-parser": "^1.4.7",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@atelier/typescript-config": "workspace:*",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.2"
+  }
+}

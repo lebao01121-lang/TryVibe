@@ -1,0 +1,1343 @@
+/* ============================================================================
+ * Seasonal Flagship Vitrine — 12-Column Pinned 6-Chapter AI Lookbook
+ * Quiet Luxury Ivory (#FBF7EF) · Espresso (#1C1410) · Champagne Gold (#B08A4A)
+ * ============================================================================ */
+
+.section {
+  position: relative;
+  width: 100%;
+  min-height: 100svh;
+  background-color: var(--ivory, #FBF7EF);
+  color: var(--cocoa, #1C1410);
+  overflow-x: clip;
+  border-top: 1px solid rgba(28, 20, 16, 0.08);
+}
+
+.stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100svh;
+  padding: 74px clamp(14px, 3vw, 44px) 22px;
+  max-width: 1560px;
+  margin: 0 auto;
+}
+
+@media (min-width: 1024px) {
+  .stage {
+    height: 100svh;
+    overflow: hidden;
+    padding: 74px clamp(24px, 3.2vw, 48px) 0;
+  }
+}
+
+/* ============================================================================
+ * Signal 1: Top 6-Season Interactive Timeline Bar
+ * ============================================================================ */
+
+.timelineBar {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  border-top: 1px solid rgba(28, 20, 16, 0.12);
+  border-bottom: 1px solid rgba(28, 20, 16, 0.12);
+  background: rgba(251, 247, 239, 0.92);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.timelineBar::-webkit-scrollbar {
+  display: none;
+}
+
+.timelineTab {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 172px;
+  scroll-snap-align: start;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(28, 20, 16, 0.62);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.35s ease,
+    color 0.35s ease;
+}
+
+.timelineTab::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 1px;
+  height: 22px;
+  transform: translateY(-50%);
+  background: rgba(28, 20, 16, 0.14);
+}
+
+.timelineTab:last-child::after {
+  display: none;
+}
+
+.timelineTab:hover {
+  color: #1C1410;
+  background: rgba(235, 217, 180, 0.22);
+}
+
+.timelineTabActive {
+  background: #1C1410;
+  color: #FBF7EF;
+}
+
+.timelineTabActive:hover {
+  background: #1C1410;
+  color: #FBF7EF;
+}
+
+.timelineTabActive::after {
+  display: none;
+}
+
+.timelineNum {
+  font-family: var(--serif, Georgia, serif);
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: rgba(138, 103, 44, 0.78);
+  flex-shrink: 0;
+}
+
+.timelineTabActive .timelineNum {
+  color: #EBCF8F;
+}
+
+.timelineMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.timelineMonths {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.78;
+  white-space: nowrap;
+}
+
+.timelineTabActive .timelineMonths {
+  color: #EBCF8F;
+  opacity: 0.92;
+}
+
+.timelineTitle {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timelineCurrentTag {
+  font-size: 9px;
+  font-weight: 400;
+  color: #EBCF8F;
+  margin-left: 4px;
+}
+
+.timelineProgressTrack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2.5px;
+  background: rgba(235, 207, 143, 0.18);
+  overflow: hidden;
+}
+
+.timelineProgressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #B08A4A, #EBCF8F);
+  transform-origin: left center;
+  transition: transform 0.25s ease-out;
+}
+
+@media (min-width: 1024px) {
+  .timelineBar {
+    display: grid;
+    grid-template-columns: 1.5fr repeat(5, minmax(0, 1fr));
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
+
+  .timelineTab {
+    min-width: 0;
+    padding: 9px 14px 11px;
+  }
+}
+
+/* ============================================================================
+ * Main 12-Column Commerce Lookbook Grid
+ * ============================================================================ */
+
+.mainArea {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 16px;
+}
+
+.grid12 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .mainArea {
+    padding-top: 14px;
+    padding-left: 26px; /* Clearance for Left Vertical Progress Rail */
+  }
+
+  .grid12 {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: clamp(16px, 1.8vw, 28px);
+    align-items: stretch;
+  }
+}
+
+/* ============================================================================
+ * Signal 2: Left Vertical Progress Rail (01..06)
+ * ============================================================================ */
+
+.verticalRail {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .verticalRail {
+    position: absolute;
+    left: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 24;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.railDotBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: rgba(28, 20, 16, 0.36);
+  transition: color 0.25s ease, transform 0.25s ease;
+}
+
+.railDotBtn:hover {
+  color: #1C1410;
+}
+
+.railDotBtnActive {
+  color: #8A672C;
+}
+
+.railPip {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  transition: transform 0.25s ease, background-color 0.25s ease;
+}
+
+.railDotBtnActive .railPip {
+  transform: scale(1.45);
+  background: #B08A4A;
+  box-shadow: 0 0 0 3px rgba(176, 138, 74, 0.22);
+}
+
+.railNum {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.railLine {
+  width: 1px;
+  height: 12px;
+  background: rgba(28, 20, 16, 0.14);
+}
+
+/* ============================================================================
+ * Left Column (3/12): Eyebrow, Serif Display, DynamicMacroSwatchCard & Prompts
+ * ============================================================================ */
+
+.leftCol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .leftCol {
+    grid-column: span 3 / span 3;
+    justify-content: space-between;
+    padding-bottom: 58px; /* Clean clearance above fixed .autoplay LOOKBOOK TOUR pill */
+  }
+}
+
+.leftTopBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eyebrowRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.eyebrowText {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #6B5B4C;
+}
+
+.currentPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #1C1410;
+  color: #EBCF8F;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.displayTitle {
+  margin: 2px 0 0;
+  font-family: var(--serif, Georgia, serif);
+  font-weight: 400;
+  font-size: clamp(34px, 3.2vw, 52px);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  color: #1C1410;
+}
+
+.displayTitle em {
+  font-style: italic;
+  font-weight: 300;
+  color: #2B2019;
+}
+
+.seasonMaterialLine {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #2B2019;
+}
+
+.seasonMaterialLine strong {
+  font-weight: 500;
+}
+
+/* DynamicMacroSwatchCard (4:3) */
+.macroCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.macroFrame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #EFE6D5;
+  border: 1px solid rgba(176, 138, 74, 0.28);
+  box-shadow: 0 14px 32px -18px rgba(28, 20, 16, 0.32);
+}
+
+.macroImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.42s ease, transform 0.6s ease;
+}
+
+.macroImgPrev {
+  opacity: 0;
+  z-index: 1;
+}
+
+.macroImgActive {
+  opacity: 1;
+  z-index: 2;
+}
+
+.macroColorBadge {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(28, 20, 16, 0.78);
+  backdrop-filter: blur(8px);
+  color: #FBF7EF;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.macroColorDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(251, 247, 239, 0.65);
+}
+
+.macroSpecText {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #6B5B4C;
+}
+
+.leftFooter {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.collectionLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #1C1410;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(28, 20, 16, 0.26);
+  padding-bottom: 3px;
+  width: fit-content;
+  transition: color 0.25s ease, border-color 0.25s ease;
+}
+
+.collectionLink:hover {
+  color: #8A672C;
+  border-color: #8A672C;
+}
+
+.scrollPromptRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.scrollPromptBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: #6B5B4C;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-align: right;
+  transition: color 0.25s ease;
+}
+
+.scrollPromptBtn:hover {
+  color: #1C1410;
+}
+
+/* ============================================================================
+ * Center Column (5/12): InteractiveAiLookbookStage (4:5 Canvas)
+ * ============================================================================ */
+
+.centerCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  min-height: 0;
+}
+
+@media (min-width: 1024px) {
+  .centerCol {
+    grid-column: span 5 / span 5;
+    height: 100%;
+    padding-bottom: 8px;
+  }
+}
+
+.aiStageFrame {
+  position: relative;
+  width: 100%;
+  max-width: 540px;
+  aspect-ratio: 4 / 5;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #EFE6D5;
+  border: 1px solid rgba(28, 20, 16, 0.1);
+  box-shadow: 0 24px 56px -30px rgba(28, 20, 16, 0.34);
+}
+
+@media (min-width: 1024px) {
+  .aiStageFrame {
+    height: min(100%, calc(100svh - 178px));
+    width: auto;
+    max-width: 100%;
+  }
+}
+
+.aiStageCurtain {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  will-change: clip-path;
+}
+
+.aiFallbackImg,
+.aiCanvas,
+.aiServerOverlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.aiFallbackImg,
+.aiServerOverlay {
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.aiCanvas {
+  z-index: 2;
+}
+
+.aiServerOverlay {
+  z-index: 3;
+  animation: serverFadeIn 0.38s ease forwards;
+}
+
+@keyframes serverFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.aiStageBottomGradient {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 92px;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(28, 20, 16, 0) 0%, rgba(28, 20, 16, 0.36) 100%);
+}
+
+/* AiOpticalScanBeam strictly bounded over garment maskBbox */
+.scanBeamRegion {
+  position: absolute;
+  z-index: 8;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.scanBeamBar {
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  top: 0;
+  height: 26%;
+  background: linear-gradient(
+    180deg,
+    rgba(235, 207, 143, 0) 0%,
+    rgba(235, 207, 143, 0.42) 38%,
+    rgba(255, 250, 234, 0.92) 52%,
+    rgba(176, 138, 74, 0.48) 70%,
+    rgba(176, 138, 74, 0) 100%
+  );
+  mix-blend-mode: screen;
+  filter: blur(1px);
+  animation: aiScanSweep 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.scanBeamShimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 20%,
+    rgba(235, 207, 143, 0.28) 50%,
+    transparent 80%
+  );
+  mix-blend-mode: screen;
+  animation: aiSilkShimmer 0.48s ease-out forwards;
+}
+
+@keyframes aiScanSweep {
+  0% {
+    transform: translateY(-110%);
+    opacity: 0.95;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(430%);
+    opacity: 0;
+  }
+}
+
+@keyframes aiSilkShimmer {
+  0% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* WearableHotspotPin */
+.hotspotPin {
+  position: absolute;
+  z-index: 12;
+  transform: translate(-12px, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.hotspotPinReverse {
+  flex-direction: row-reverse;
+  transform: translate(calc(-100% + 12px), -50%);
+}
+
+.hotspotDot {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(251, 247, 239, 0.92);
+  border: 1.5px solid #B08A4A;
+  color: #1C1410;
+  box-shadow:
+    0 0 0 3px rgba(251, 247, 239, 0.36),
+    0 6px 14px rgba(28, 20, 16, 0.28);
+  transition: transform 0.25s ease, background-color 0.25s ease, color 0.25s ease;
+  flex-shrink: 0;
+}
+
+.hotspotPlus {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.hotspotPill {
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(251, 247, 239, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(176, 138, 74, 0.34);
+  color: #1C1410;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px -10px rgba(28, 20, 16, 0.36);
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.25s ease;
+}
+
+.hotspotPin:hover .hotspotDot,
+.hotspotPinHovered .hotspotDot,
+.hotspotPinActive .hotspotDot {
+  transform: scale(1.12);
+  background: #1C1410;
+  color: #EBCF8F;
+  border-color: #EBCF8F;
+}
+
+.hotspotPin:hover .hotspotPill,
+.hotspotPinHovered .hotspotPill,
+.hotspotPinActive .hotspotPill {
+  background: rgba(251, 247, 239, 0.98);
+  border-color: #B08A4A;
+}
+
+/* AiContextSwatchPopover */
+.swatchPopover {
+  position: absolute;
+  z-index: 22;
+  width: min(226px, calc(100% - 20px));
+  padding: 12px 13px 11px;
+  border-radius: 13px;
+  background: rgba(251, 247, 239, 0.95);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(176, 138, 74, 0.42);
+  box-shadow: 0 20px 44px -16px rgba(28, 20, 16, 0.42);
+  color: #1C1410;
+  animation: popoverRise 0.22s ease-out;
+}
+
+@keyframes popoverRise {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.swatchPopoverHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.swatchPopoverTitles {
+  min-width: 0;
+}
+
+.swatchPopoverName {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.28;
+  color: #1C1410;
+}
+
+.swatchPopoverSub {
+  margin: 2px 0 0;
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: #7A6A5B;
+}
+
+.swatchPopoverClose {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(28, 20, 16, 0.14);
+  background: transparent;
+  color: #6B5B4C;
+  font-size: 14px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.swatchPopoverClose:hover {
+  background: rgba(28, 20, 16, 0.08);
+  color: #1C1410;
+}
+
+.swatchPopoverGrid {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 11px;
+}
+
+.popoverSwatchBtn {
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(28, 20, 16, 0.18);
+  background: #FBF7EF;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.popoverSwatchBtn:hover {
+  transform: scale(1.08);
+  border-color: #B08A4A;
+}
+
+.popoverSwatchBtnActive {
+  border-color: #B08A4A;
+  box-shadow: 0 0 0 2px rgba(176, 138, 74, 0.35);
+}
+
+.popoverSwatchCircle {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 1px solid rgba(28, 20, 16, 0.12);
+}
+
+.swatchPopoverColorLabel {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #2B2019;
+}
+
+/* Bottom-right Try-On Set Pill */
+.tryOnSetPill {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 14;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(235, 207, 143, 0.5);
+  background: rgba(28, 20, 16, 0.9);
+  backdrop-filter: blur(10px);
+  color: #FBF7EF;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  box-shadow: 0 12px 28px -10px rgba(28, 20, 16, 0.55);
+  transition: transform 0.25s ease, background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.tryOnSetPill:hover {
+  transform: translateY(-1px);
+  background: #1C1410;
+  border-color: #EBCF8F;
+}
+
+.tryOnSparkle {
+  color: #EBCF8F;
+  font-size: 13px;
+}
+
+/* ============================================================================
+ * Right Column (4/12): Synchronized Commerce Panel (2 Standing + 1 Horizontal)
+ * ============================================================================ */
+
+.rightCol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .rightCol {
+    grid-column: span 4 / span 4;
+    height: 100%;
+    padding-bottom: 10px;
+  }
+}
+
+.rightHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rightEyebrow {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #2B2019;
+}
+
+/* Mobile horizontal swipe strip; Desktop 2-col standing + 1 horizontal accessory row */
+.cardsWrap {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 8px;
+  scrollbar-width: none;
+}
+
+.cardsWrap::-webkit-scrollbar {
+  display: none;
+}
+
+.standingRow {
+  display: contents;
+}
+
+@media (min-width: 1024px) {
+  .cardsWrap {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: visible;
+    scroll-snap-type: none;
+    padding-bottom: 0;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .standingRow {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+
+.productCard {
+  flex: 0 0 74%;
+  max-width: 280px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  transition: transform 0.25s ease;
+}
+
+@media (min-width: 1024px) {
+  .productCard {
+    flex: none;
+    max-width: none;
+  }
+
+  .productThumbBox {
+    max-height: clamp(190px, 31svh, 285px);
+  }
+
+  .macroFrame {
+    max-height: clamp(148px, 24svh, 224px);
+  }
+}
+
+.productCardHighlighted .productThumbBox {
+  border-color: #B08A4A;
+  box-shadow: 0 12px 28px -18px rgba(176, 138, 74, 0.55);
+}
+
+.productThumbBox {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #EFE6D5;
+  border: 1px solid rgba(28, 20, 16, 0.08);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.productThumbImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.5s ease;
+}
+
+.productCard:hover .productThumbImg {
+  transform: scale(1.03);
+}
+
+.cardTryOnPill {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(235, 207, 143, 0.4);
+  background: rgba(28, 20, 16, 0.88);
+  color: #FBF7EF;
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.cardTryOnPill:hover {
+  background: #1C1410;
+  transform: translateY(-1px);
+}
+
+.productTitle {
+  margin: 0;
+  font-family: var(--serif, Georgia, serif);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.18;
+  color: #1C1410;
+  text-decoration: none;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.productTitle:hover {
+  color: #8A672C;
+}
+
+.productMetaPrice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.3;
+  color: #5C4D40;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.productActionsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.cardSwatchList {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.cardSwatchDot {
+  width: 16px;
+  height: 16px;
+  padding: 1.5px;
+  border-radius: 50%;
+  border: 1px solid rgba(28, 20, 16, 0.22);
+  background: #FBF7EF;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.cardSwatchDot:hover {
+  transform: scale(1.14);
+  border-color: #B08A4A;
+}
+
+.cardSwatchDotActive {
+  border-color: #1C1410;
+  box-shadow: 0 0 0 1.5px #B08A4A;
+}
+
+.cardSwatchFill {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.quickBuyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #1C1410;
+  background: #1C1410;
+  color: #FBF7EF;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.quickBuyBtn:hover {
+  background: #2B2019;
+}
+
+/* Inline XS..XL Size Selector Pop-in */
+.sizePickerBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: #F4EBDA;
+  border: 1px solid rgba(176, 138, 74, 0.35);
+}
+
+.sizePickerLabel {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6B5B4C;
+  margin-right: 2px;
+}
+
+.sizePillBtn {
+  min-width: 28px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(28, 20, 16, 0.22);
+  background: #FBF7EF;
+  color: #1C1410;
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.sizePillBtn:hover:not(:disabled) {
+  background: #1C1410;
+  color: #FBF7EF;
+  border-color: #1C1410;
+}
+
+.sizePillBtn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.sizePickerCancel {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: #7A6A5B;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 3px;
+}
+
+/* Bottom Horizontal Accessory / Highlight Card */
+.accessoryCard {
+  flex: 0 0 82%;
+  max-width: 320px;
+  scroll-snap-align: start;
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: #EFE6D5;
+  border: 1px solid rgba(28, 20, 16, 0.08);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+@media (min-width: 1024px) {
+  .accessoryCard {
+    flex: none;
+    max-width: none;
+    grid-template-columns: 116px minmax(0, 1fr);
+    padding: 10px 14px;
+  }
+}
+
+.accessoryCardHighlighted {
+  border-color: #B08A4A;
+  box-shadow: 0 12px 26px -18px rgba(176, 138, 74, 0.55);
+}
+
+.accessoryThumbBox {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #F6EFE2;
+}
+
+.accessoryThumbImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.accessoryInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.accessoryTag {
+  margin: 0;
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #8A672C;
+}
+
+.accessoryBtnRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.accessoryTryOnBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(28, 20, 16, 0.28);
+  background: rgba(251, 247, 239, 0.85);
+  color: #1C1410;
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.accessoryTryOnBtn:hover {
+  background: #FBF7EF;
+  border-color: #B08A4A;
+}
+
+.cartFeedback {
+  margin: 0;
+  font-size: 11px;
+  color: #8A672C;
+}
+
+/* ============================================================================
+ * Signal 3: Bottom NextSeasonPeekStrip (34px)
+ * ============================================================================ */
+
+.nextPeekStrip {
+  position: relative;
+  z-index: 16;
+  height: 34px;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-top: 1px solid rgba(28, 20, 16, 0.1);
+  background: linear-gradient(180deg, rgba(251, 247, 239, 0.72), #F4EBDA);
+  color: #5C4D40;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  width: 100%;
+  transition: color 0.25s ease, background-color 0.25s ease;
+  flex-shrink: 0;
+}
+
+.nextPeekStrip:hover {
+  color: #1C1410;
+  background: #EFE6D5;
+}
+
+.nextPeekArrow {
+  color: #8A672C;
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scanBeamBar,
+  .scanBeamShimmer,
+  .swatchPopover,
+  .aiServerOverlay {
+    animation: none !important;
+  }
+
+  .macroImg,
+  .productThumbImg,
+  .timelineProgressFill {
+    transition: none !important;
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@atelier/mcp-copilot",
+  "version": "3.1.0",
+  "private": true,
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "@atelier/ai-harness": "workspace:*",
+    "@atelier/contracts": "workspace:*",
+    "@atelier/observability": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@atelier/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  }
+}

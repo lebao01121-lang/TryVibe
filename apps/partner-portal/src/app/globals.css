@@ -1,0 +1,36 @@
+@import "tailwindcss";
+@import "@atelier/ui-tokens/tokens.css";
+@import "@atelier/ui-tokens/theme.css";
+
+:root {
+  --ptr-cocoa: var(--cocoa, #1C1410);
+  --ptr-ivory: var(--ivory, #FBF7EF);
+  --ptr-cream: var(--cream, #F4EBDA);
+  --ptr-gold: var(--gold, #B08A4A);
+  --ptr-gold-hi: var(--gold-hi, #EBCF8F);
+  --ptr-gold-deep: var(--gold-deep, #8A672C);
+  --ptr-ink: var(--ink, #2B2019);
+  --ptr-muted: var(--muted, #7A6A5B);
+}
+
+body {
+  background-color: var(--ptr-ivory);
+  color: var(--ptr-ink);
+  font-family: var(--sans, var(--font-be-vietnam-pro), system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-editorial {
+  font-family: var(--serif, var(--font-cormorant), Georgia, "Times New Roman", serif);
+}
+
+.font-script {
+  font-family: var(--script, var(--font-dancing-script), cursive, serif);
+}
+
+.partner-eyebrow {
+  font-size: 0.6875rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  font-weight: 500;
+}

@@ -1,0 +1,33 @@
+export {
+  DEFAULT_ATELIER_KNOWLEDGE_CORPUS,
+  DEFAULT_RRF_K,
+  HybridRagRetriever,
+  InMemoryKeywordProvider,
+  InMemorySemanticProvider,
+  reciprocalRankFusion,
+  type FusedRagHit,
+  type HybridRagOptions,
+  type HybridRagResult,
+  type KeywordSearchProvider,
+  type KnowledgeCorpusDocument,
+  type RagCitation,
+  type RagDocumentHit,
+  type RagSearchOptions,
+  type VectorSearchProvider,
+} from './hybrid-rag';
+
+export {
+  ATELIER_RAG_KNOWLEDGE_DOCS,
+  DEFAULT_RAG_DATABASE_URL,
+  DEFAULT_RAG_DB_NAME,
+  EMBEDDING_DIM,
+  PgVectorRagStore,
+  RAG_EMBEDDING_DIM,
+  computeDeterministicEmbedding64,
+  computeDeterministicEmbedding768,
+  seedRagKnowledgeBase,
+  toPgVectorLiteral,
+  type HybridRagQueryOutput,
+  type PgVectorRagStoreOptions,
+  type RagKnowledgeDocument,
+} from './pgvector-rag-store';

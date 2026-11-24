@@ -1,0 +1,160 @@
+name: Fashion Atelier AI Platform CI/CD
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: atelier-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9.15.4'
+  PYTHON_VERSION: '3.12'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  # ============================================================================
+  # Stage 1: PR Quality, Security Isolation, AI Harness Evals & Python Check
+  # ============================================================================
+  pr-quality-security:
+    name: Stage 1 - Quality, Security & AI Evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install workspace dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared workspace packages for static checks
+        run: |
+          pnpm --filter @atelier/contracts build
+          pnpm --filter @atelier/observability build
+          pnpm --filter @atelier/db-client build
+          pnpm --filter @atelier/motion-kit build
+          pnpm --filter @atelier/ai-harness build
+
+      - name: Lint monorepo
+        run: pnpm lint
+
+      - name: Typecheck all 21 workspaces
+        run: pnpm typecheck
+
+      - name: Storefront UI, Motion & 3-Portal Isolation Gate
+        run: pnpm verify:ui
+
+      - name: 8-Layer AI Harness Quantitative Eval Suite (100% pass gate)
+        run: pnpm eval:ai
+
+      - name: Python 3.12 AI Virtual Try-On compile check
+        run: python -m compileall -q services/ai-tryon/app
+
+  # ============================================================================
+  # Stage 2: Full Monorepo Build & Contract/Schema Integrity Check
+  # ============================================================================
+  integration-build:
+    name: Stage 2 - Full Monorepo Build & Contract Gate
+    runs-on: ubuntu-latest
+    needs: pr-quality-security
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install workspace dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify @atelier/contracts is browser-safe (zero node:* imports)
+        run: |
+          if grep -rn "node:" packages/contracts/src; then
+            echo "ERROR: Forbidden node:* import found in packages/contracts/src"
+            exit 1
+          fi
+          echo "PASS: packages/contracts/src is 100% browser-safe"
+
+      - name: Verify SQL isolation schema & env contract exist
+        run: |
+          test -f infra/sql/init-isolated-dbs.sql
+          test -f .env.example
+          echo "PASS: Isolated DB schema and .env.example verified"
+
+      - name: Full monorepo build (all 21 workspaces incl. 3 Next.js portals)
+        run: pnpm build
+
+  # ============================================================================
+  # Stage 3: Production Canary Release Gate (Manual Human Approval Required)
+  # ============================================================================
+  canary-release-gate:
+    name: Stage 3 - Canary Release Gate (10% -> 50% -> 100%)
+    runs-on: ubuntu-latest
+    needs: integration-build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    environment:
+      name: production-canary
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Progressive Canary Rollout & Rollback Checklist
+        run: |
+          cat << 'EOF'
+          ===================================================================
+          FASHION ATELIER AI PLATFORM v3.0 — CANARY RELEASE GATE APPROVED
+          ===================================================================
+          Phase 1 — Canary 10% (15 min soak):
+            - Verify /health & /ready across all 11 services (:4000..:4010)
+            - Verify BFF p95 latency < 400ms and 5xx rate < 0.1%
+            - Verify RabbitMQ *.dlq message count === 0
+            - Verify Redis SHA-256 Try-On cache & 15-minute MinIO Auto-Purge
+
+          Phase 2 — Progressive 50% (30 min soak):
+            - Verify 0 inventory oversells & 0 payment webhook double-charges
+            - Verify Admin MCP Copilot NHAP_AI guardrail & Prompt Injection 100% block
+
+          Phase 3 — Full 100% Promotion:
+            - Promote storefront (:3000), admin-portal (:3001), partner-portal (:3002)
+            - Tag release commit & archive AI Ops telemetry snapshot
+
+          Emergency Rollback Trigger (Auto/Manual < 2 min):
+            - Trigger immediate NGINX upstream shift back to blue slot if:
+              * 5xx error rate > 1% for 3 consecutive minutes
+              * Any *.dlq depth > 25 messages or DB connection saturation > 85%
+              * Any RBAC/IDOR or storefront isolation anomaly detected
+          ===================================================================
+          EOF

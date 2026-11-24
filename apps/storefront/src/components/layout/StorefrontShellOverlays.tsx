@@ -1,0 +1,172 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import {
+  TryOnMode,
+  type CartDto,
+  type PackagingOptionDto,
+  type ProductSpuDto,
+  type StorefrontBootstrapDto,
+} from '@atelier/contracts';
+import { QuickBagDrawer } from '@/features/drawer-bag/QuickBagDrawer';
+import { VirtualTryOnModal } from '@/features/virtual-tryon/VirtualTryOnModal';
+import { apiFetch } from '@/lib/api-client';
+import {
+  FALLBACK_PRODUCTS,
+  PACKAGING_TIERS,
+  extractProductArray,
+} from '@/lib/catalog-data';
+import {
+  emitCartUpdated,
+  onOpenQuickBag,
+  onOpenVirtualTryOn,
+  refreshCartCount,
+  type OpenTryOnOptions,
+} from '@/lib/storefront-actions';
+
+const FALLBACK_PACKAGING_OPTIONS: PackagingOptionDto[] = PACKAGING_TIERS.map(
+  (pkg, index) => ({
+    id: pkg.id,
+    code: pkg.id,
+    name: pkg.name,
+    description: pkg.description,
+    swatchHex: pkg.swatchHex,
+    priceVnd: pkg.priceVnd,
+    backAssetUrl: null,
+    frontAssetUrl: null,
+    isDefault: index === 0,
+    sortOrder: index + 1,
+  }),
+);
+
+export function StorefrontShellOverlays() {
+  const [products, setProducts] = useState<ProductSpuDto[]>(FALLBACK_PRODUCTS);
+  const [packagingOptions, setPackagingOptions] = useState<PackagingOptionDto[]>(
+    FALLBACK_PACKAGING_OPTIONS,
+  );
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+
+  // Global QuickBagDrawer state
+  const [bagOpen, setBagOpen] = useState(false);
+  const [quickProduct, setQuickProduct] = useState<ProductSpuDto | null>(null);
+
+  // Global VirtualTryOnModal state
+  const [tryOnOpen, setTryOnOpen] = useState(false);
+  const [tryOnOpts, setTryOnOpts] = useState<OpenTryOnOptions>({
+    mode: TryOnMode.SINGLE,
+  });
+
+  // Subscribe to global custom events from SiteHeader, PDP, OutfitStudio, etc.
+  useEffect(() => {
+    const offBag = onOpenQuickBag((detail) => {
+      setQuickProduct(detail.quickProduct ?? null);
+      setTryOnOpen(false);
+      setBagOpen(true);
+    });
+
+    const offTryOn = onOpenVirtualTryOn((opts) => {
+      setTryOnOpts({
+        mode: opts.mode ?? TryOnMode.SINGLE,
+        upper: opts.upper ?? null,
+        lower: opts.lower ?? null,
+        onePiece: opts.onePiece ?? null,
+        outerwear: opts.outerwear ?? null,
+      });
+      setBagOpen(false);
+      setTryOnOpen(true);
+    });
+
+    return () => {
+      offBag();
+      offTryOn();
+    };
+  }, []);
+
+  // Silently hydrate live BFF products & packaging options without ever blocking FALLBACK_PRODUCTS
+  useEffect(() => {
+    if (catalogLoaded || (!bagOpen && !tryOnOpen)) return;
+
+    let cancelled = false;
+    void Promise.allSettled([
+      apiFetch<StorefrontBootstrapDto>('/bff/v1/storefront/bootstrap', {
+        skipAuthRefresh: true,
+        timeoutMs: 3500,
+      }),
+      apiFetch<unknown>('/bff/v1/storefront/products?limit=24', {
+        skipAuthRefresh: true,
+        timeoutMs: 3500,
+      }),
+    ])
+      .then(([bootSettled, listSettled]) => {
+        if (cancelled) return;
+        const bootRes = bootSettled.status === 'fulfilled' ? bootSettled.value : null;
+        const listRes = listSettled.status === 'fulfilled' ? listSettled.value : null;
+
+        if (bootRes?.ok && bootRes.data?.packagingOptions?.length) {
+          setPackagingOptions(bootRes.data.packagingOptions);
+        }
+        const listProducts = listRes?.ok ? extractProductArray(listRes.data) : [];
+        if (listProducts.length > 0) {
+          setProducts(listProducts);
+        } else if (bootRes?.ok && bootRes.data?.featuredProducts?.length) {
+          setProducts(bootRes.data.featuredProducts);
+        }
+        setCatalogLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCatalogLoaded(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bagOpen, tryOnOpen, catalogLoaded]);
+
+  const handleCartChange = (cart: CartDto | null) => {
+    if (cart) {
+      emitCartUpdated(cart);
+    } else {
+      refreshCartCount();
+    }
+  };
+
+  const handleAddedFromTryOn = (cart?: CartDto | null) => {
+    if (cart) {
+      emitCartUpdated(cart);
+    } else {
+      refreshCartCount();
+    }
+    setTryOnOpen(false);
+    setQuickProduct(null);
+    setBagOpen(true);
+  };
+
+  return (
+    <>
+      <QuickBagDrawer
+        open={bagOpen}
+        onClose={() => {
+          setBagOpen(false);
+          setQuickProduct(null);
+        }}
+        quickProduct={quickProduct}
+        packagingOptions={packagingOptions}
+        onCartChange={handleCartChange}
+      />
+
+      <VirtualTryOnModal
+        open={tryOnOpen}
+        onClose={() => setTryOnOpen(false)}
+        initialMode={tryOnOpts.mode ?? TryOnMode.SINGLE}
+        initialUpper={tryOnOpts.upper ?? null}
+        initialLower={tryOnOpts.lower ?? null}
+        initialOnePiece={tryOnOpts.onePiece ?? null}
+        initialOuterwear={tryOnOpts.outerwear ?? null}
+        products={products}
+        onAddedToBag={handleAddedFromTryOn}
+      />
+    </>
+  );
+}

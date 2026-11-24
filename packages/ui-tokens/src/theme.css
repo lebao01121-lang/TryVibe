@@ -1,0 +1,37 @@
+/* ============================================================================
+ * @atelier/ui-tokens — Tailwind CSS v4 @theme Definition
+ * Import in app globals.css after `@import "tailwindcss";`
+ * ============================================================================ */
+
+@theme {
+  /* Core Editorial Quiet Luxury Palette */
+  --color-ivory: #FBF7EF;
+  --color-cream: #F4EBDA;
+  --color-champagne: #EBD9B4;
+  --color-gold: #B08A4A;
+  --color-gold-hi: #EBCF8F;
+  --color-gold-deep: #8A672C;
+  --color-cocoa: #1C1410;
+  --color-cocoa-2: #2A1E17;
+  --color-ink: #2B2019;
+  --color-muted: #7A6A5B;
+
+  /* Semantic Fashion & Operational Ledger Colors */
+  --color-status-in-stock: #2F5D46;
+  --color-status-low-stock: #B87424;
+  --color-status-out-of-stock: #9A3B3B;
+  --color-status-ai-draft: #8A672C;
+
+  /* Signature Easing & Elevation */
+  --ease-atelier: cubic-bezier(0.22, 0.8, 0.22, 1);
+  --shadow-atelier-gold: 0 10px 40px -12px rgba(176, 138, 74, 0.7);
+  --shadow-atelier-card: 0 30px 80px -30px rgba(0, 0, 0, 0.6);
+  --shadow-atelier-drawer: -30px 0 80px -20px rgba(0, 0, 0, 0.45);
+}
+
+@theme inline {
+  --font-serif: var(--font-cormorant, "Cormorant Garamond"), "Cormorant Garamond", Georgia, serif;
+  --font-sans: var(--font-be-vietnam-pro, "Be Vietnam Pro"), "Be Vietnam Pro", system-ui, sans-serif;
+  --font-cursive: var(--font-dancing-script, "Dancing Script"), "Dancing Script", cursive;
+  --font-script: var(--font-dancing-script, "Dancing Script"), "Dancing Script", cursive;
+}

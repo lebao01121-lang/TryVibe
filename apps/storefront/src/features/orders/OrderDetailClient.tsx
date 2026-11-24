@@ -1,0 +1,1004 @@
+'use client';
+
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { io, type Socket } from 'socket.io-client';
+import {
+  FitFeedback,
+  OrderStatus,
+  RMA_CUSTOMER_NOTE_MAX_LEN,
+  RmaExchangeMode,
+  RmaReasonCode,
+  RmaStatus,
+  RmaType,
+  type CustomerBodyProfileDto,
+  type OrderDTO,
+  type RmaRequestDTO,
+  type VerifiedReviewDto,
+} from '@atelier/contracts';
+import { useScrollLock } from '@atelier/motion-kit';
+import { GiftCardPreview } from '@/features/drawer-bag/GiftCardPreview';
+import { apiFetch, getBffBaseUrl, getStoredSession } from '@/lib/api-client';
+import { FORMAT_VND } from '@/lib/catalog-data';
+
+export interface OrderDetailClientProps {
+  orderCode: string;
+}
+
+const TIMELINE_STEPS: Array<{ status: OrderStatus; label: string; desc: string }> = [
+  {
+    status: OrderStatus.PENDING_RESERVATION,
+    label: 'Khởi tạo',
+    desc: 'Giữ tồn kho tại xưởng',
+  },
+  {
+    status: OrderStatus.AWAITING_PAYMENT,
+    label: 'Chờ thanh toán',
+    desc: 'Đang đối soát VietQR / Cổng thanh toán',
+  },
+  {
+    status: OrderStatus.CONFIRMED,
+    label: 'Đã xác nhận',
+    desc: 'Thanh toán & giữ hàng thành công',
+  },
+  {
+    status: OrderStatus.PACKING,
+    label: 'Đang đóng gói',
+    desc: 'Là hơi, gắn thiệp & chụp ảnh hộp quà',
+  },
+  {
+    status: OrderStatus.SHIPPED,
+    label: 'Đang giao vận',
+    desc: 'Đã bàn giao cho đơn vị vận chuyển',
+  },
+  {
+    status: OrderStatus.DELIVERED,
+    label: 'Đã giao',
+    desc: 'Mở khóa Đổi size 1 chạm & Đánh giá độ vừa',
+  },
+];
+
+const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  [OrderStatus.PENDING_RESERVATION]: 'Đang giữ tồn kho',
+  [OrderStatus.FAILED_OUT_OF_STOCK]: 'Hết hàng khi giữ kho',
+  [OrderStatus.AWAITING_PAYMENT]: 'Chờ thanh toán',
+  [OrderStatus.CONFIRMED]: 'Đã xác nhận',
+  [OrderStatus.PACKING]: 'Đang đóng gói tại Atelier',
+  [OrderStatus.SHIPPED]: 'Đang giao vận',
+  [OrderStatus.DELIVERED]: 'Đã giao thành công',
+  [OrderStatus.COMPLETED]: 'Hoàn tất',
+  [OrderStatus.CANCELLED]: 'Đã hủy',
+  [OrderStatus.LATE_PAYMENT_NEEDS_REFUND]: 'Thanh toán trễ — Chờ hoàn tiền tự động',
+};
+
+const RMA_STATUS_LABELS: Record<RmaStatus, string> = {
+  [RmaStatus.RMA_REQUESTED]: 'Đã tiếp nhận yêu cầu',
+  [RmaStatus.RMA_APPROVED]: 'Đã phê duyệt đổi/trả',
+  [RmaStatus.RMA_REJECTED]: 'Từ chối yêu cầu',
+  [RmaStatus.EXCHANGE_RESERVED]: 'Đã giữ sẵn size đổi',
+  [RmaStatus.INSTANT_2WAY_DISPATCHED]: 'Đang giao đổi 2 chiều tại cửa',
+  [RmaStatus.RETURN_IN_TRANSIT]: 'Hàng hoàn đang gửi về xưởng',
+  [RmaStatus.QC_INSPECTING]: 'Xưởng đang kiểm định 3 tiêu chí QC',
+  [RmaStatus.QC_PASSED]: 'Đạt chuẩn kiểm định QC',
+  [RmaStatus.QC_FAILED]: 'Không đạt kiểm định QC',
+  [RmaStatus.EXCHANGE_SHIPPED]: 'Đã giao mẫu đổi mới',
+  [RmaStatus.REFUND_PROCESSING]: 'Đang xử lý hoàn tiền',
+  [RmaStatus.RMA_COMPLETED]: 'Hoàn tất đổi / trả',
+};
+
+const RMA_REASON_OPTIONS: Array<{ value: RmaReasonCode; label: string }> = [
+  { value: RmaReasonCode.SAI_KICH_CO_CHAT, label: 'Mặc hơi chật — Muốn đổi size lớn hơn' },
+  { value: RmaReasonCode.SAI_KICH_CO_RONG, label: 'Mặc hơi rộng — Muốn đổi size nhỏ hơn' },
+  { value: RmaReasonCode.SAI_MAU_MO_TA, label: 'Màu sắc thực tế khác kỳ vọng' },
+  { value: RmaReasonCode.LOI_SAN_XUAT, label: 'Lỗi đường may / khuy / bề mặt vải' },
+  { value: RmaReasonCode.KHAC, label: 'Lý do khác' },
+];
+
+function getTimelineIndex(status: OrderStatus): number {
+  if (status === OrderStatus.COMPLETED) return TIMELINE_STEPS.length - 1;
+  const idx = TIMELINE_STEPS.findIndex((step) => step.status === status);
+  return idx;
+}
+
+export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
+  const socketRef = useRef<Socket | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [order, setOrder] = useState<OrderDTO | null>(null);
+  const [rmaList, setRmaList] = useState<RmaRequestDTO[]>([]);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [realtimeBanner, setRealtimeBanner] = useState<string | null>(null);
+
+  // 1-Click RMA Modal state
+  const [rmaModalOpen, setRmaModalOpen] = useState(false);
+  const [rmaItemId, setRmaItemId] = useState('');
+  const [rmaType, setRmaType] = useState<RmaType>(RmaType.SIZE_EXCHANGE);
+  const [rmaExchangeMode, setRmaExchangeMode] = useState<RmaExchangeMode>(
+    RmaExchangeMode.INSTANT_2WAY,
+  );
+  const [rmaReason, setRmaReason] = useState<RmaReasonCode>(
+    RmaReasonCode.SAI_KICH_CO_CHAT,
+  );
+  const [rmaNote, setRmaNote] = useState('');
+  const [submittingRma, setSubmittingRma] = useState(false);
+  const [rmaFeedback, setRmaFeedback] = useState<string | null>(null);
+
+  // Verified Fit Review Form state (unlocked ONLY when status === DELIVERED)
+  const [reviewItemId, setReviewItemId] = useState('');
+  const [rating, setRating] = useState(5);
+  const [fitFeedback, setFitFeedback] = useState<FitFeedback>(FitFeedback.TRUE_TO_SIZE);
+  const [reviewerHeightCm, setReviewerHeightCm] = useState('163');
+  const [reviewerWeightKg, setReviewerWeightKg] = useState('53');
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
+  useScrollLock(rmaModalOpen);
+
+  const fetchOrderAndRma = useCallback(async () => {
+    const [orderRes, rmaRes] = await Promise.all([
+      apiFetch<OrderDTO>(`/bff/v1/storefront/orders/${encodeURIComponent(orderCode)}`, {
+        skipAuthRefresh: true,
+      }),
+      apiFetch<RmaRequestDTO[]>(
+        `/bff/v1/storefront/orders/${encodeURIComponent(orderCode)}/rma`,
+        { skipAuthRefresh: true },
+      ),
+    ]);
+
+    if (orderRes.ok && orderRes.data) {
+      setOrder(orderRes.data);
+      setErrorMsg(null);
+      const firstReturnable =
+        orderRes.data.items.find((i) => i.isReturnable) ?? orderRes.data.items[0];
+      if (firstReturnable) {
+        setRmaItemId((prev) => prev || firstReturnable.id);
+        setReviewItemId((prev) => prev || firstReturnable.id);
+      }
+    } else {
+      setErrorMsg(
+        orderRes.error?.message || `Không tìm thấy đơn hàng #${orderCode}.`,
+      );
+    }
+
+    if (rmaRes.ok && Array.isArray(rmaRes.data)) {
+      setRmaList(rmaRes.data);
+    }
+
+    setLoading(false);
+  }, [orderCode]);
+
+  useEffect(() => {
+    void fetchOrderAndRma();
+  }, [fetchOrderAndRma]);
+
+  // Pre-populate reviewer height/weight from CustomerBodyProfile if logged in
+  useEffect(() => {
+    const session = getStoredSession();
+    if (!session?.accessToken) return;
+    let cancelled = false;
+
+    void apiFetch<CustomerBodyProfileDto>('/bff/v1/customers/me/body-profile').then(
+      (res) => {
+        if (cancelled || !res.ok || !res.data) return;
+        setReviewerHeightCm(String(res.data.heightCm));
+        setReviewerWeightKg(String(res.data.weightKg));
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Realtime Socket.io `order:subscribe` for live status transitions (`order:paid`, `order:updated`)
+  useEffect(() => {
+    try {
+      const socket = io(`${getBffBaseUrl()}/realtime`, {
+        transports: ['websocket', 'polling'],
+        withCredentials: true,
+        reconnectionAttempts: 3,
+        timeout: 5000,
+      });
+      socketRef.current = socket;
+
+      socket.on('connect', () => {
+        socket.emit('order:subscribe', { orderId: orderCode, orderCode });
+      });
+
+      socket.on('order:paid', () => {
+        setRealtimeBanner('Đã nhận thanh toán VietQR thành công — Đơn hàng đã được xác nhận!');
+        void fetchOrderAndRma();
+      });
+
+      socket.on('order:updated', (payload: { status?: OrderStatus }) => {
+        if (payload?.status) {
+          setRealtimeBanner(
+            `Trạng thái đơn hàng vừa cập nhật: ${ORDER_STATUS_LABELS[payload.status] ?? payload.status}`,
+          );
+        }
+        void fetchOrderAndRma();
+      });
+    } catch {
+      // Realtime socket optional when offline
+    }
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+    };
+  }, [fetchOrderAndRma, orderCode]);
+
+  // Escape closes RMA modal
+  useEffect(() => {
+    if (!rmaModalOpen) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRmaModalOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [rmaModalOpen]);
+
+  const isDelivered =
+    order?.status === OrderStatus.DELIVERED || order?.status === OrderStatus.COMPLETED;
+
+  const selectedReviewItem = useMemo(
+    () => order?.items.find((i) => i.id === reviewItemId) ?? order?.items[0] ?? null,
+    [order?.items, reviewItemId],
+  );
+
+  const handleSubmitRma = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!order || !rmaItemId) return;
+
+    setSubmittingRma(true);
+    setRmaFeedback(null);
+
+    const safeNote = rmaNote.trim().slice(0, RMA_CUSTOMER_NOTE_MAX_LEN);
+    const res = await apiFetch<RmaRequestDTO>(
+      `/bff/v1/storefront/orders/${encodeURIComponent(order.orderCode)}/rma`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          orderItemId: rmaItemId,
+          qty: 1,
+          type: rmaType,
+          exchangeMode:
+            rmaType === RmaType.RETURN_REFUND
+              ? RmaExchangeMode.STANDARD_QC
+              : rmaExchangeMode,
+          reasonCode: rmaReason,
+          customerNote: safeNote,
+          evidencePhotoUrls: [],
+        }),
+      },
+    );
+
+    setSubmittingRma(false);
+    if (res.ok && res.data) {
+      setRmaModalOpen(false);
+      setRmaNote('');
+      setRmaFeedback(`Đã tạo yêu cầu đổi/trả #${res.data.rmaCode} thành công.`);
+      await fetchOrderAndRma();
+    } else {
+      setRmaFeedback(
+        res.error?.message ||
+          'Chưa thể tạo yêu cầu đổi/trả (vui lòng đăng nhập đúng tài khoản đặt hàng).',
+      );
+    }
+  };
+
+  const handleSubmitVerifiedReview = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!order || !selectedReviewItem) return;
+
+    setSubmittingReview(true);
+    setReviewSuccess(null);
+    setReviewError(null);
+
+    const res = await apiFetch<VerifiedReviewDto>('/bff/v1/storefront/reviews', {
+      method: 'POST',
+      body: JSON.stringify({
+        productId: selectedReviewItem.productId,
+        skuId: selectedReviewItem.skuId,
+        orderId: order.id,
+        orderItemId: selectedReviewItem.id,
+        rating,
+        fitFeedback,
+        reviewerHeightCm: Number(reviewerHeightCm),
+        reviewerWeightKg: Number(reviewerWeightKg),
+        sizePurchased: selectedReviewItem.sizeCode,
+        comment: reviewComment.trim(),
+      }),
+    });
+
+    setSubmittingReview(false);
+    if (res.ok) {
+      setReviewComment('');
+      setReviewSuccess(
+        `Cảm ơn bạn đã gửi Đánh giá độ vừa cho ${selectedReviewItem.productName} (Size ${selectedReviewItem.sizeCode}). Dữ liệu thực tế này giúp hệ thống tư vấn size chuẩn xác hơn!`,
+      );
+    } else {
+      setReviewError(
+        res.error?.message ||
+          'Vui lòng đăng nhập tài khoản đã mua đơn hàng này để gửi đánh giá xác thực.',
+      );
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-6xl px-6 py-16 text-center text-sm text-[#7A6A5B]">
+        Đang tải chi tiết đơn hàng #{orderCode}...
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <div className="mx-auto max-w-xl px-6 py-20 text-center">
+        <div className="rounded-[28px] border border-[#B08A4A]/35 bg-[#FBF7EF] p-10">
+          <p className="eyebrow text-[#8A672C]">Theo dõi đơn hàng</p>
+          <h1 className="mt-2 font-editorial text-4xl font-light text-[#1C1410]">
+            Không tìm thấy đơn #{orderCode}
+          </h1>
+          <p className="mt-3 text-sm text-[#7A6A5B]">
+            {errorMsg || 'Mã đơn hàng chưa tồn tại hoặc bạn cần đăng nhập đúng tài khoản.'}
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <Link href="/tai-khoan" className="btn btn--gold !py-3">
+              Về tài khoản của tôi
+            </Link>
+            <Link href="/bo-suu-tap" className="btn btn--line !py-3">
+              Khám phá Bộ sưu tập
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const activeTimelineIdx = getTimelineIndex(order.status);
+
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-10 lg:py-14">
+      {/* Header */}
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#B08A4A]/25 pb-7">
+        <div>
+          <p className="eyebrow text-[#8A672C]">Theo dõi Đơn hàng Trực tuyến · Atelier</p>
+          <h1 className="mt-1 font-editorial text-4xl font-light text-[#1C1410] sm:text-5xl">
+            Đơn hàng #{order.orderCode}
+          </h1>
+          <p className="mt-1.5 text-xs text-[#7A6A5B]">
+            Đặt lúc {new Date(order.createdAt).toLocaleString('vi-VN')} · Phương thức{' '}
+            <strong>{order.paymentMethod}</strong> · Giao vận{' '}
+            <strong>{order.shippingMethod}</strong>
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <span
+            className={`rounded-full px-4 py-1.5 text-xs font-medium tracking-[0.14em] uppercase ${
+              order.status === OrderStatus.DELIVERED || order.status === OrderStatus.COMPLETED
+                ? 'bg-emerald-900 text-emerald-100'
+                : order.status === OrderStatus.LATE_PAYMENT_NEEDS_REFUND ||
+                    order.status === OrderStatus.CANCELLED ||
+                    order.status === OrderStatus.FAILED_OUT_OF_STOCK
+                  ? 'bg-amber-900 text-amber-100'
+                  : 'bg-[#1C1410] text-[#EBCF8F]'
+            }`}
+          >
+            {ORDER_STATUS_LABELS[order.status] ?? order.status}
+          </span>
+
+          {isDelivered ? (
+            <button
+              type="button"
+              onClick={() => {
+                setRmaFeedback(null);
+                setRmaModalOpen(true);
+              }}
+              className="btn btn--gold !px-5 !py-2.5 !text-xs"
+            >
+              Đổi size / Trả hàng 1 chạm
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {realtimeBanner ? (
+        <div
+          role="status"
+          className="mt-6 rounded-2xl border border-[#B08A4A]/50 bg-[#F4EBDA] px-5 py-3 text-xs font-medium text-[#1C1410]"
+        >
+          {realtimeBanner}
+        </div>
+      ) : null}
+
+      {rmaFeedback ? (
+        <div
+          role="status"
+          className="mt-5 rounded-2xl border border-[#B08A4A]/45 bg-white px-5 py-3 text-xs text-[#1C1410]"
+        >
+          {rmaFeedback}
+        </div>
+      ) : null}
+
+      {/* Special Terminal Status Alert */}
+      {order.status === OrderStatus.LATE_PAYMENT_NEEDS_REFUND ||
+      order.status === OrderStatus.CANCELLED ||
+      order.status === OrderStatus.FAILED_OUT_OF_STOCK ? (
+        <div className="mt-6 rounded-2xl border border-amber-400/70 bg-amber-50 p-5 text-sm text-amber-950">
+          <p className="font-medium">{ORDER_STATUS_LABELS[order.status]}</p>
+          <p className="mt-1 text-xs">
+            {order.cancelReason ||
+              'Hệ thống đã ghi nhận trạng thái ngoại lệ và sẽ hỗ trợ hoàn tiền tự động nếu giao dịch phát sinh sau thời hạn giữ kho 15 phút.'}
+          </p>
+        </div>
+      ) : null}
+
+      {/* Editorial 6-Step Order Timeline */}
+      <section className="mt-8 rounded-[28px] border border-[#B08A4A]/28 bg-white/95 p-6 shadow-sm">
+        <p className="eyebrow text-[#8A672C]">Hành trình đơn hàng</p>
+        <ol className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+          {TIMELINE_STEPS.map((step, idx) => {
+            const reached = activeTimelineIdx >= idx && activeTimelineIdx >= 0;
+            const current = activeTimelineIdx === idx;
+            return (
+              <li
+                key={step.status}
+                className={`rounded-2xl border p-3.5 transition-all ${
+                  current
+                    ? 'border-[#1C1410] bg-[#1C1410] text-[#FBF7EF] shadow-md'
+                    : reached
+                      ? 'border-[#B08A4A]/55 bg-[#F4EBDA]/65 text-[#1C1410]'
+                      : 'border-[#B08A4A]/20 bg-[#FBF7EF]/50 text-[#8D7E70]'
+                }`}
+              >
+                <span className="font-mono text-[10px] tracking-[0.2em] uppercase opacity-75">
+                  0{idx + 1}
+                </span>
+                <p className="mt-1 font-editorial text-lg leading-tight font-medium">
+                  {step.label}
+                </p>
+                <p className="mt-1 text-[11px] opacity-80">{step.desc}</p>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+
+      <div className="mt-8 grid items-start gap-8 lg:grid-cols-[1.35fr_0.9fr]">
+        {/* LEFT: ITEMIZED SNAPSHOT + PACK PHOTO + LIVE RMA LIST + VERIFIED FIT REVIEW */}
+        <div className="space-y-8">
+          {/* Pack Photo Showcase (when shipment.packPhotoUrl exists) */}
+          {order.shipment?.packPhotoUrl ? (
+            <section className="rounded-[28px] border border-[#B08A4A]/40 bg-gradient-to-br from-[#1C1410] to-[#2B1F18] p-6 text-[#FBF7EF] shadow-xl">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="eyebrow text-[#EBCF8F]">
+                    Cam kết Thủ công · Trước khi xuất xưởng
+                  </p>
+                  <h2 className="mt-1 font-editorial text-3xl font-light text-[#FBF7EF]">
+                    Ảnh chụp hộp trang phục trước khi niêm phong
+                  </h2>
+                </div>
+                <span className="rounded-full border border-[#EBCF8F]/45 px-3 py-1 font-mono text-[11px] text-[#EBCF8F]">
+                  {order.shipment.trackingCode}
+                </span>
+              </div>
+
+              <div className="mt-5 grid items-center gap-5 sm:grid-cols-[220px_1fr]">
+                <div className="overflow-hidden rounded-2xl border border-[#EBCF8F]/35 bg-[#120C09]">
+                  <img
+                    src={order.shipment.packPhotoUrl}
+                    alt={`Ảnh chụp hộp trang phục đơn #${order.orderCode} trước khi niêm phong`}
+                    className="aspect-[4/3] w-full object-cover"
+                  />
+                </div>
+                <div className="space-y-2 text-xs text-[#FBF7EF]/80">
+                  <p>
+                    Kho xuất: <strong className="text-[#EBCF8F]">{order.shipment.warehouseCode}</strong>
+                  </p>
+                  <p>
+                    Đơn vị vận chuyển:{' '}
+                    <strong className="text-[#EBCF8F]">{order.shipment.carrier}</strong>
+                  </p>
+                  <p>
+                    Trạng thái kiện hàng:{' '}
+                    <strong className="text-[#EBCF8F]">{order.shipment.status}</strong>
+                  </p>
+                  <p className="pt-1 text-[#FBF7EF]/65">
+                    Mỗi thiết kế đều được là hơi, bọc giấy nến không axit và kiểm tra tem mác
+                    nguyên vẹn trước khi bàn giao vận chuyển.
+                  </p>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {/* Itemized Snapshot with Prorated `allocatedDiscountVnd` */}
+          <section className="rounded-[28px] border border-[#B08A4A]/28 bg-white/95 p-6 shadow-sm">
+            <p className="eyebrow text-[#8A672C]">
+              Chi tiết thiết kế · {order.items.length} dòng sản phẩm
+            </p>
+            <ul className="mt-4 divide-y divide-[#B08A4A]/20">
+              {order.items.map((item) => (
+                <li key={item.id} className="flex items-start gap-4 py-4 first:pt-0 last:pb-0">
+                  <div className="h-24 w-16 shrink-0 overflow-hidden rounded-xl border border-[#B08A4A]/25 bg-[#F8F4EC] p-1">
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.productName}
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center font-editorial text-xs text-[#8A672C]">
+                        T&amp;X
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <h3 className="font-editorial text-2xl leading-tight text-[#1C1410]">
+                          {item.productName}
+                        </h3>
+                        <p className="mt-0.5 text-xs text-[#6B5B4C]">
+                          {item.colorName} · Size {item.sizeCode} · SKU{' '}
+                          <code className="font-mono text-[11px]">{item.skuCode}</code> · SL{' '}
+                          {item.qty}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-editorial text-xl text-[#1C1410]">
+                          {FORMAT_VND(item.unitPriceVnd * item.qty)}
+                        </p>
+                        {item.allocatedDiscountVnd > 0 ? (
+                          <p className="text-[11px] font-medium text-emerald-800">
+                            Phân bổ giảm giá: −{FORMAT_VND(item.allocatedDiscountVnd)}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                      <span className="rounded-full border border-[#B08A4A]/35 bg-[#FBF7EF] px-2.5 py-0.5 text-[#5C431C]">
+                        Giá trị hoàn trả thực: {FORMAT_VND(item.netRefundableUnitVnd)}/chiếc
+                      </span>
+                      {!item.isReturnable ? (
+                        <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-amber-900">
+                          Không áp dụng đổi/trả
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          {/* Live RMA Statuses Section */}
+          {rmaList.length > 0 ? (
+            <section className="rounded-[28px] border border-[#B08A4A]/35 bg-[#F4EBDA]/55 p-6">
+              <p className="eyebrow text-[#8A672C]">
+                Yêu cầu Đổi size / Hoàn trả ({rmaList.length})
+              </p>
+              <ul className="mt-4 space-y-3">
+                {rmaList.map((rma) => (
+                  <li
+                    key={rma.id}
+                    className="rounded-2xl border border-[#B08A4A]/30 bg-white p-4 text-xs"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <span className="font-mono font-semibold text-[#1C1410]">
+                          #{rma.rmaCode}
+                        </span>
+                        <span className="mx-2 text-[#B08A4A]">·</span>
+                        <span className="uppercase tracking-[0.12em] text-[#8A672C]">
+                          {rma.type}
+                        </span>
+                        <span className="ml-2 rounded-full border border-[#B08A4A]/40 bg-[#FBF7EF] px-2 py-0.5 text-[10px]">
+                          {rma.exchangeMode === RmaExchangeMode.INSTANT_2WAY
+                            ? 'Đổi nhanh 2 chiều tại cửa'
+                            : 'Tiêu chuẩn QC tại xưởng'}
+                        </span>
+                      </div>
+                      <span className="rounded-full bg-[#1C1410] px-3 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[#EBCF8F]">
+                        {RMA_STATUS_LABELS[rma.status] ?? rma.status}
+                      </span>
+                    </div>
+                    {rma.customerNote ? (
+                      <p className="mt-2 text-[#5C4B41]">Ghi chú: “{rma.customerNote}”</p>
+                    ) : null}
+                    {rma.refundAmountVnd != null && rma.refundAmountVnd > 0 ? (
+                      <p className="mt-1.5 font-medium text-emerald-800">
+                        Số tiền hoàn theo phân bổ thực tế: {FORMAT_VND(rma.refundAmountVnd)}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {/* Verified Fit Review Form (Unlocked ONLY when DELIVERED / COMPLETED) */}
+          {isDelivered ? (
+            <section className="rounded-[28px] border border-[#B08A4A]/35 bg-[#FBF7EF] p-6 shadow-sm">
+              <p className="eyebrow text-[#8A672C]">
+                Đánh giá Độ vừa Xác thực · Verified Fit Review
+              </p>
+              <h2 className="mt-1 font-editorial text-3xl font-light text-[#1C1410]">
+                Chia sẻ trải nghiệm phom dáng của bạn
+              </h2>
+              <p className="mt-1.5 text-xs text-[#6B5B4C]">
+                Phản hồi từ đơn hàng đã giao thành công giúp cộng đồng và Cố vấn Size AI
+                hiệu chỉnh chuẩn xác hơn.
+              </p>
+
+              <form onSubmit={handleSubmitVerifiedReview} className="mt-5 space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-xs sm:col-span-2">
+                    <span className="text-[#5C4B41]">Thiết kế đã mua</span>
+                    <select
+                      value={reviewItemId}
+                      onChange={(e) => setReviewItemId(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-white px-3 py-2 text-sm text-[#1C1410]"
+                    >
+                      {order.items.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.productName} ({item.colorName} · Size {item.sizeCode})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="text-xs">
+                    <span className="block text-[#5C4B41]">Đánh giá sao</span>
+                    <div className="mt-1.5 flex gap-1.5">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setRating(star)}
+                          className={`flex h-9 w-9 items-center justify-center rounded-full border text-sm transition-colors ${
+                            star <= rating
+                              ? 'border-[#1C1410] bg-[#1C1410] text-[#EBCF8F]'
+                              : 'border-[#B08A4A]/35 bg-white text-[#8A672C]'
+                          }`}
+                        >
+                          ★
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="text-xs">
+                    <span className="block text-[#5C4B41]">Cảm nhận độ vừa</span>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {[
+                        { value: FitFeedback.RUNS_SMALL, label: 'Hơi chật' },
+                        { value: FitFeedback.TRUE_TO_SIZE, label: 'Chuẩn size' },
+                        { value: FitFeedback.RUNS_LARGE, label: 'Hơi rộng' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setFitFeedback(opt.value)}
+                          className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                            fitFeedback === opt.value
+                              ? 'border-[#1C1410] bg-[#1C1410] text-[#EBCF8F]'
+                              : 'border-[#B08A4A]/35 bg-white text-[#2B2019]'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <label className="text-xs">
+                    <span className="text-[#5C4B41]">Chiều cao của bạn (cm)</span>
+                    <input
+                      type="number"
+                      required
+                      min={120}
+                      max={230}
+                      value={reviewerHeightCm}
+                      onChange={(e) => setReviewerHeightCm(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-white px-3 py-2 font-mono text-sm"
+                    />
+                  </label>
+
+                  <label className="text-xs">
+                    <span className="text-[#5C4B41]">Cân nặng của bạn (kg)</span>
+                    <input
+                      type="number"
+                      required
+                      min={25}
+                      max={200}
+                      value={reviewerWeightKg}
+                      onChange={(e) => setReviewerWeightKg(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-white px-3 py-2 font-mono text-sm"
+                    />
+                  </label>
+                </div>
+
+                <label className="block text-xs">
+                  <span className="text-[#5C4B41]">Nhận xét chất liệu &amp; phom dáng</span>
+                  <textarea
+                    required
+                    rows={3}
+                    maxLength={1000}
+                    value={reviewComment}
+                    onChange={(e) => setReviewComment(e.target.value)}
+                    placeholder="Ví dụ: Vải linen thoáng nhẹ, đường vai đứng phom; mình 1m63 53kg mặc size M vừa thoải mái."
+                    className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-white px-3.5 py-2.5 text-sm text-[#1C1410] outline-none focus:border-[#8A672C]"
+                  />
+                </label>
+
+                {reviewSuccess ? (
+                  <p className="rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2.5 text-xs text-emerald-900">
+                    {reviewSuccess}
+                  </p>
+                ) : null}
+                {reviewError ? (
+                  <p className="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-xs text-red-900">
+                    {reviewError}
+                  </p>
+                ) : null}
+
+                <button
+                  type="submit"
+                  disabled={submittingReview}
+                  className="btn btn--gold !py-3 disabled:opacity-50"
+                >
+                  {submittingReview ? 'Đang gửi đánh giá...' : 'Gửi Đánh giá Xác thực'}
+                </button>
+              </form>
+            </section>
+          ) : null}
+        </div>
+
+        {/* RIGHT: PAYMENT BREAKDOWN + ADDRESS + GIFT CARD */}
+        <aside className="space-y-6">
+          <div className="rounded-[28px] border border-[#B08A4A]/30 bg-[#F4EBDA]/65 p-6">
+            <p className="eyebrow text-[#8A672C]">Tổng kết thanh toán</p>
+            <div className="mt-4 space-y-2 text-xs text-[#5C4B41]">
+              <div className="flex justify-between">
+                <span>Tạm tính</span>
+                <span>{FORMAT_VND(order.subtotalVnd)}</span>
+              </div>
+              {order.comboDiscountVnd > 0 ? (
+                <div className="flex justify-between font-medium text-[#8A672C]">
+                  <span>Ưu đãi Combo Set</span>
+                  <span>−{FORMAT_VND(order.comboDiscountVnd)}</span>
+                </div>
+              ) : null}
+              {order.voucherDiscountVnd > 0 ? (
+                <div className="flex justify-between font-medium text-emerald-800">
+                  <span>Mã ưu đãi ({order.voucherCode})</span>
+                  <span>−{FORMAT_VND(order.voucherDiscountVnd)}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-between">
+                <span>Đóng gói Signature</span>
+                <span>
+                  {order.packagingPriceVnd > 0
+                    ? `+${FORMAT_VND(order.packagingPriceVnd)}`
+                    : 'Miễn phí'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Phí giao vận</span>
+                <span>
+                  {order.shippingFeeVnd > 0
+                    ? `+${FORMAT_VND(order.shippingFeeVnd)}`
+                    : 'Miễn phí'}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-baseline justify-between border-t border-[#B08A4A]/25 pt-4">
+              <span className="text-[11px] uppercase tracking-[0.2em] text-[#6B5B4C]">
+                Tổng cộng
+              </span>
+              <b className="font-editorial text-3xl text-[#1C1410]">
+                {FORMAT_VND(order.totalAmountVnd)}
+              </b>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-[#B08A4A]/25 bg-white p-5 text-xs">
+            <p className="eyebrow text-[#8A672C]">Thông tin giao nhận</p>
+            <p className="mt-2 font-medium text-[#1C1410]">
+              {order.shippingAddress.recipientName} · {order.shippingAddress.phone}
+            </p>
+            <p className="mt-1 text-[#6B5B4C]">
+              {order.shippingAddress.streetLine}, {order.shippingAddress.wardName},{' '}
+              {order.shippingAddress.districtName}, {order.shippingAddress.provinceName}
+            </p>
+            {order.deliveryDate || order.deliverySlot ? (
+              <p className="mt-2 rounded-xl bg-[#F4EBDA]/75 px-3 py-1.5 text-[#5C431C]">
+                Hẹn giao 2 giờ: {order.deliveryDate} · {order.deliverySlot}
+              </p>
+            ) : null}
+          </div>
+
+          {order.giftNote ? (
+            <div className="py-2">
+              <p className="mb-3 text-center text-[10px] uppercase tracking-[0.22em] text-[#8A672C]">
+                Thiệp viết tay đi kèm đơn hàng
+              </p>
+              <GiftCardPreview note={order.giftNote} visible inline />
+            </div>
+          ) : null}
+        </aside>
+      </div>
+
+      {/* 1-CLICK SIZE EXCHANGE / RETURN RMA MODAL */}
+      {rmaModalOpen ? (
+        <div
+          className="fixed inset-0 z-[92] flex items-center justify-center bg-[#140E0A]/75 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rmaModalTitle"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setRmaModalOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-xl rounded-[28px] border border-[#B08A4A]/45 bg-[#FBF7EF] p-6 text-[#2B2019] shadow-2xl sm:p-8"
+            data-lenis-prevent=""
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-[#B08A4A]/20 pb-4">
+              <div>
+                <p className="eyebrow text-[#8A672C]">Hậu mãi 1 chạm · Đổi Size / Hoàn Trả</p>
+                <h2 id="rmaModalTitle" className="mt-1 font-editorial text-3xl text-[#1C1410]">
+                  Tạo yêu cầu RMA đơn #{order.orderCode}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRmaModalOpen(false)}
+                aria-label="Đóng cửa sổ đổi trả"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-[#8A672C]/35 text-lg text-[#8A672C]"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitRma} className="mt-5 space-y-4">
+              <label className="block text-xs">
+                <span className="text-[#5C4B41]">Chọn thiết kế cần đổi / trả</span>
+                <select
+                  value={rmaItemId}
+                  onChange={(e) => setRmaItemId(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-white px-3 py-2 text-sm text-[#1C1410]"
+                >
+                  {order.items.map((item) => (
+                    <option key={item.id} value={item.id} disabled={!item.isReturnable}>
+                      {item.productName} — Size {item.sizeCode}{' '}
+                      {!item.isReturnable ? '(Không hỗ trợ đổi/trả)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  { value: RmaType.SIZE_EXCHANGE, label: 'Đổi kích cỡ' },
+                  { value: RmaType.COLOR_EXCHANGE, label: 'Đổi màu sắc' },
+                  { value: RmaType.RETURN_REFUND, label: 'Trả & Hoàn tiền' },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setRmaType(opt.value)}
+                    className={`rounded-xl border px-3 py-2.5 text-xs font-medium transition-colors ${
+                      rmaType === opt.value
+                        ? 'border-[#1C1410] bg-[#1C1410] text-[#EBCF8F]'
+                        : 'border-[#B08A4A]/35 bg-white text-[#2B2019]'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {rmaType !== RmaType.RETURN_REFUND ? (
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setRmaExchangeMode(RmaExchangeMode.INSTANT_2WAY)}
+                    className={`rounded-2xl border p-3 text-left text-xs transition-colors ${
+                      rmaExchangeMode === RmaExchangeMode.INSTANT_2WAY
+                        ? 'border-[#1C1410] bg-[#1C1410] text-[#FBF7EF]'
+                        : 'border-[#B08A4A]/35 bg-white text-[#2B2019]'
+                    }`}
+                  >
+                    <p className="font-medium">Đổi nhanh 2 chiều tại cửa</p>
+                    <p className="mt-0.5 text-[11px] opacity-75">
+                      INSTANT_2WAY · Shipper giao cỡ mới &amp; thu lại cỡ cũ cùng lúc
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRmaExchangeMode(RmaExchangeMode.STANDARD_QC)}
+                    className={`rounded-2xl border p-3 text-left text-xs transition-colors ${
+                      rmaExchangeMode === RmaExchangeMode.STANDARD_QC
+                        ? 'border-[#1C1410] bg-[#1C1410] text-[#FBF7EF]'
+                        : 'border-[#B08A4A]/35 bg-white text-[#2B2019]'
+                    }`}
+                  >
+                    <p className="font-medium">Tiêu chuẩn QC tại xưởng</p>
+                    <p className="mt-0.5 text-[11px] opacity-75">
+                      STANDARD_QC · Kiểm định 3 tiêu chí tem/mác/vết bẩn trước khi đổi
+                    </p>
+                  </button>
+                </div>
+              ) : null}
+
+              <label className="block text-xs">
+                <span className="text-[#5C4B41]">Lý do đổi / trả</span>
+                <select
+                  value={rmaReason}
+                  onChange={(e) => setRmaReason(e.target.value as RmaReasonCode)}
+                  className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-white px-3 py-2 text-sm text-[#1C1410]"
+                >
+                  {RMA_REASON_OPTIONS.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-xs">
+                <div className="flex items-center justify-between text-[#5C4B41]">
+                  <span>Ghi chú chi tiết cho xưởng</span>
+                  <span className="font-mono text-[11px] text-[#8A672C]">
+                    {rmaNote.length}/{RMA_CUSTOMER_NOTE_MAX_LEN}
+                  </span>
+                </div>
+                <textarea
+                  rows={3}
+                  maxLength={RMA_CUSTOMER_NOTE_MAX_LEN}
+                  value={rmaNote}
+                  onChange={(e) =>
+                    setRmaNote(e.target.value.slice(0, RMA_CUSTOMER_NOTE_MAX_LEN))
+                  }
+                  placeholder="Mô tả cỡ muốn đổi hoặc tình trạng sản phẩm (tối đa 300 ký tự)..."
+                  className="mt-1 w-full resize-none rounded-xl border border-[#B08A4A]/35 bg-white px-3.5 py-2.5 text-sm text-[#1C1410] outline-none focus:border-[#8A672C]"
+                />
+              </label>
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRmaModalOpen(false)}
+                  className="rounded-full border border-[#8A672C]/40 px-5 py-2.5 text-xs uppercase tracking-[0.14em] text-[#5C431C]"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingRma}
+                  className="btn btn--gold !px-6 !py-2.5 !text-xs disabled:opacity-50"
+                >
+                  {submittingRma ? 'Đang gửi yêu cầu...' : 'Gửi yêu cầu RMA'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

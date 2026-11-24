@@ -9,8 +9,10 @@ import type {
 const LOCAL_MODEL_URL = '/models/pose_landmarker_lite.task';
 const CDN_MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+const LOCAL_WASM_URL = '/models/wasm';
+const LOCAL_WASM_PROBE_URL = '/models/wasm/vision_wasm_internal.js';
 const CDN_WASM_URL =
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm';
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm';
 
 export const TRACKED_POSE_INDICES = [
   0, 9, 10, 11, 12, 13, 14, 15, 16, 23, 24,
@@ -206,6 +208,27 @@ let imageLandmarkerPromise: Promise<PoseLandmarkerInstance | null> | null = null
 let videoLandmarkerInstance: PoseLandmarkerInstance | null = null;
 let imageLandmarkerInstance: PoseLandmarkerInstance | null = null;
 
+async function resolveWasmBaseUrl(): Promise<string> {
+  if (typeof window === 'undefined' || typeof fetch !== 'function') {
+    return CDN_WASM_URL;
+  }
+  try {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 1600);
+    const res = await fetch(LOCAL_WASM_PROBE_URL, {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+    window.clearTimeout(timer);
+    if (res.ok) {
+      return LOCAL_WASM_URL;
+    }
+  } catch {
+    // Local WASM runtime unavailable, fall through to CDN
+  }
+  return CDN_WASM_URL;
+}
+
 async function resolveModelAssetPath(): Promise<string> {
   if (typeof window === 'undefined' || typeof fetch !== 'function') {
     return CDN_MODEL_URL;
@@ -239,9 +262,26 @@ async function createPoseLandmarkerSafe(
   const task = (async (): Promise<PoseLandmarkerInstance | null> => {
     try {
       const visionModule = await import('@mediapipe/tasks-vision');
-      const wasmFileset = await visionModule.FilesetResolver.forVisionTasks(
-        CDN_WASM_URL,
-      );
+      const preferredWasm = await resolveWasmBaseUrl();
+      const wasmCandidates =
+        preferredWasm === LOCAL_WASM_URL
+          ? [LOCAL_WASM_URL, CDN_WASM_URL]
+          : [CDN_WASM_URL];
+
+      let wasmFileset: Awaited<
+        ReturnType<typeof visionModule.FilesetResolver.forVisionTasks>
+      > | null = null;
+      for (const wasmBase of wasmCandidates) {
+        try {
+          wasmFileset =
+            await visionModule.FilesetResolver.forVisionTasks(wasmBase);
+          break;
+        } catch {
+          // Try next WASM candidate
+        }
+      }
+      if (!wasmFileset) return null;
+
       const preferredModel = await resolveModelAssetPath();
       const candidates =
         preferredModel === LOCAL_MODEL_URL
@@ -403,11 +443,23 @@ function computeArmAngleMetrics(
 export function buildFallbackPoseFrame(
   hint?: PhotoPoseHint | null,
   seatedDefault = false,
+  coverMetrics?: CoverProjectionMetrics | null,
 ): PoseTracking3DFrame {
-  const lsX = hint?.leftShoulder?.x ?? 0.35;
-  const lsY = hint?.leftShoulder?.y ?? (seatedDefault ? 0.42 : 0.36);
-  const rsX = hint?.rightShoulder?.x ?? 0.65;
-  const rsY = hint?.rightShoulder?.y ?? (seatedDefault ? 0.42 : 0.36);
+  const proj = (x: number, y: number): { x: number; y: number } =>
+    coverMetrics ? projectToCoverViewport(x, y, coverMetrics) : { x, y };
+
+  const rawLs = proj(
+    hint?.leftShoulder?.x ?? 0.35,
+    hint?.leftShoulder?.y ?? (seatedDefault ? 0.42 : 0.36),
+  );
+  const rawRs = proj(
+    hint?.rightShoulder?.x ?? 0.65,
+    hint?.rightShoulder?.y ?? (seatedDefault ? 0.42 : 0.36),
+  );
+  const lsX = rawLs.x;
+  const lsY = rawLs.y;
+  const rsX = rawRs.x;
+  const rsY = rawRs.y;
 
   const screenLeftX = Math.min(lsX, rsX);
   const screenRightX = Math.max(lsX, rsX);
@@ -420,29 +472,46 @@ export function buildFallbackPoseFrame(
   };
   const shoulderWidth = Math.max(0.18, screenRightX - screenLeftX);
 
-  const noseX = hint?.nose?.x ?? shoulderCenter.x;
-  const noseY = hint?.nose?.y ?? Math.max(0.08, shoulderCenter.y - shoulderWidth * 0.54);
-  const chinY =
-    hint?.chinY ?? Math.min(shoulderCenter.y - 0.03, noseY + shoulderWidth * 0.24);
+  const rawNose = proj(
+    hint?.nose?.x ?? 0.5,
+    hint?.nose?.y ?? Math.max(0.08, (hint?.leftShoulder?.y ?? 0.36) - 0.16),
+  );
+  const noseX = rawNose.x;
+  const noseY = rawNose.y;
+  const rawChin = proj(
+    hint?.nose?.x ?? 0.5,
+    hint?.chinY ?? Math.min((hint?.leftShoulder?.y ?? 0.36) - 0.04, (hint?.nose?.y ?? 0.2) + 0.07),
+  );
+  const chinY = rawChin.y;
+
+  const projLeftHip = hint?.leftHip
+    ? proj(hint.leftHip.x, hint.leftHip.y)
+    : null;
+  const projRightHip = hint?.rightHip
+    ? proj(hint.rightHip.x, hint.rightHip.y)
+    : null;
 
   const hasValidHips =
-    Boolean(hint?.leftHip && hint?.rightHip) &&
+    Boolean(projLeftHip && projRightHip) &&
     (hint?.leftHip?.visibility ?? 0.9) >= 0.45 &&
     (hint?.rightHip?.visibility ?? 0.9) >= 0.45 &&
-    (hint?.leftHip?.y ?? 1) <= 0.96 &&
-    (hint?.rightHip?.y ?? 1) <= 0.96;
+    (projLeftHip?.y ?? 1) <= 1.25 &&
+    (projRightHip?.y ?? 1) <= 1.25;
 
   const seatedMode = !hasValidHips;
+  const viewportAspect = coverMetrics
+    ? Math.max(0.4, coverMetrics.dstWidth / Math.max(1, coverMetrics.dstHeight))
+    : 0.75;
   const inferredTorsoH = Math.max(
-    shoulderWidth * 1.36,
-    (shoulderCenter.y - chinY) * 3.1,
+    shoulderWidth * viewportAspect * 1.36,
+    Math.max(0.05, shoulderCenter.y - chinY) * 3.1,
   );
 
   const leftHip = hasValidHips
-    ? { x: hint!.leftHip!.x, y: hint!.leftHip!.y }
+    ? projLeftHip!
     : { x: shoulderCenter.x - shoulderWidth * 0.38, y: shoulderCenter.y + inferredTorsoH };
   const rightHip = hasValidHips
-    ? { x: hint!.rightHip!.x, y: hint!.rightHip!.y }
+    ? projRightHip!
     : { x: shoulderCenter.x + shoulderWidth * 0.38, y: shoulderCenter.y + inferredTorsoH };
 
   const hipCenter = {
@@ -822,6 +891,14 @@ export async function detectPhotoPoseSafe(
   dstHeight: number,
   hint?: PhotoPoseHint | null,
 ): Promise<PoseTracking3DFrame> {
+  const coverMetrics: CoverProjectionMetrics = {
+    srcWidth: Math.max(1, image.naturalWidth || 768),
+    srcHeight: Math.max(1, image.naturalHeight || 1024),
+    dstWidth: Math.max(1, dstWidth),
+    dstHeight: Math.max(1, dstHeight),
+    mirrored: false,
+  };
+
   try {
     const landmarker = await getImagePoseLandmarker();
     if (landmarker && image.naturalWidth > 4 && image.naturalHeight > 4) {
@@ -831,13 +908,7 @@ export async function detectPhotoPoseSafe(
       const solved = solvePoseFrameFromLandmarks(
         landmarks,
         worldLandmarks,
-        {
-          srcWidth: image.naturalWidth,
-          srcHeight: image.naturalHeight,
-          dstWidth: Math.max(1, dstWidth),
-          dstHeight: Math.max(1, dstHeight),
-          mirrored: false,
-        },
+        coverMetrics,
         null,
         performance.now() / 1000,
       );
@@ -849,5 +920,5 @@ export async function detectPhotoPoseSafe(
     // Graceful fallback to hint or heuristic estimator
   }
 
-  return buildFallbackPoseFrame(hint, false);
+  return buildFallbackPoseFrame(hint, false, coverMetrics);
 }

@@ -17,7 +17,8 @@ export const SPARK_VERTEX_SHADER = /* glsl */ `
     tw = pow(tw, 5.0);
 
     float dpr = clamp(uPx, 1.0, 2.0);
-    float cssSize;
+    float cssSize = 2.0;
+    vA = 0.0;
 
     if (kind > 0.5) {
       // 28 delicate 3px-6.5px golden halo sparkles orbiting the presented garment

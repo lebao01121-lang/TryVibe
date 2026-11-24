@@ -25,12 +25,28 @@ async function bootstrap(): Promise<void> {
   app.use(cookieParser());
   app.use(correlationIdMiddleware);
 
+  const allowedOriginSet = new Set(
+    config.corsAllowedOrigins.map((origin) => origin.trim().replace(/\/+$/, '')),
+  );
+
   app.enableCors({
-    origin: config.corsAllowedOrigins,
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!origin || allowedOriginSet.has(origin.trim().replace(/\/+$/, ''))) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
+      'Accept',
       'Content-Type',
+      'Origin',
+      'X-Requested-With',
       HTTP_HEADERS.AUTHORIZATION,
       HTTP_HEADERS.CORRELATION_ID,
       TRACEPARENT_HEADER,
@@ -48,6 +64,9 @@ async function bootstrap(): Promise<void> {
       'X-RateLimit-Remaining',
       'Retry-After',
     ],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+    maxAge: 600,
   });
 
   app.enableShutdownHooks();

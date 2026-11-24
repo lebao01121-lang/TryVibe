@@ -1,1381 +1,581 @@
-# Lộ Trình Chuyển Đổi Website Bán Hoa (`ban_hoa`) Sang Nền Tảng Thương Mại Điện Tử Thời Trang Cao Cấp (React + Microservices)
+# Báo Cáo Đánh Giá Toàn Diện & Lộ Trình Hoàn Thiện Dự Án — Tầm Xuân · Fashion Atelier AI Platform
 
-> **Mã nguồn cơ sở đối chiếu**: `d:\doancosothue\ban_hoa` (**Tầm Xuân · Flower Atelier** — gồm `index.html` 241 dòng, `css/style.css` 31 KB, `js/main.js`, `js/rack.js`, `js/build.js`, `js/data.js` chứa `window.TX`, 40+ ảnh tách nền `assets/img/*.webp`, ảnh quy trình `images/p01..p03`, sprite `assets/petals/petals.png` và video nền `media/rose-desk.{webm,mp4}`).  
-> **Mục tiêu tài liệu**: Cung cấp bản thiết kế tổng thể (Master Technical & Business Blueprint) từ đánh giá tính khả thi, ánh xạ 1:1 hiệu ứng tương tác, mô hình hóa nghiệp vụ thời trang, chuyển đổi công nghệ Frontend sang **Next.js (React 19 + TypeScript)**, kiến trúc **Backend Microservices theo DDD**, cho đến lộ trình thực thi theo từng giai đoạn, DevOps, kiểm thử và quản trị rủi ro.
-
----
-
-## Tóm Tắt Điều Hành (Executive Summary)
-
-### Trả lời trực diện: Có chuyển từ website bán hoa sang website bán quần áo được không?
-
-**HOÀN TOÀN KHẢ THI — và đây là một trong những phép chuyển đổi tự nhiên nhất (mức độ tương thích thẩm mỹ, tỷ lệ tài nguyên và ẩn dụ tương tác đạt 95%+).**
-
-Mã nguồn hiện tại tại `d:\doancosothue\ban_hoa` đã sở hữu sẵn một ngôn ngữ thiết kế **Editorial Quiet Luxury** (`--cocoa: #1C1410`, `--ivory: #FBF7EF`, `--gold: #B08A4A`, font `Cormorant Garamond` + `Be Vietnam Pro` + `Dancing Script`), tỷ lệ ảnh tách nền chuẩn **`2:3` (`720×1080` WebP alpha)** khớp tuyệt đối với ảnh trang phục treo móc/ghost-mannequin, cùng 3 "hiệu ứng đinh" mà khi đưa sang ngành thời trang thậm chí còn **hợp lý và có lực chuyển đổi thương mại cao hơn cả bán hoa**:
-1. **Giá treo 3D WebGL (`js/rack.js`)**: Quần áo treo xuôi trên thanh đồng thau, đung đưa theo gió chuột và tiến ra trình diễn xóa phông là biểu tượng kinh điển nhất của boutique thời trang cao cấp.
-2. **Sợi chỉ vàng xưởng chế tác (`#atelier`)**: Sợi chỉ vàng Bezier kèm hạt ngọc chạy qua 4 công đoạn chính là ẩn dụ bản địa hoàn hảo của ngành **may đo thủ công (Tailoring / Couture)**.
-3. **Chọn theo dịp (`#occasion`) & Công cụ tự ghép (`js/build.js`)**: Chuyển trực tiếp thành **Dress Code Showcase** (6 dịp mặc) và **Mix & Match Outfit Studio** (phối Áo / Quần-Váy / Đầm / Áo khoác / Phụ kiện kèm kiểm tra tồn kho theo size và chiết khấu Combo Set).
-
-Tuy nhiên, `ban_hoa` hiện mới là **Static Showcase Web** (dữ liệu hard-code trong `window.TX`, không có giỏ hàng, không có tồn kho, nút `#odSend` *"Gửi đơn qua Zalo"* chỉ hiện toast demo). Để bán quần áo thực tế ở quy mô production, dự án cần đồng thời giải quyết **3 nâng cấp nền tảng**: chuẩn hóa mô hình dữ liệu thời trang (**SPU → Variant Màu/Vải → SKU Size + Tồn kho đa kho + Đổi Size RMA**), tái cấu trúc Frontend sang **React + TypeScript** hỗ trợ SEO đa trang mà không rò rỉ GPU/ScrollTrigger, và xây dựng Backend theo ranh giới miền nghiệp vụ rõ ràng.
-
-### Bốn Khuyến Nghị Kiến Trúc Chiến Lược
-
-| Trụ cột | Khuyến nghị ưu tiên | Giá trị cốt lõi mang lại |
-| :--- | :--- | :--- |
-| **1. Trải nghiệm & Hiệu ứng** | Bảo toàn 100% Design Tokens từ `css/style.css` và ánh xạ 1:1 toàn bộ 9 khu vực + lớp hiệu ứng toàn cục; thay thuật toán xoắn phyllotaxis (`js/build.js`) bằng **Garment Layer Slot Compositor** và bỏ phép lật ngược `Math.PI` ở `js/rack.js`. | Giữ trọn đẳng cấp thẩm mỹ khác biệt, nâng tỷ lệ tương tác & giá trị đơn trung bình (AOV) qua Mix & Match Combo. |
-| **2. Công nghệ Frontend** | **Next.js 15+ (App Router) + React 19 + TypeScript** theo mô hình **Hybrid Client Islands**: Server Components (SSR/ISR) cho SEO trang Danh mục (PLP) / Chi tiết sản phẩm (PDP); `'use client'` + `dynamic(ssr: false)` cho Three.js (`@react-three/fiber`), `@gsap/react` (`useGSAP`), `lenis/react`, Zustand v5 và TanStack Query v5. | Đạt chuẩn SEO & OpenGraph Zalo/Facebook, bảo vệ Core Web Vitals (LCP < 2.5s), chống hoàn toàn lỗi StrictMode và WebGL memory leak. |
-| **3. Kiến trúc Backend** | Thiết kế đích gồm **9 Dịch vụ lõi theo DDD** (`API Gateway & Fashion BFF` + 8 Microservices độc lập DB + Event Broker + Saga/Outbox/Idempotency). Áp dụng chiến lược thực chiến **Modular Monolith (team 2–3 dev) → Strangler Fig (4–8 dev) → Full Microservices (10+ dev)**. | Chống bán lố tồn kho (0% oversell) khi Flash Sale, tự động hóa Đổi Size (RMA), đồng thời tránh rơi vào bẫy "thuế phân tán" quá sớm. |
-| **4. Lộ trình Triển khai** | Cung cấp song song **2 lộ trình**: **Bản Chuẩn 16–17 tuần** (Phase 0 → Phase 6, 4–6 kỹ sư, full platform) và **Bản Rút gọn Fast-Track MVP 8–10 tuần** (2–3 kỹ sư, ra mắt nhanh với Modular Monolith + 4 hiệu ứng đinh). | Linh hoạt theo ngân sách & quy mô đội ngũ nhưng cùng chung hợp đồng API/Event để mở rộng không phải đập đi viết lại. |
+> **Kho mã nguồn kiểm toán:** `d:\doancosothue\TryVibe`  
+> **Phiên bản đối chiếu:** Monorepo v3.0 / `@atelier/ai-harness v3.1.0`  
+> **Ngày lập báo cáo:** `2026-11-24`  
+> **Phương pháp đánh giá:** Đối chiếu trực tiếp 100% trên mã nguồn thực tế (`apps/*`, `services/*`, `packages/*`, `infra/*`, `scripts/*`, `.github/workflows/ci-cd.yml`) và kết quả chạy thực nghiệm trực tiếp `pnpm eval:ai` — trung thực tuyệt đối giữa **chức năng chạy thật**, **chức năng chạy một phần / dùng mô phỏng (mock/stub)** và **chức năng chưa triển khai**.
 
 ---
 
 ## Mục Lục
 
-- [Phần 1: Đánh Giá Tính Khả Thi & Ánh Xạ 1:1 Ý Tưởng – Hiệu Ứng (Bán Hoa → Bán Quần Áo)](#phần-1-đánh-giá-tính-khả-thi--ánh-xạ-11-ý-tưởng--hiệu-ứng-bán-hoa--bán-quần-áo)
-  - [1.1. Sáu lý do kiến trúc chứng minh sự tương thích gần như 1:1](#11-sáu-lý-do-kiến-trúc-chứng-minh-sự-tương-thích-gần-như-11)
-  - [1.2. Bảng ánh xạ 1:1 toàn diện (9 phân khu + Lớp hiệu ứng toàn cục)](#12-bảng-ánh-xạ-11-toàn-diện-9-phân-khu--lớp-hiệu-ứng-toàn-cục)
-  - [1.3. Giải phẫu kỹ thuật chuyển đổi 3 "Hiệu ứng đinh" (Signature Effects)](#13-giải-phẫu-kỹ-thuật-chuyển-đổi-3-hiệu-ứng-đinh-signature-effects)
-- [Phần 2: Phân Tích Khoảng Trống & Toàn Bộ Nghiệp Vụ Thương Mại Điện Tử Thời Trang](#phần-2-phân-tích-khoảng-trống--toàn-bộ-nghiệp-vụ-thương-mại-điện-tử-thời-trang)
-  - [2.1. Phân tích khoảng trống nghiệp vụ (Gap Analysis)](#21-phân-tích-khoảng-trống-nghiệp-vụ-gap-analysis)
-  - [2.2. Ánh xạ mô hình dữ liệu từ `window.TX` sang Thực thể Thời trang](#22-ánh-xạ-mô-hình-dữ-liệu-từ-windowtx-sang-thực-thể-thời-trang)
-  - [2.3. Bảy luồng nghiệp vụ thời trang đầu–cuối (End-to-End Workflows)](#23-bảy-luồng-nghiệp-vụ-thời-trang-đầucuối-end-to-end-workflows)
-- [Phần 3: Kiến Trúc Chuyển Đổi Công Nghệ Frontend (HTML/Vanilla JS → React + TypeScript)](#phần-3-kiến-trúc-chuyển-đổi-công-nghệ-frontend-htmlvanilla-js--react--typescript)
-  - [3.1. So sánh & Lựa chọn Framework: Next.js (App Router) vs. Vite SPA](#31-so-sánh--lựa-chọn-framework-nextjs-app-router-vs-vite-spa)
-  - [3.2. Hướng dẫn Port chi tiết 5 Engine hiệu ứng sang React 19](#32-hướng-dẫn-port-chi-tiết-5-engine-hiệu-ứng-sang-react-19)
-  - [3.3. Quản lý Trạng thái (Zustand v5 + TanStack Query v5)](#33-quản-lý-trạng-thái-zustand-v5--tanstack-query-v5)
-  - [3.4. Cấu trúc thư mục `apps/storefront/src/` & Sơ đồ ánh xạ Legacy → Target](#34-cấu-trúc-thư-mục-appsstorefrontsrc--sơ-đồ-ánh-xạ-legacy--target)
-  - [3.5. Quy chuẩn Tài nguyên Ảnh & Video cho Thời trang (Asset & Photography Pipeline)](#35-quy-chuẩn-tài-nguyên-ảnh--video-cho-thời-trang-asset--photography-pipeline)
-- [Phần 4: Kiến Trúc Backend Microservices (DDD & Chiến Lược Thực Chiến)](#phần-4-kiến-trúc-backend-microservices-ddd--chiến-lược-thực-chiến)
-  - [4.1. Sơ đồ Kiến trúc Tổng thể Hệ thống](#41-sơ-đồ-kiến-trúc-tổng-thể-hệ-thống)
-  - [4.2. Đặc tả chi tiết 9 Dịch vụ Lõi (Bounded Contexts)](#42-đặc-tả-chi-tiết-9-dịch-vụ-lõi-bounded-contexts)
-  - [4.3. Giao tiếp Liên dịch vụ (Sync vs. Async) & Mẫu Đảm bảo Độ tin cậy](#43-giao-tiếp-liên-dịch-vụ-sync-vs-async--mẫu-đảm-bảo-độ-tin-cậy)
-  - [4.4. Sơ đồ Tuần tự Luồng Checkout Order Saga (Happy Path & Compensation)](#44-sơ-đồ-tuần-tự-luồng-checkout-order-saga-happy-path--compensation)
-  - [4.5. Sơ đồ Trạng thái Vòng đời Đơn hàng & Đổi Size / Trả hàng (Order & RMA State Machine)](#45-sơ-đồ-trạng-thái-vòng-đời-đơn-hàng--đổi-size--trả-hàng-order--rma-state-machine)
-  - [4.6. Tư vấn Thực chiến: Lộ trình Tiến hóa Kiến trúc (Modular Monolith → Strangler Fig → Microservices)](#46-tư-vấn-thực-chiến-lộ-trình-tiến-hóa-kiến-trúc-modular-monolith--strangler-fig--microservices)
-- [Phần 5: Lộ Trình Chuyển Đổi Chi Tiết Từng Giai Đoạn (Phase 0 → Phase 6)](#phần-5-lộ-trình-chuyển-đổi-chi-tiết-từng-giai-đoạn-phase-0--phase-6)
-  - [5.1. Nguyên tắc dẫn dắt & So sánh 2 Kịch bản Triển khai (Chuẩn 16–17 tuần vs. MVP 8–10 tuần)](#51-nguyên-tắc-dẫn-dắt--so-sánh-2-kịch-bản-triển-khai-chuẩn-1617-tuần-vs-mvp-810-tuần)
-  - [5.2. Sơ đồ Lộ trình Tiến hóa Hệ thống](#52-sơ-đồ-lộ-trình-tiến-hóa-hệ-thống)
-  - [5.3. Kế hoạch Thực thi Chi tiết Phase 0 → Phase 6](#53-kế-hoạch-thực-thi-chi-tiết-phase-0--phase-6)
-- [Phần 6: Hạ Tầng, DevOps, Kiểm Thử, Observability, Rủi Ro & Kế Hoạch Hành Động Tuần 1](#phần-6-hạ-tầng-devops-kiểm-thử-observability-rủi-ro--kế-hoạch-hành-động-tuần-1)
-  - [6.1. Chiến lược Monorepo, Môi trường Local/Production & CI/CD](#61-chiến-lược-monorepo-môi-trường-localproduction--cicd)
-  - [6.2. Hạ tầng Pipeline Media & CDN (Đặc thù WebGL Thời trang)](#62-hạ-tầng-pipeline-media--cdn-đặc-thù-webgl-thời-trang)
-  - [6.3. Kim tự tháp Kiểm thử (Testing Pyramid)](#63-kim-tự-tháp-kiểm-thử-testing-pyramid)
-  - [6.4. Chiến lược Observability (Giám sát Toàn diện)](#64-chiến-lược-observability-giám-sát-toàn-diện)
-  - [6.5. Ma trận Rủi ro & Giải pháp Giảm thiểu (10 Rủi ro trọng yếu)](#65-ma-trận-rủi-ro--giải-pháp-giảm-thiểu-10-rủi-ro-trọng-yếu)
-  - [6.6. Kế hoạch Hành động Ngay Tuần Đầu Tiên (Quick-Start Action Plan) & Decision Log](#66-kế-hoạch-hành-động-ngay-tuần-đầu-tiên-quick-start-action-plan--decision-log)
+- [Tóm Tắt Điều Hành](#tóm-tắt-điều-hành)
+- [Phần 1: Đánh Giá Toàn Diện Dự Án Theo 7 Tầng Kiến Trúc](#phần-1-đánh-giá-toàn-diện-dự-án-theo-7-tầng-kiến-trúc)
+  - [1.1. Tiêu Chuẩn Phân Loại & Bảng Thống Kê Tổng Quan 7 Tầng](#11-tiêu-chuẩn-phân-loại--bảng-thống-kê-tổng-quan-7-tầng)
+  - [1.2. Tầng A — Storefront Cổng Khách Hàng (`apps/storefront :3000`)](#12-tầng-a--storefront-cổng-khách-hàng-appsstorefront-3000)
+  - [1.3. Tầng B — Admin Portal Cổng Quản Trị (`apps/admin-portal :3001`)](#13-tầng-b--admin-portal-cổng-quản-trị-appsadmin-portal-3001)
+  - [1.4. Tầng C — Partner Portal Cổng Đối Tác B2B (`apps/partner-portal :3002`)](#14-tầng-c--partner-portal-cổng-đối-tác-b2b-appspartner-portal-3002)
+  - [1.5. Tầng D — BFF Gateway & Realtime Hub (`apps/bff :4000`)](#15-tầng-d--bff-gateway--realtime-hub-appsbff-4000)
+  - [1.6. Tầng E — 8 NestJS DDD Microservices (`:4001–:4008`)](#16-tầng-e--8-nestjs-ddd-microservices-40014008)
+  - [1.7. Tầng F — Python AI Try-On (`:4009`) & MCP Copilot (`:4010`)](#17-tầng-f--python-ai-try-on-4009--mcp-copilot-4010)
+  - [1.8. Tầng G — Hạ Tầng, Bảo Mật, Kiểm Thử & Di Sản Legacy](#18-tầng-g--hạ-tầng-bảo-mật-kiểm-thử--di-sản-legacy)
+- [Phần 2: Kiểm Toán Chuyên Sâu Trang Quản Trị Admin (`apps/admin-portal :3001`)](#phần-2-kiểm-toán-chuyên-sâu-trang-quản-trị-admin-appsadmin-portal-3001)
+  - [2.1. Khẳng Định Kiến Trúc & Quy Mô Thực Tế](#21-khẳng-định-kiến-trúc--quy-mô-thực-tế)
+  - [2.2. Luồng Bảo Vệ 3 Lớp, Che Giá Vốn 2 Tầng & Lỗi SSR 401](#22-luồng-bảo-vệ-3-lớp-che-giá-vốn-2-tầng--lỗi-ssr-401)
+  - [2.3. Ma Trận Phân Quyền Chính Xác 4 Vai Trò Nội Bộ](#23-ma-trận-phân-quyền-chính-xác-4-vai-trò-nội-bộ)
+  - [2.4. Đặc Tả Chi Tiết Từng Tab Trong 9 Tab Nghiệp Vụ & `McpCopilotDrawer`](#24-đặc-tả-chi-tiết-từng-tab-trong-9-tab-nghiệp-vụ--mcpcopilotdrawer)
+  - [2.5. Các Chức Năng Quản Trị Chuẩn E-Commerce Chưa Có Trên Admin UI](#25-các-chức-năng-quản-trị-chuẩn-e-commerce-chưa-có-trên-admin-ui)
+- [Phần 3: Bản Đồ AI Toàn Hệ Thống — Chức Năng Nào Dùng AI & Vai Trò Thực Sự](#phần-3-bản-đồ-ai-toàn-hệ-thống--chức-năng-nào-dùng-ai--vai-trò-thực-sự)
+  - [3.1. Bảng Phân Loại Minh Bạch 15 Tính Năng Liên Quan Đến AI](#31-bảng-phân-loại-minh-bạch-15-tính-năng-liên-quan-đến-ai)
+  - [3.2. Nhóm A — 4 Trụ Cột Sử Dụng AI, Deep Learning, Computer Vision & LLM Thật](#32-nhóm-a--4-trụ-cột-sử-dụng-ai-deep-learning-computer-vision--llm-thật)
+  - [3.3. Nhóm B — Các Chức Năng Lai, Đồ Họa, Quy Tắc & Thống Kê (Không Phải Generative AI / ML Thuần)](#33-nhóm-b--các-chức-năng-lai-đồ-họa-quy-tắc--thống-kê-không-phải-generative-ai--ml-thuần)
+- [Phần 4: Đánh Giá Chức Năng Chatbot Hỗ Trợ Khách Hàng (Customer Support Chatbot)](#phần-4-đánh-giá-chức-năng-chatbot-hỗ-trợ-khách-hàng-customer-support-chatbot)
+  - [4.1. Kết Luận Dứt Khoát Theo 2 Tầng](#41-kết-luận-dứt-khoát-theo-2-tầng)
+  - [4.2. Kiểm Toán Nền Tảng Backend Sẵn Có & Ma Trận RBAC Hiện Tại](#42-kiểm-toán-nền-tảng-backend-sẵn-có--ma-trận-rbac-hiện-tại)
+  - [4.3. So Sánh Trực Diện: Admin MCP Copilot (`:3001`) vs Customer Support Chatbot (`:3000`)](#43-so-sánh-trực-diện-admin-mcp-copilot-3001-vs-customer-support-chatbot-3000)
+  - [4.4. Kiến Trúc Đề Xuất Nối Đầu-Cuối Customer Support Chatbot](#44-kiến-trúc-đề-xuất-nối-đầu-cuối-customer-support-chatbot)
+- [Phần 5: Kiểm Định 8 Tầng Chuẩn AI Harness & Trạng Thái Huấn Luyện Mô Hình](#phần-5-kiểm-định-8-tầng-chuẩn-ai-harness--trạng-thái-huấn-luyện-mô-hình)
+  - [5.1. Kết Luận Trung Thực: Đã Qua 8/8 Tầng Harness vs Chưa Fine-Tune Trọng Số](#51-kết-luận-trung-thực-đã-qua-88-tầng-harness-vs-chưa-fine-tune-trọng-số)
+  - [5.2. Kiến Trúc 8 Tầng AI Security & Orchestration Harness](#52-kiến-trúc-8-tầng-ai-security--orchestration-harness)
+  - [5.3. Kiểm Toán Chi Tiết Từng Tầng (Tầng 1 Đến Tầng 8)](#53-kiểm-toán-chi-tiết-từng-tầng-tầng-1-đến-tầng-8)
+  - [5.4. Ma Trận Phạm Vi Áp Dụng AI Harness Trên Toàn Hệ Thống](#54-ma-trận-phạm-vi-áp-dụng-ai-harness-trên-toàn-hệ-thống)
+  - [5.5. Kết Quả Chạy Thực Tế `pnpm eval:ai` (`43/43`) & Bằng Chứng Chưa Huấn Luyện Trọng Số](#55-kết-quả-chạy-thực-tế-pnpm-evalai-4343--bằng-chứng-chưa-huấn-luyện-trọng-số)
+- [Phần 6: Lộ Trình Hoàn Thiện Dự Án Chi Tiết (P0 Đến P3)](#phần-6-lộ-trình-hoàn-thiện-dự-án-chi-tiết-p0-đến-p3)
+  - [6.1. Tổng Quan Tiến Trình 4 Giai Đoạn](#61-tổng-quan-tiến-trình-4-giai-đoạn)
+  - [6.2. Giai Đoạn P0 — Sửa Lỗi Ngay & Vá Bảo Mật Nội Bộ](#62-giai-đoạn-p0--sửa-lỗi-ngay--vá-bảo-mật-nội-bộ)
+  - [6.3. Giai Đoạn P1 — Hoàn Thiện Chatbot Khách Hàng & Khép Kín Tính Năng Cốt Lõi](#63-giai-đoạn-p1--hoàn-thiện-chatbot-khách-hàng--khép-kín-tính-năng-cốt-lõi)
+  - [6.4. Giai Đoạn P2 — Hoàn Thiện CRUD Admin & Tích Hợp Đối Tác Thật](#64-giai-đoạn-p2--hoàn-thiện-crud-admin--tích-hợp-đối-tác-thật)
+  - [6.5. Giai Đoạn P3 — Chất Lượng Production, Kiểm Thử Tự Động & Vòng Lặp Fine-Tune AI](#65-giai-đoạn-p3--chất-lượng-production-kiểm-thử-tự-động--vòng-lặp-fine-tune-ai)
 
 ---
 
-## Phần 1: Đánh Giá Tính Khả Thi & Ánh Xạ 1:1 Ý Tưởng – Hiệu Ứng (Bán Hoa → Bán Quần Áo)
+## Tóm Tắt Điều Hành
 
-### 1.1. Sáu lý do kiến trúc chứng minh sự tương thích gần như 1:1
+Bảng dưới đây trả lời trực diện **5 câu hỏi trọng tâm** về tình trạng hiện tại của dự án dựa trên kiểm toán mã nguồn thực tế:
 
-Phân tích trực tiếp mã nguồn `d:\doancosothue\ban_hoa` cho thấy việc chuyển đổi từ **Tầm Xuân · Flower Atelier** sang **Luxury Fashion & Tailoring Atelier** không đòi hỏi phải thay đổi bản sắc thẩm mỹ hay đập bỏ hệ thống chuyển động; trái lại, hầu hết các cấu trúc hình học, vật lý và tương tác đều khớp gần như tuyệt đối:
-
-| Tiêu chí | Hiện trạng tại `ban_hoa` (Flower Atelier) | Khi chuyển sang Fashion Atelier | Mức độ khớp |
-| :--- | :--- | :--- | :---: |
-| **Ngôn ngữ thẩm mỹ & Design Tokens** | Nền tối `--cocoa: #1C1410`, nền sáng `--ivory: #FBF7EF`, điểm nhấn đồng/vàng `--gold: #B08A4A` / `--gold-hi: #EBCF8F`, `--cream: #F4EBDA`, `--champagne: #EBD9B4`; font `Cormorant Garamond` + `Be Vietnam Pro` + `Dancing Script` (`css/style.css`). | Chuẩn ngôn ngữ Editorial Quiet Luxury của các nhà mốt cao cấp (Celine, Loro Piana, local luxury atelier). Bảo toàn 100% Design System gốc, chỉ mở rộng semantic tokens cho badge tồn kho, size và chấm màu. | **100%** |
-| **Tỷ lệ khung hình ảnh (Aspect Ratio)** | Toàn bộ 40+ ảnh tách nền trong `assets/img/*.webp` có kích thước chuẩn **`720×1080` (tỷ lệ 2:3, VP8X có kênh alpha)**; ảnh quy trình `images/p01..p03` là **`800×1000` (tỷ lệ 4:5)**. | Ảnh trang phục treo móc, ảnh ghost-mannequin và ảnh lookbook toàn thân đều có tỷ lệ chuẩn **2:3** hoặc **4:5**. Geometry 3D (`W = 2.333`, `H = 3.5` trong `js/rack.js`) và khung vòm `.scard__frame` (`aspect-ratio: 3/4`) tái sử dụng nguyên vẹn. | **100%** |
-| **Ẩn dụ vật lý 3D (`js/rack.js`)** | 10 bó hoa treo ngược trên thanh đồng (`CylinderGeometry`), đung đưa theo lực lò xo giảm chấn (`k=9, damping=1.1`), bóng đổ mềm lên tường sau. | **Giá treo quần áo trên thanh đồng** là biểu tượng kinh điển nhất của boutique thời trang. Thậm chí tự nhiên hơn bán hoa vì quần áo treo xuôi trên móc (bỏ bước lật ngược 180° quanh trục Z, thay bằng góc xoay showcase trục Y). | **100%** |
-| **Ẩn dụ sợi chỉ vàng (`#atelier`)** | Sợi chỉ Bezier SVG `#threadPath`/`#threadGlow` cùng hạt sáng `#pearl` chạy xuyên qua 4 bước sơ chế – bó hoa. | Trong ngành **may đo thời trang (Tailoring / Couture)**, **sợi chỉ vàng + hạt ngọc khâu nối các công đoạn chọn vải → dựng rập → may tay → là hơi** là ẩn dụ bản địa hoàn hảo nhất. | **100%** |
-| **Cơ chế phân loại ngữ cảnh (`#occasion`)** | 6 dịp tặng hoa × 4 bộ gợi ý, đổi toàn bộ bảng màu nền + radial wipe (`#occWipe`). | Hành vi mua thời trang cao cấp xoay quanh **Dress Code / Dịp mặc** (Công sở, Tiệc tối, Dạo phố, Du lịch, Cưới & Áo dài, Tối giản) — tăng chuyển đổi rõ rệt so với lưới sản phẩm phẳng. | **95%** |
-| **Công cụ lắp ghép tương tác (`js/build.js`)** | Người dùng nhặt từng cành hoa (14 loại) + chọn 3 giấy gói (back/front layer) → bấm *"Bó hoa"* → sinh thumbnail snapshot đẩy sang Drawer đặt hàng. | Chuyển thành **Mix & Match Outfit Studio**: chọn lớp Áo / Quần-Váy / Đầm liền / Áo khoác / Phụ kiện chồng khớp theo hệ tọa độ chuẩn (thay xoắn phyllotaxis bằng Layer Slot Matrix) + chọn hộp/túi đóng gói → *"Hoàn thiện Set đồ"* kiểm tra tồn kho từng SKU. | **90%** |
-
-**Ba điểm bắt buộc phải nâng cấp kiến trúc (không thể giữ nguyên bản tĩnh):**
-1. **Dữ liệu tĩnh → Dữ liệu động đa biến thể (SKU Matrix)**: `js/data.js` hard-code 10 bó hoa với 3 cỡ (`Nhỏ/Vừa/Lớn` nhân hệ số giá `1 / 1.45 / 2.1`). Thời trang bắt buộc quản lý phân cấp **SPU → Variant (Màu sắc/Chất liệu) → SKU (Size) → Tồn kho đa kho thực tế**.
-2. **Single Page tĩnh → Kiến trúc đa trang chuẩn SEO**: `index.html` là trang đơn không đủ để Google lập chỉ mục hàng trăm trang Chi tiết sản phẩm (PDP), Danh mục (PLP) và Lookbook, cũng như không tạo được ảnh preview OpenGraph động khi chia sẻ qua Zalo/Facebook.
-3. **Quản lý vòng đời GPU/Memory & React StrictMode**: `js/main.js` và `js/rack.js` gắn listener trực tiếp lên `window`, khởi tạo `WebGLRenderer`, `ScrollTrigger`, `setInterval` mà không có `dispose()` khi chuyển route. Khi đưa vào React 19, bắt buộc dùng `useGSAP`/`gsap.context()` và thu hồi tài nguyên WebGL tường minh.
+| # | Câu hỏi trọng tâm | Kết luận trực diện | Con số & bằng chứng cốt lõi |
+|---|---|---|---|
+| **1** | **Dự án đã hoàn thành đến đâu?** | **~75–80% mức Production-Ready về lõi kiến trúc** (đạt mức xuất sắc cho demo/nghiệm thu kỹ thuật; còn ~20–25% về tích hợp đối tác thật, Admin CRUD mở rộng, Chatbot khách hàng, kiểm thử đơn vị và đóng gói container). | Trên 7 tầng kiến trúc: **40 hạng mục `[ĐÃ HOÀN THÀNH]`**, **27 `[HOÀN THÀNH MỘT PHẦN]`**, **16 `[CHƯA HOÀN THÀNH]`**, **9 `[LEGACY]`**. Bộ nghiệm thu `scripts/verify-all.mjs` đạt **6/6 Gate PASS** (chống oversell 0% trên 100 req Flash Sale), nhưng có **0 Unit Test (`*.spec.ts`/`test_*.py`)**, **0 Dockerfile app**, **0 Playwright Admin/Partner** và đối tác Thanh toán/Giao vận/ZNS đang mô phỏng. |
+| **2** | **Trang quản trị Admin đã xây dựng chưa?** | **ĐÃ ĐƯỢC XÂY DỰNG HOÀN CHỈNH PHẦN LÕI** — là ứng dụng Next.js 15 SPA cô lập vật lý trên cổng **`:3001`** (`apps/admin-portal`), kết nối thật với BFF `:4000`, **không phải mockup**. | Gồm **18 file nguồn**, **9 tab nghiệp vụ + `McpCopilotDrawer`**, `AdminRoleGuard` chặn cứng 403 `CUSTOMER`/`SUPPLIER`, `TwoFactorGate` (TOTP QR + Email OTP Mailpit), ma trận RBAC 4 vai trò nội bộ và che `costPriceVnd` 2 tầng. Tuy nhiên còn bug 404 thật tại `AiLookbookStudioTab.tsx:106`, lỗi SSR 401 tại `admin-overview.ts:23`, `Inventory`/`Payables` chỉ đọc và thiếu 7 phân hệ CRUD mở rộng (Voucher, Payment Ledger, Category/SizeChart, Occasions/Seasons, BI...). |
+| **3** | **Chức năng nào thật sự dùng AI và vai trò của AI là gì?** | Hệ thống có **4 trụ cột AI/Deep Learning/CV/LLM THẬT** (chủ yếu chạy Local `$0`) và **7 nhóm tính năng lai / đồ họa / quy tắc / thống kê** (KHÔNG phải Generative AI hay ML thuần). | **AI thật:** (1) Admin MCP Copilot Ollama `qwen2.5:3b`/`7b` + Hybrid RAG `nomic-embed-text` 768d; (2) Review Sentiment NLP `qwen2.5:3b` (chưa hiện lên UI); (3) Storefront 3D AR MediaPipe Pose 33 landmarks on-device; (4) Backend `services/ai-tryon :4009` YuNet ONNX + `rembg` IS-Net + 3-tier VTON (chưa nối UI Storefront). **Không phải GenAI/ML:** Lookbook mặc định dùng Pillow 2D `MOCK`, "AI Restyle" là đổi màu OKLab/CIE-LAB, Crowd Size Advisor là công thức L1 + SQL, `validate-garment` là stub `qualityScore: 94`. |
+| **4** | **Đã có Chatbot hỗ trợ khách hàng chưa?** | **Giao diện Storefront (`:3000`): CHƯA CÓ (0%).**<br>**Backend / BFF / MCP / RAG: ĐÃ CÓ ~50% NỀN TẢNG, CHƯA NỐI ĐẦU-CUỐI.** | `StorefrontShellOverlays.tsx` chỉ có `QuickBagDrawer` & `VirtualTryOnModal` (0 widget/route chat). Backend đã có `POST /bff/v1/storefront/rag/query` công khai (12 tài liệu `pgvector`, nhưng chỉ trả trích đoạn thô chưa qua LLM) và 4 Customer MCP tools + prompt `CUSTOMER_STYLIST` (nhưng 2/4 tool dùng `DEMO_CATALOG` tĩnh, thiếu BFF route `/storefront/chat`, và `orchestrator.ts` mới chỉ nạp nhóm công cụ `ADMIN`). |
+| **5** | **AI đã qua 8 tầng chuẩn Harness & đã huấn luyện chưa?** | **ĐÃ ĐÓNG GÓI & KIỂM ĐỊNH ĐỦ 8/8 TẦNG AI HARNESS (`43/43 = 100%`)**, nhưng **CHƯA HUẤN LUYỆN / FINE-TUNE TRỌNG SỐ MÔ HÌNH (SFT / LoRA / DPO)**. | `packages/ai-harness` (`layer1-models` → `layer8-telemetry-eval`) áp dụng đủ 8/8 tầng cho `apps/mcp-copilot :4010`; chạy LIVE `pnpm eval:ai` đạt **`43/43 PASSED (100.0%, 0 FAIL)`** (2/43 gọi LIVE Ollama `qwen2.5:3b` `64.43–71.36 tokens/s` & `nomic-embed-text` 768d; 41/43 deterministic unit harness; tài liệu cũ `docs/TONG_KET_KIEN_TRUC_VA_NGHIEM_THU.md` vẫn ghi mốc cũ `38/38`). Chưa có 0 script training/LoRA/`Modelfile`; Tầng 8 hiện dừng ở xuất 22 mẫu JSONL sạch PII qua `pnpm ai:export-sft`. |
 
 ---
 
-### 1.2. Bảng ánh xạ 1:1 toàn diện (9 phân khu + Lớp hiệu ứng toàn cục)
+## Phần 1: Đánh Giá Toàn Diện Dự Án Theo 7 Tầng Kiến Trúc
 
-| # | Khu vực & File gốc trong `ban_hoa` | Cơ chế kỹ thuật thực tế hiện có | Phiên bản Thời trang (Fashion Atelier) | Component React đích & Thay đổi kỹ thuật trọng tâm |
-| :-: | :--- | :--- | :--- | :--- |
-| **0** | **Global Layers**<br>`index.html:36-54`, `js/main.js`, `css/style.css` | Lenis (`duration: 1.15, wheelMultiplier: 0.9`) đồng bộ `gsap.ticker`; Cursor `.cursor` (LERP `0.2`, `.is-view` 74px "Xem"); `.magnetic` (`quickTo` 0.3x/0.4y); `#glints` sparkles trên `[data-glint]`; `#petalfx` sprite 4×4 (`512×512`); `.letterbox` + `#autoplay` tour; `.nav.is-light`. | Giữ nguyên toàn bộ hệ thống tương tác toàn cục; đổi sprite `#petalfx` thành **bụi ánh kim / sợi tơ lụa / nhũ champagne**; đổi `#autoplay` thành **"Lookbook Tour"**; `<SiteHeader />` bổ sung ô Tìm kiếm, Tài khoản và Badge Giỏ hàng. | `<SmoothScrollProvider />`, `<CustomCursor />`, `<MagneticButton />`, `<GlintsCanvas />`, `<FabricParticleCanvas />`, `<LookbookAutoTour />`, `<SiteHeader />`. Tự dừng toàn bộ rAF ở trang `/thanh-toan` & `/tai-khoan` và khi `document.hidden`. |
-| **1** | **Intro Mở Màn**<br>`#intro` (`index.html:30-34`, `js/main.js:playIntro`) | SVG `.intro__ring` (`r=92`, `dasharray: 578`) vẽ vòng tròn 1.3s → monogram `.intro__mono` (`T&X`) mở blur → nổ 46 hạt `petalFX.burst` → mở màn hình tròn qua `maskImage: radial-gradient(...)` bán kính `0.6 * hypot(W,H)` → gỡ `#intro` & unlock Lenis. Có fallback safety-net `9000ms`. | **Mở cửa Nhà Mốt / Khai màn BST**: Vòng chỉ vàng khép kín quanh Monogram thương hiệu thời trang mới, dòng tagline *"May đo thủ công · Hà Nội"*, nổ hạt nhũ ánh kim mở ra phim sàn diễn/xưởng may. | `<IntroCurtain />`: Chạy **1 lần mỗi phiên** (`sessionStorage`) tại trang chủ `/`; rút ngắn <= 1.8s + nút bỏ qua + safety-net 5–8s; không bao giờ chặn khách vào thẳng `/san-pham/[slug]` từ SEO/Social. |
-| **2** | **Hero Editorial**<br>`#top` (`index.html:58-76`, `js/main.js`) | Video nền `#heroFilm` (`rose-desk.webm` 717KB / `.mp4` 1.9MB, poster `rose-desk.jpg`), lớp phủ `.hero__veil`; hàm `split()` chuẩn hóa Unicode `"NFC"` tách `.ch` kèm `.shimmer` lệch pha (`-0.35s`, `-0.9s`) + `data-glint`; ScrollTrigger scrub scale video `1 -> 1.18`, ký tự bay tán xạ lên (`-40 - i*12%`). | **Lookbook Campaign Film**: Video chuyển động chậm tà váy lụa/chất liệu cashmere hoặc góc quay xưởng may; tên BST ánh kim shimmer; CTA *"Khám phá Bộ sưu tập"* + thông điệp dịch vụ (*"May đo theo số đo · Đổi size 7–14 ngày · Giao nhanh 2h"*). | `<HeroEditorial />` + `<SplitShimmerText />`: Render JSX thuần chuẩn hóa `"NFC"` (không mutate `innerHTML` tránh vỡ Hydration); poster `priority` đạt LCP < 2.5s; video tải sau hydration và hỗ trợ thay động từ CMS. |
-| **3** | **Giá Treo 3D WebGL**<br>`#rack` (`js/rack.js`, `js/main.js`) | Pinned ScrollTrigger (`end += 0.62*vh*(n-1)`) + hàm dừng `plateau()`; Three.js 0.160 thanh đồng (`MeshPhysicalMaterial` + `RoomEnvironment`), 10 bó hoa `PlaneGeometry(2.33, 3.5)`, **3 cặp GLSL shader** (12-tap Poisson blur + rim glow, shadow wall mềm, 118 hạt bụi/halo), Raycaster + vật lý lò xo 2 trục (Z-swing, Y-twist), auto-present sau `0.28s`, fallback `flatRack()`. | **Giá Treo Quần Áo 3D Trên Thanh Đồng**: 10–12 thiết kế Signature treo trên móc gỗ/đồng; rê chuột tạo gió làm vạt áo đung đưa theo trọng lượng vải; dừng cuộn thì áo tiến ra trình diễn (hàng áo bên cạnh tách dạt & xóa phông DOF); `.rack__card` kính mờ hiện **Tên mẫu, Chất liệu, Chấm màu (Swatches), Pill Size còn hàng, Giá** & nút *"Xem nhanh / Chọn Size"*. | `<ClothingRack3D />` (`next/dynamic ssr: false`, dùng `<RackCanvasR3F />` + `<FlatRackFallback />`): Bỏ lật ngược `Math.PI`, thêm xoay Y showcase & lật **Mặt trước / Mặt sau**, đổi texture theo màu ngay trên giá treo, `IntersectionObserver` pause loop, và `dispose()` triệt để. |
-| **4** | **Chọn Theo Dịp**<br>`#occasion` (`index.html:100-116`, `js/main.js`, `js/data.js`) | Pinned ScrollTrigger qua 6 dịp (`TX.occasions`), đổi palette `--ink`/`--accent` + nền `#occBg`; tràn tròn `#occWipe` (`clip-path: circle(0% -> 150%)`) từ tâm ảnh; 2 vòng SVG `#occRingC` (1.5px) & `#occRingG` (14px glow); đổi dịp / 4 mẫu con `.occ__sets` với hiệu ứng rơi đàn hồi `elastic.out(1, .42)` / `elastic.out(1, .5)`. | **Chọn Trang Phục Theo Dịp (Dress Code)**: 6 dịp thời trang — **1. Công sở thanh lịch** (Be ấm), **2. Tiệc tối & Sự kiện** (Cacao tối ánh kim `is_dark: true`), **3. Dạo phố cuối tuần** (Xanh khói), **4. Du lịch & Resort** (Cát ngà), **5. Cưới & Áo dài** (Trắng ngọc), **6. Tối giản / Quà tặng** (Hồng phấn đất); mỗi dịp 4 set gợi ý + nút *"Xem toàn bộ dịp"* sang PLP. | `<OccasionShowcase />` + `<OccasionSetThumbnails />`: Đọc theme & sản phẩm tham chiếu thật từ `GET /bff/v1/occasions`; pre-decode ảnh dịp kế tiếp để `elastic.out` không khựng khung hình. |
-| **5** | **Tự Bó Hoa → Mix & Match Outfit Studio**<br>`#build` (`js/build.js`, `js/main.js`) | Grid 3 cột: Trái 14 `.chip` (`#bPalette`), Giữa sân khấu `#bStage` với `.bq__back` (`z:0`), `#bqStems` (xoắn ốc phyllotaxis góc vàng `2.39996 rad`), `.bq__tie` (`z:150`), `.bq__front` (`z:200`), Phải chọn 3 giấy gói `.wrapsw` + tạm tính + `LABOR = 100k`. Click cành bay vào bó (`back.out(1.3)`), bấm *"Bó hoa"* đóng gói + nổ hạt, `snapshot()` clone DOM. | **Mix & Match Outfit Studio**: Trái chọn tab **Áo / Quần-Váy / Đầm liền / Áo khoác / Phụ kiện**; Giữa sân khấu Ghost-Mannequin chồng lớp chính xác vai-eo-gấu (`TOP`/`BOTTOM`/`ONE_PIECE`/`OUTERWEAR`/`ACCESSORY`); Phải chọn **Size + Màu từng món**, chọn **Hộp/Túi đóng gói**, xem **tồn kho từng SKU**, tự tính **ưu đãi Combo (-5%/-10%)**, nút **"Hoàn thiện Set đồ"** (hiệu ứng đóng hộp + nổ nhũ) → **"Thêm cả bộ vào giỏ"**. | `<OutfitStudio />` (`<GarmentLayerStage />` + `compositor.ts`): Thay phyllotaxis bằng **Garment Layer Slot Matrix** xử lý luật loại trừ (`ONE_PIECE` thay `TOP`+`BOTTOM`); kiểm tra tồn kho đồng thời (`batch-availability`); thay `cloneNode` bằng **Offscreen Canvas Composite** tạo ảnh set đồ sắc nét. |
-| **6** | **Lịch Hoa → Lookbook 4 Mùa / 6 BST**<br>`#seasons` (`index.html:150-158`, `js/main.js`) | Pinned Horizontal Scroll (`track.scrollWidth - innerWidth`); 6 thẻ `.scard` khung vòm (`3/4`), nhãn `.scard__now` ("Đang vào mùa"). Mỗi thẻ chứa `<canvas>` chạy thuật toán **Halftone Pointillism** (`getImageData`, ô `5.5*dpr`) hóa dần thành ảnh gốc sắc nét khi vào tâm `0.58 * innerWidth`. | **Lookbook 4 Mùa / 6 Bộ Sưu Tập (Drop Calendar)**: *T1–2: Tết & Áo Dài Lụa*, *T3–4: Xuân Linen*, *T5–6: Hạ Lụa & Resort*, *T7–8: Thu Công Sở*, *T9–10: Cashmere & Tweed*, *T11–12: Dạ Tiệc Cuối Năm* (`Đang mở bán`). Hiệu ứng **chấm dệt sợi vải (Pointillism / Linen Weave)** hóa nét dần; click thẻ mở trang BST `/bo-suu-tap/[slug]`. | `<SeasonLookbookTrack />` + `<HalftoneCardCanvas />`: Chuyển `getImageData` và vòng lặp tính luminance sang **Web Worker (`halftone.worker.ts`) + `OffscreenCanvas` + `Float32Array`**, lazy init bằng `IntersectionObserver` (`rootMargin: '400px'`); native snap scroll mượt trên Mobile. |
-| **7** | **Xưởng Hoa → Xưởng May Đo**<br>`#atelier` (`index.html:161-188`, `js/main.js`) | 4 bước `.step` zic-zac, khung vòm `4/5` chuyển động `@keyframes drift` (16s). SVG `#thread` tự tính Cubic Bezier (`#threadPath` + `#threadGlow` blur 4px), vẽ theo cuộn (`scrub: 0.6`), `#pearl` chạy theo `getPointAtLength()`. Đồng hồ `.step__time` đếm lên `4:30 / 8:00 / 10:00 / 12:00`. | **Hành Trình Chế Tác Tại Xưởng May (Atelier Craftsmanship)**: Sợi chỉ vàng dẫn dắt 4 công đoạn: **01 (08:00 / 02h) Tuyển chọn vải tự nhiên** (Lụa, Linen, Wool), **02 (11:00 / 08h) Dựng rập 3D & cắt thủ công**, **03 (14:30 / 18h) May đo & khâu tay chi tiết**, **04 (17:00 / 24h) Là hơi, kiểm chuẩn & đóng hộp**. | `<AtelierCraftJourney />` + `<GoldenThreadSvg />`: Dùng `ResizeObserver` trên `.atelier__body` tự tính lại đường Bezier khi ảnh load xong hoặc đổi viewport; di chuyển `#pearl` bằng `transform: translate3d(...)` tránh layout thrashing. |
-| **8** | **Finale & Quick Bag Drawer**<br>`#contact`, `#order` (`index.html:191-232`, `js/main.js`) | 3 trích dẫn `.voice`; tiêu đề `#finaleWord` gồm `.finale__base` + `.finale__lit` rọi sáng `mask-image: radial-gradient(circle 15vw at var(--mx) var(--my))`; mưa cánh hoa mỗi `260ms`. Drawer `#order` (`data-lenis-prevent`), thẻ thiệp `.order__card` nghiêng `-4deg` font `Dancing Script` live-preview theo `#odMsg`; chọn Size/Quà/Ngày giao + `#toast`. | **Đánh Giá Xác Thực & Quick Bag / Checkout Drawer**: `.voices` hiển thị Verified Fit Reviews kèm số đo (*"Chị Minh Anh · 1m62 · 50kg · Mặc size S"*). `#finaleWord` rọi sáng tên nhà mốt + mưa sợi tơ ánh kim. **Quick Bag Drawer** giữ nguyên thiệp viết tay `.order__card` cho đơn quà tặng, nâng cấp chọn **Màu sắc, Size (+ Bảng Size / Gợi ý Size), Gói quà, Quản lý nhiều món & nguyên Set Outfit**, nối thẳng sang `/thanh-toan` (VNPay/MoMo/VietQR/COD). | `<FinaleShowcase />` (rAF-throttled `pointermove` chỉ chạy khi in-view) + `<QuickBagDrawer />` (2 chế độ `quick-config` & `cart`) + `<GiftCardPreview />` + `<SizeGuideModal />`. |
+### 1.1. Tiêu Chuẩn Phân Loại & Bảng Thống Kê Tổng Quan 7 Tầng
 
----
+Mọi hạng mục trong báo cáo được phân loại chặt chẽ theo 4 nhãn:
+- **`[ĐÃ HOÀN THÀNH]`**: Có mã nguồn hoàn chỉnh, logic & tích hợp API/DB/hạ tầng thật end-to-end, không dựa vào mock/stub cho luồng nghiệp vụ chính.
+- **`[HOÀN THÀNH MỘT PHẦN]`**: Lõi đã hoạt động thật, nhưng còn bảng read-only, mô phỏng đối tác bên ngoài, lệch dây nối giữa UI và Backend, thiếu thao tác phụ, có bug cục bộ hoặc thiếu bảo vệ/kiểm thử.
+- **`[CHƯA HOÀN THÀNH]`**: Chưa triển khai mã nguồn (hoặc mới ở mức checklist văn bản / thiếu toàn bộ màn hình và tuyến API).
+- **`[LEGACY]`**: Mã nguồn thế hệ cũ còn tồn dư trong repo, không còn tham gia runtime hiện hành.
 
-### 1.3. Giải phẫu kỹ thuật chuyển đổi 3 "Hiệu ứng đinh" (Signature Effects)
-
-#### A. Từ 3D Hanging Flower Rack (`js/rack.js`) → `<ClothingRack3D />`
-Đây là thành phần đồ họa phức tạp nhất của dự án. Khi chuyển sang thời trang, ta bảo toàn trọn vẹn "linh hồn" vật lý và hệ shader nhưng hiệu chỉnh các thông số cho trang phục treo móc:
-
-1. **Hệ thanh đồng & Móc áo (Hardware Geometry)**:
-   - Giữ nguyên thanh đồng thau `CylinderGeometry(0.055, 0.055, (n-1)*2.25 + 9, 32)` tại `RAIL_Y = 2.72`, vật liệu `MeshPhysicalMaterial({ color: 0xd9b26a, metalness: 1, roughness: 0.22, clearcoat: 0.6 })` kết hợp `PMREMGenerator` + `RoomEnvironment(0.04)`.
-   - Giữ khoen đồng `TorusGeometry(0.05, 0.018, 8, 20)` trượt trên thanh, thay sợi ruy băng `PlaneGeometry(0.035, 0.55)` bằng cổ móc áo thanh mảnh (hoặc khớp chính xác đầu móc tích hợp trong ảnh WebP cutout 2:3 thông qua tọa độ `hanger_anchor_y` từ Backend).
-2. **Hiệu chỉnh logic trình diễn (`pres: 0 -> 1`)**:
-   - Trong `js/rack.js` gốc, bó hoa xoay ngược sẵn (`mesh.rotation.z = Math.PI`) và khi `present()` thì `pivot.rotation.z` xoay thêm `±Math.PI * pres` để lật xuôi.
-   - Với **quần áo**: đặt `mesh.rotation.z = 0` ngay từ đầu (treo xuôi tự nhiên). Khi `pres: 0 -> 1`, trang phục nhấc nhẹ khỏi thanh đồng (`sin(pres * PI) * 0.6`), tiến về phía camera (`z -> 3.4`), xoay nhẹ trục Y từ góc treo thanh lịch `-0.22 rad` về chính diện `0 rad` kèm dao động tinh tế `sin(t * 0.6) * 0.06` tạo cảm giác chiều sâu 3D.
-   - **Tương tác thời trang mở rộng**: Khi khách bấm **Color Swatch** hoặc nút **"Mặt trước / Mặt sau"** trên `.rack__card`, shader crossfade `uMap` sang texture màu mới hoặc mặt sau kèm cú xoay Y `180°` mượt mà ngay trên thanh đồng.
-3. **Bảo toàn 3 cặp Custom GLSL Shaders**:
-   - **`FRAG` (12-tap Poisson Disk Blur + Warm Rim Glow)**: Giữ `PD[12]` và mipmap bias `log2(max(1.0, rad * 900.0)) - 0.6`. Áo đang trình diễn (`pres = 1`) nhận viền sáng ấm `glow = 0.35`, các áo xung quanh nhận `dim -> 0.62` và `blur -> 0.006` (xóa phông DOF siêu mượt mà không tốn post-processing render pass).
-   - **`SHADOW_FRAG` (Wall Silhouette Shadow)**: Chiếu bóng mờ trên tường showroom (`z = -2.2`, `blur: 0.03 -> 0.06`, `strength: 0.42 -> 0.22`) kèm khử cạnh chữ nhật `smoothstep(0.0, 0.14, vUv)`.
-   - **`SPARK_VERT / SPARK_FRAG` (118 GPU Particles)**: 90 hạt bụi ánh sáng lơ lửng (`kind = 0`) + 28 hạt halo xoay quanh mẫu đang trình diễn (`kind = 1`) với `AdditiveBlending`.
-4. **Hệ vật lý con lắc gió theo trọng lượng vải (`Spring-Damper Oscillator`)**:
-   - Giữ hệ phương trình góc lắc Z (`va += (-k_z * a - d_z * va + force) * dt`, mặc định `k_z=9, d_z=1.1`, clamp `[-0.6, 0.6]`) và góc xoắn Y (`vb += (-k_y * b - d_y * vb + force * 0.9) * dt`, mặc định `k_y=6, d_y=1.4`).
-   - Nâng cấp: truyền tham số `fabricWeight` từ dữ liệu sản phẩm để **váy lụa tơ tằm** lay nhẹ và biên độ mềm mại hơn **áo khoác dạ tweed/wool**.
-
-#### B. Từ Build Bouquet (`js/build.js`) → `<OutfitStudio />` (Mix & Match Outfit Studio)
-Trong `js/build.js`, hoa xếp theo đường xoắn ốc góc vàng (**Phyllotaxis** `2.39996 rad`) quanh tâm `C (50%, 37%)` với cuống chụm vào điểm buộc `B (50%, 70%)`. Sang thời trang, ta thay bằng **Garment Layer Slot Architecture** nhưng giữ nguyên cảm giác *"click chọn món bên trái → món đồ bay cong mượt vào sân khấu và khớp vào tổng thể"*:
-
-- **Trật tự 7 tầng trên sân khấu (`#bStage` / `<GarmentLayerStage />`)**:
-  1. `z-index: 0` — **Hậu cảnh hộp/túi mở (`.outfit__pkg-back`)** *(thay `.bq__back`)*
-  2. `z-index: 10` — **`TOP`** (Áo trong: áo lụa hai dây, áo sơ mi, áo len mỏng)
-  3. `z-index: 20` — **`BOTTOM`** (Quần âu, chân váy) hoặc **`ONE_PIECE`** (Đầm liền — thuộc nhóm loại trừ `exclusivity_group: "TORSO_FULL"`, tự động thay thế cặp `TOP` + `BOTTOM` nhưng giữ nguyên `OUTERWEAR` & `ACCESSORY`)
-  4. `z-index: 30` — **`OUTERWEAR`** (Blazer, Trench Coat, Cardigan khoác ngoài vai lớp 10 & 20)
-  5. `z-index: 40` — **`ACCESSORY`** (Thắt lưng, khăn lụa, túi xách đặt đúng tọa độ neo)
-  6. `z-index: 150` — **Ruy băng / Mác niêm phong (`.outfit__seal`)** *(thay `.bq__tie`)*
-  7. `z-index: 200` — **Nắp hộp / Túi giấy mặt trước (`.outfit__pkg-front`)** *(thay `.bq__front`)*
-- **Bảo toàn chuyển động bay & đóng gói**:
-  - Khi bấm món trong palette bên trái, đo `getBoundingClientRect()` từ thẻ nguồn tới vị trí neo của slot trên sân khấu, dùng GSAP bay từ `scale: 0.35, opacity: 0, rotation: -18deg` vào đúng trục vai/eo với easing `back.out(1.3)` (`0.85s`).
-  - Khi bấm **"Hoàn thiện Set đồ"** (thay *"Bó hoa"*): toàn bộ lớp trang phục thu gọn nhẹ (`scale: 0.92`), kích hoạt timeline đóng hộp `back` + `front` (`scaleY: 0.05 -> 1`, trượt nắp `y: 0.22*H -> 0`), nổ hạt nhũ vàng qua `<FabricParticleCanvas />`, gọi `POST /bff/v1/outfit-studio/preview` xác nhận tồn kho từng SKU + giá Combo Set rồi mở nút **"Thêm cả bộ vào giỏ"**.
-
-#### C. Từ Atelier Golden Thread (`#atelier`) → `<AtelierCraftJourney />`
-- Giữ trọn logic tính đường cong Cubic Bezier uốn lượn dọc mép trong (tại giữa chiều cao `offsetHeight * 0.5`, lệch `±20px`) từng ảnh `.step__media` trong `buildThread()` (`M W/2 -60 C ...`) và hạt sáng `#pearl` chạy bám theo `getPointAtLength()`.
-- Nâng cấp chống lệch tọa độ trong React: gắn `ResizeObserver` lên `.atelier__body` để tự động tính lại `d` và `totalLength` bất cứ khi nào ảnh lazy-load xong hoặc đổi kích thước cửa sổ; dùng `transform: translate3d(...)` để dịch chuyển `#pearl` ở GPU composite layer.
+| Tầng Kiến Trúc | `[ĐÃ HOÀN THÀNH]` | `[HOÀN THÀNH MỘT PHẦN]` | `[CHƯA HOÀN THÀNH]` | `[LEGACY]` | Đánh Giá Trung Thực |
+|---|---:|---:|---:|---:|---|
+| **A. Storefront (`apps/storefront :3000`)** | 11 | 5 | 2 | 7 file cũ | UI Quiet Luxury & 3D/AR rất hoàn thiện, nhưng ngắt kết nối khỏi Backend Try-On `:4009`, thiếu cổng VNPay/MoMo thật, upload ảnh RMA, Customer Chatbot và Quên mật khẩu. |
+| **B. Admin Portal (`apps/admin-portal :3001`)** | 8 | 5 | 6 | 1 fallback `rose-desk` | **Đã xây dựng đầy đủ lõi 9 tab + MCP Copilot + RBAC 4 vai trò + 2FA**, nhưng Inventory/Payables chỉ đọc, có bug 404 ở Lookbook & SSR 401 ở overview, thiếu 7 phân hệ CRUD E-commerce mở rộng. |
+| **C. Partner Portal (`apps/partner-portal :3002`)** | 5 | 2 | 1 | 0 | Phủ trọn luồng B2B cốt lõi (`SUPPLIER` + 2FA + `supplier_id` lock + PO/GRN/Payables/Submissions), nhưng SSR overview lỗi 401, `b2bSummary` hardcode `0/100%`, thiếu từ chối PO/xuất CSV và 0 Playwright E2E. |
+| **D. BFF Gateway & Realtime Hub (`apps/bff :4000`)** | 6 | 4 | 2 | 0 | Zero-Trust RS256 JWKS, Redis instant revocation, RBAC, Layer 5 Redaction, Rate Limit chạy thật; nhưng Socket.io thiếu JWT auth & dùng RAM Map, `validate-garment` stub cứng `94`, `overview` tĩnh. |
+| **E. 8 NestJS Microservices (`:4001–:4008`)** | 2 dịch vụ hoàn chỉnh (`media-pipeline`, `cart-outfit`) | 6 dịch vụ lõi chạy thật còn phần thiếu/mock/guard | *(chi tiết mục 1.6)* | 0 | Lõi DDD, Anti-Oversell 0%, Saga, HMAC webhook, Argon2id, Mailpit hoạt động thật; nhưng **VietQR SVG / VNPay / MoMo / Refund**, **GHN / GHTK / AhaMove**, **Zalo ZNS** đang mô phỏng, thiếu một số CRUD và lỗ hổng `x-internal-secret` trên vài endpoint `internal/*`. |
+| **F. Python `ai-tryon (:4009)` & `mcp-copilot (:4010)`** | 2 nhóm lõi mạnh | 2 nhóm có hạn chế/fallback | 1 (auto fine-tune) | 0 | Auto-Purge 15p, 3-tier VTON và 8-layer AI Harness (**43/43 eval**) rất sâu; nhưng Lookbook mặc định dùng Pillow `MOCK`, Try-On worker chạy `asyncio.Queue` trong RAM, bị ngắt với UI Storefront và chưa có pipeline fine-tune trọng số. |
+| **G. Hạ Tầng, Bảo Mật, Kiểm Thử & Legacy** | 6 | 3 | 4 | 1 bộ root hoa tươi | Docker Compose (< 2.5 GiB), 10-DB `REVOKE PUBLIC`, NGINX TLS, Local Dev Harness, 6/6 Gate `verify-all` rất vững; nhưng **0 Unit Test**, **0 ESLint**, **0 Dockerfile app**, **0 Playwright Admin/Partner**, CI Stage 3 chỉ in checklist. |
+| **TỔNG CỘNG (Theo nhóm hạng mục chức năng)** | **40** | **27** | **16** | **9** | **~75–80% mức Production-Ready về lõi kiến trúc; ~20–25% còn lại tập trung ở tích hợp đối tác thật, Customer Chatbot đầu-cuối, Admin CRUD mở rộng, hardening nội bộ và test/DevOps.** |
 
 ---
 
-## Phần 2: Phân Tích Khoảng Trống & Toàn Bộ Nghiệp Vụ Thương Mại Điện Tử Thời Trang
+### 1.2. Tầng A — Storefront Cổng Khách Hàng (`apps/storefront :3000`)
 
-### 2.1. Phân tích khoảng trống nghiệp vụ (Gap Analysis)
+- **`[ĐÃ HOÀN THÀNH]` (11 chức năng):**
+  1. **Trang chủ Editorial & Campaign CMS** (`apps/storefront/src/app/page.tsx`, `src/components/layout/SiteHeader.tsx`, `src/components/editorial/*`): SSR từ `GET /bff/v1/storefront/bootstrap`, On-Demand ISR `/api/revalidate`, cuộn mượt Lenis + GSAP, chuẩn hóa Unicode NFC, cô lập vật lý 100% (không chứa `/admin`, `/partner`, `costPriceVnd`, `McpCopilot`).
+  2. **Sào treo 3D WebGL** (`src/features/rack-3d/ClothingRack3D.tsx`, `RackCanvasR3F.tsx`, `FlatRackFallback.tsx`): React Three Fiber + 3 GLSL shaders, dữ liệu thật `GET /bff/v1/storefront/rack-collection`, vật lý con lắc, đổi swatch, xoay 180°, tự động fallback khi `prefers-reduced-motion` hoặc mở camera.
+  3. **Trình diễn Dịp mặc (`OccasionShowcase`)** (`src/features/occasions/OccasionShowcase.tsx`, `CircularFabricLens.tsx`): gọi thật `GET /bff/v1/storefront/occasions`, ảnh alpha cutout, kính lúp soi chất liệu.
+  4. **Bộ sưu tập 6 Mùa & Đổi màu quang học (`SeasonalFlagshipVitrine`)** (`src/features/seasons-lookbook/SeasonLookbookTrack.tsx`, `SeasonalFlagshipVitrine.tsx`): gọi `GET /bff/v1/storefront/seasons` và `POST /bff/v1/storefront/seasons/:slug/ai-restyle` (OpenCV CIE-LAB cache Redis 7 ngày).
+  5. **Tìm kiếm Meilisearch tiếng Việt không dấu & Bộ lọc đa chiều** (`SearchOverlay.tsx`, `src/app/bo-suu-tap/[[...slug]]/page.tsx`, `CollectionCatalogClient.tsx`): hỗ trợ lọc *"Còn hàng theo Size của tôi"*.
+  6. **Trang Chi tiết Sản phẩm (PDP) & SEO động** (`src/app/san-pham/[slug]/page.tsx`, `opengraph-image.tsx`, `sitemap.ts`, `robots.ts`): JSON-LD `Product` + `aggregateRating`, OpenGraph PNG động, tồn kho biến thể thật.
+  7. **Crowd Size Advisor** (`src/components/product/LiveSizeAdvisor.tsx`): gọi thật `POST /bff/v1/storefront/size-recommend`, hiển thị hiệu chuẩn `crowdAdjusted`.
+  8. **Đánh giá Độ vừa vặn Xác thực (`Verified Fit Review`)** (`ProductDetailClient.tsx`, `OrderDetailClient.tsx`): lọc theo Size và *"Cùng vóc dáng ±4cm, ±4kg"*; khóa gửi review khi đơn chưa `DELIVERED`/`COMPLETED`.
+  9. **Mix & Match Outfit Studio** (`src/app/phoi-do/page.tsx`, `src/features/outfit-studio/*`): 7 tầng Z-index, 5 slot, combo giảm `-5%/-10%`, `batch-availability`, lưu & chia sẻ mã outfit, thêm trọn bộ vào giỏ.
+  10. **Giỏ hàng trượt (`QuickBagDrawer`) & Thiệp quà viết tay** (`QuickBagDrawer.tsx`, `GiftCardPreview.tsx`): CRUD giỏ thật, gom Outfit Bundle, mốc Freeship `2.000.000₫`, chọn hộp quà & thiệp.
+  11. **Đăng nhập, Đăng ký, Gộp giỏ & Hồ sơ Khách hàng** (`/dang-nhap`, `/dang-ky`, `/tai-khoan`, `apps/storefront/src/components/CustomerAccountClient.tsx`): kết nối thật `/bff/v1/auth/*`, `cart/merge`, `body-profile`, `orders/me`, `outfits/me`, `tryon-quota`.
 
-Hiện trạng `d:\doancosothue\ban_hoa` nhúng cứng toàn bộ danh mục vào biến toàn cục `window.TX` trong `js/data.js` (gồm 7 khóa gốc: `rack`, `sizes`, `addons`, `occasions`, `stems`, `wraps`, `seasons`), kết hợp luồng đặt hàng đơn lẻ trong `#order` (`index.html:219-231`) kết thúc bằng nút `#odSend` chỉ phát thông báo demo. Bảng dưới đây chỉ rõ 9 khoảng trống cốt lõi cần lấp đầy để vận hành TMĐT thời trang thực tế:
+- **`[HOÀN THÀNH MỘT PHẦN]` (5 chức năng — kèm bằng chứng mã nguồn):**
+  1. **Phòng Thử đồ Ảo (`VirtualTryOnModal.tsx:64, 634, 1209-1240` & `/thu-do-ai`):** Đã làm rất tốt phần **On-Device 3D AR WebGL Mirror** dùng Three.js + MediaPipe Pose trên trình duyệt, nhưng **hoàn toàn KHÔNG gọi 9 API `/bff/v1/storefront/tryon/*` của Backend (`:4009`)**, không subscribe Socket.io `tryon:progress`/`tryon:completed`, không trừ quota hay kích hoạt đếm ngược xóa ảnh 15 phút trên MinIO (lệch với mô tả trên `FinaleShowcase.tsx` và thẻ quota tại `CustomerAccountClient.tsx`).
+  2. **Checkout & Thanh toán Đa cổng (`CheckoutPageClient.tsx:44-49, 501-510, 1120-1127`):** Chỉ `VIETQR` hiển thị màn hình QR + đếm ngược 15 phút + Socket.io `order:paid` + nút `dev-simulate-webhook`. Khi chọn `VNPAY` hoặc `MOMO` (lines 501–509), client lập tức chuyển trang sang `/don-hang/<code>` mà không redirect sang `paymentUrl`. Mảng `QUICK_VOUCHERS` (`ATELIER10`, `FREESHIP`, `FLASH200K`) bị hardcode tại line 44 thay vì gọi `GET /bff/v1/storefront/promotions`.
+  3. **Đơn hàng & Đổi trả RMA phía Khách (`OrderDetailClient.tsx:261-278`):** Line 275 gửi cứng `evidencePhotoUrls: []` (chưa có upload ảnh bằng chứng lỗi/đổi trả), và chưa có nút tự hủy đơn ở trạng thái `AWAITING_PAYMENT`/`CONFIRMED`.
+  4. **Sổ Địa chỉ Giao hàng (`CustomerAccountClient.tsx:173-177`):** Nhập tự do Tỉnh/Quận/Phường và hardcode cứng mã hành chính `provinceCode: '01'`, `districtCode: '002'`, `wardCode: '00070'`.
+  5. **7 Component Legacy tồn dư chưa dọn** (không còn import vào runtime): `src/components/VirtualTryOnStudio.tsx` (bản mock `setTimeout` cũ), `CustomerHeader.tsx`, `TouchToTryRack.tsx`, `CameraGpuGuardDemo.tsx`, `src/features/rack/RackShowcase.tsx`, `src/features/build/BuildStudioSection.tsx`, `src/features/seasons/SeasonLookbookTrack.tsx`.
 
-| Khía cạnh nghiệp vụ | Hiện trạng Demo Bán Hoa (`js/data.js`, `index.html`, `js/main.js`) | Yêu cầu TMĐT Thời trang Production | Mức độ khoảng trống |
-| :--- | :--- | :--- | :--- |
-| **1. Mô hình Sản phẩm & Ma trận SKU** | `TX.rack` gồm 10 bó hoa phẳng `{ id, name, flowers, price }`. Giá lưu chuỗi `"1.850.000₫"` tách bằng regex `num()` và làm tròn `10.000₫` qua `vnd()`. Dữ liệu bị nhân bản cứng giữa `TX.rack` và `TX.occasions[*].sets` (`b01-rose-peony`, `b08-red-rose`, `b03-orchid`, `b04-hydrangea`, `b05-daisy`), cũng như lặp lại giữa các dịp (như `b10-hatbox` xuất hiện ở cả dịp *Tình yêu* & *Quà tặng* và dùng ở `#atelier`). | Phân cấp chuẩn **SPU (Product) → Variant (Màu sắc / Chất liệu) → SKU vật lý (Size)**. Mỗi SKU có mã SKU/Barcode riêng, giá nguyên dương (VND), giá niêm yết, giá vốn (COGS), trọng lượng đóng gói, slug SEO và trạng thái vòng đời (`DRAFT/ACTIVE/DISCONTINUED`). Một nguồn dữ liệu duy nhất (Single Source of Truth). | **Rất lớn (Nền tảng)** |
-| **2. Kích cỡ (Size), Form dáng & Giá** | `TX.sizes` có 3 mức (`Nhỏ k=1`, `Vừa k=1.45`, `Lớn k=2.1`) tính giá bằng phép nhân tuyến tính `basePrice * k`. Không có bảng số đo hay tồn kho theo size. | Quần áo dùng size rời rạc (`XS/S/M/L/XL/2XL`, size số `28–34`, `Free Size`, hoặc **May đo Bespoke**). Size phổ thông **đồng giá** (không nhân hệ số `k`), chỉ cấu hình phụ phí riêng cho Big Size/May đo. Bắt buộc có **Size Chart từng dòng**, thuộc tính **Fit** (`Slim`/`Regular`/`Relaxed`/`Oversize`), độ co giãn và **Tư vấn Size** theo số đo cơ thể. | **Rất lớn (Đặc thù ngành)** |
-| **3. Tồn kho & Đa điểm bán** | Không có khái niệm tồn kho (`stock`). Mọi bó hoa và 14 loại cành (`TX.stems`) được xem là vô hạn. | Quản lý tồn kho thực tế theo cặp `(sku_id, warehouse_id)` đa kho/showroom (Kho trung tâm HN/HCM + Showroom trưng bày). Tách 3 trạng thái `available`, `reserved`, `committed`; khóa phân tán chống **oversell** trong Flash Sale. | **Nghiêm trọng** |
-| **4. Phối đồ (`#build`)** | `js/build.js` xếp tối đa 40 cành từ `TX.stems` (14 loại, mỗi loại tối đa 15 cành) bằng tọa độ `head/hw/sw`, cộng cứng `LABOR = 100.000₫` + 1 trong 3 giấy `TX.wraps`. Xuất sang `#order` dạng 1 item ảo `{ custom: true }` và ẩn chọn size (`#odSizeGrp.hidden = true`). | **Mix & Match Outfit Studio** phân tầng trang phục (`TOP`/`BOTTOM`/`ONE_PIECE`/`OUTERWEAR`/`ACCESSORY`), luật loại trừ slot, **bắt buộc chọn Size & Màu riêng từng món**, kiểm tra tồn kho đồng thời toàn bộ SKU thành phần, tính **giá ưu đãi Combo Set**, cho phép lưu & chia sẻ link bộ phối. | **Rất lớn** |
-| **5. Giỏ hàng & Khuyến mãi** | Không có Giỏ hàng đa món — bấm `#rcOrder`, `#occOrder`, `#bOrder`, `#finaleOrder` đều chỉ mở `#order` đặt **1 sản phẩm duy nhất** kèm 4 `TX.addons` cố định. Không có mã giảm giá. | Giỏ hàng bền vững đa món & đa thiết bị (hợp nhất Guest Redis + User Account), hỗ trợ thêm cả Outfit Bundle nhiều SKU cùng lúc. Promotion Engine hỗ trợ Voucher (`%`/tiền cố định/Freeship), Combo Set, Flash Sale giới hạn suất và phân bổ chiết khấu xuống từng dòng (`allocated_discount_vnd`). | **Rất lớn** |
-| **6. Đặt hàng & Thanh toán** | Nút `#odSend` (*"Gửi đơn qua Zalo"*) chỉ gọi `toast(...)`. Không có địa chỉ hành chính, cổng thanh toán hay hóa đơn. | Quy trình Checkout chuẩn với Order State Machine. Tích hợp đa cổng thanh toán Việt Nam: **VNPay (ATM/Visa/QR), MoMo, VietQR tự động đối soát, COD** (có luật chống boom hàng). Bắt buộc xác thực chữ ký Webhook, **Idempotency Key** và đối soát định kỳ. | **Nghiêm trọng** |
-| **7. Giao vận & Khung giờ** | `#odDays` (3 ngày kế tiếp) và `#odSlots` (5 khung 2 giờ) cố định nội thành Hà Nội. | 3 phương thức: (1) **Giao hỏa tốc 2h nội thành HN/HCM** (Ahamove/GrabExpress — giữ nguyên điểm mạnh chọn khung giờ của bản mẫu); (2) **Giao tiêu chuẩn toàn quốc 1–4 ngày** (GHN/GHTK/Viettel Post) tính cước động; (3) **Nhận tại cửa hàng (BOPIS)** / hẹn thử đồ. Hỗ trợ Smart Order Routing & Split Shipment. | **Lớn** |
-| **8. Đổi Size / Trả hàng (RMA) & Đánh giá** | Không tồn tại nghiệp vụ hậu mãi. `.voices` trong `#contact` là 3 câu nhận xét hard-code. | Ngành quần áo online có tỷ lệ đổi trả 15–30%. Cần luồng **RMA & Size Exchange** chuyên biệt (đổi 2 chiều tại cửa hoặc hoàn về kho kiểm định QC → xuất size mới/hoàn tiền) cùng **Verified Fit Reviews** kèm chiều cao/cân nặng/size đã mặc để giảm tỷ lệ đổi size. | **Rất lớn (Sống còn)** |
-| **9. CMS, Backoffice & Asset Pipeline** | Thêm 1 sản phẩm phải sửa tay `js/data.js`, chép ảnh vào `assets/img/` và deploy lại toàn bộ website. | Backoffice CMS đầy đủ: CRUD Sản phẩm/SKU hàng loạt, nhập/xuất kho, duyệt đơn/in vận đơn, xử lý RMA, lập lịch Occasion/Season Lookbook, và **Visual Anchor Calibrator** chỉnh trực quan tọa độ móc treo 3D & lớp phối đồ. | **Lớn** |
-
----
-
-### 2.2. Ánh xạ mô hình dữ liệu từ `window.TX` sang Thực thể Thời trang
-
-| Khóa cũ trong `window.TX` (`js/data.js`) | Thực thể Thời trang mục tiêu | Quy tắc chuyển đổi & Thiết kế dữ liệu cốt lõi |
-| :--- | :--- | :--- |
-| **`TX.rack[]`** (`{ id, name, flowers, price }`) | **`Product` (SPU)** + **`ProductVariant` (Màu/Vải)** + **`SKU` (Size)** + **`RackShowcaseSlot`** | Tách cấu hình trưng bày 3D (`sortOrder`, `hangerAnchor`, URL texture WebP front/back) khỏi dữ liệu gốc sản phẩm. Trường `flowers` chuyển thành thuộc tính cấu trúc: `fabric_composition` (*"100% Lụa tơ tằm Bảo Lộc 19 momme"*), `fit_type`, `stretch_level`, `care_instructions`, `color_name`, `color_hex`, `fabric_weight`. |
-| **`TX.sizes[]`** (`{ name, note, k }`) | **`SizeOption`** + **`ProductSizeChart`** + **`CustomerBodyProfile`** | Bỏ hệ số nhân giá `k`. Gắn `ProductSizeChart` gồm số đo sản phẩm (`chest_cm`, `waist_cm`, `hip_cm`, `shoulder_cm`, `length_cm`) và dải khuyến nghị chiều cao/cân nặng. Đối chiếu với `CustomerBodyProfile` để tự gợi ý size tối ưu. |
-| **`TX.addons[]`** (`{ name, price }`) | **`AccessoryProduct` (Cross-sell SKU)** & **`GiftAddOn`** | Mỗi phụ kiện bán kèm (ghim cài áo đồng thau, khăn lụa cổ, nước hoa xịt vải trà trắng, móc gỗ tuyết tùng) là một **SKU độc lập** có tồn kho, ảnh và số lượng trong giỏ hàng. |
-| **`TX.occasions[]`** (`{ key, line, bg, ink, accent, dark, tag, sets[] }`) | **`OccasionLookbook`** + **`LookbookEntry`** (liên kết M-N tới `Product` / `OutfitPreset`) | Giữ nguyên hệ bảng màu cảm xúc (`theme_bg`, `theme_ink`, `theme_accent`, `is_dark`, `badge_tag`) để nuôi hiệu ứng Radial Wipe & SVG Ring. **Không copy trùng dữ liệu sản phẩm** mà tham chiếu ID thật để giá và tồn kho luôn đồng bộ. |
-| **`TX.stems[]`** (`{ id, name, price, head, hw, sw, big, filler }`) | **`OutfitStudioItem`** (ánh xạ 1-1 tới `ProductVariant`) + **`LayerLayoutSpec`** | Thay tọa độ cành hoa bằng thông số tầng trang phục: `slot_category` (`TOP`/`BOTTOM`/`ONE_PIECE`/`OUTERWEAR`/`ACCESSORY`), `z_index`, `anchor_x`, `anchor_y`, `scale_ratio`, `exclusivity_group`. Bỏ `LABOR = 100.000₫`, thay bằng quy tắc **Combo Set Discount** (phối >= 2 món giảm 5%, >= 3 món giảm 10%). |
-| **`TX.wraps[]`** (`{ id, name, sw, price }` + `-back/-front.webp`) | **`PackagingOption`** (3 cấp độ đóng gói & Quà tặng) | Chuyển 3 giấy gói thành: (1) *Túi vải Dustbag Linen tiêu chuẩn* (`0₫`), (2) *Hộp cứng Signature Ivory + Giấy nến* (`80.000₫`), (3) *Hộp quà Cao cấp Cocoa + Nơ lụa + Thiệp viết tay & Xịt hương vải* (`150.000₫`). Giữ cặp asset `-back.webp` / `-front.webp` cho animation đóng gói. |
-| **`TX.seasons[]`** (`{ months, name, note, img, now }`) | **`SeasonalCollection`** (Drop Calendar 6 BST trong năm) | Chuyển 6 mùa hoa sang 6 BST thời trang kèm `slug`, `launch_at`, `end_at`, cờ `is_current` tự tính theo thời gian thực, nối trực tiếp sang `/bo-suu-tap/[slug]` hoặc đăng ký Waitlist trước ngày ra mắt. |
-| **`#order`**, **`#atelier`**, **`.voices`** | **`Cart` / `CheckoutSession`**, **`HomepageCampaignCMS`**, **`ProductReview`** | `#order` trở thành `<QuickBagDrawer />` kết nối Cart/Checkout; `#atelier` & `#top` quản trị động qua CMS; `.voices` lấy từ `ProductReview` đã xác thực đơn giao thành công. |
-
-#### Minh họa cấu trúc JSON mục tiêu cho 1 Sản phẩm & Ma trận SKU (tiến hóa từ `TX.rack[0]`)
-
-```json
-{
-  "productId": "prod_ao_lua_ngoc_lan",
-  "slug": "ao-lua-co-tau-ngoc-lan",
-  "name": "Áo Lụa Cổ Tàu Ngọc Lan",
-  "subtitle": "Lụa tơ tằm Bảo Lộc 19 momme · Dáng suông nhẹ",
-  "categoryId": "cat_tops",
-  "occasionIds": ["occ_office", "occ_evening"],
-  "seasonCollectionId": "col_autumn_2026",
-  "fitProfile": {
-    "fitType": "RELAXED",
-    "stretchLevel": "NONE",
-    "fabricWeight": "LIGHT",
-    "modelStats": "Người mẫu cao 1m68, 49kg, số đo 82-60-89 mặc size S"
-  },
-  "rackDisplay": {
-    "enabled": true,
-    "sortOrder": 1,
-    "frontWebpUrl": "https://cdn.atelier.vn/rack/prod_ao_lua_ngoc_lan/ivory-front.webp",
-    "backWebpUrl": "https://cdn.atelier.vn/rack/prod_ao_lua_ngoc_lan/ivory-back.webp",
-    "hangerAnchor": { "x": 0.5, "y": 0.045 },
-    "aspectRatio": 0.667
-  },
-  "outfitStudioLayer": {
-    "slotCategory": "TOP",
-    "zIndex": 10,
-    "exclusivityGroup": "TORSO_UPPER",
-    "layerWebpUrl": "https://cdn.atelier.vn/studio/prod_ao_lua_ngoc_lan/ivory-layer.webp",
-    "anchor": { "x": 0.5, "y": 0.34, "scale": 1.0 }
-  },
-  "variants": [
-    {
-      "variantId": "var_ngoc_lan_ivory",
-      "colorName": "Trắng Ngà",
-      "colorHex": "#EFE7DA",
-      "skus": [
-        {
-          "skuCode": "AT-ALNL-IVR-S",
-          "size": "S",
-          "basePriceVnd": 1850000,
-          "salePriceVnd": 1850000,
-          "weightGrams": 240,
-          "availableQty": 12
-        },
-        {
-          "skuCode": "AT-ALNL-IVR-M",
-          "size": "M",
-          "basePriceVnd": 1850000,
-          "salePriceVnd": 1850000,
-          "weightGrams": 255,
-          "availableQty": 4
-        },
-        {
-          "skuCode": "AT-ALNL-IVR-L",
-          "size": "L",
-          "basePriceVnd": 1850000,
-          "salePriceVnd": 1850000,
-          "weightGrams": 270,
-          "availableQty": 0
-        }
-      ]
-    }
-  ]
-}
-```
+- **`[CHƯA HOÀN THÀNH]` (2 chức năng):**
+  1. **Chatbot Hỗ trợ Khách hàng (Customer Support Widget):** 0 giao diện chat trên `:3000` (chi tiết tại [Phần 4](#phần-4-đánh-giá-chức-năng-chatbot-hỗ-trợ-khách-hàng-customer-support-chatbot)).
+  2. **Quên mật khẩu, Đặt lại / Đổi mật khẩu, Xác minh Email & OAuth:** `services/auth-customer/src/controllers/auth.controller.ts` chưa có các endpoint này.
 
 ---
 
-### 2.3. Bảy luồng nghiệp vụ thời trang đầu–cuối (End-to-End Workflows)
+### 1.3. Tầng B — Admin Portal Cổng Quản Trị (`apps/admin-portal :3001`)
 
-1. **Luồng 1 — Khám phá, Tìm kiếm & Lọc Đa chiều (Discovery & Faceted Search)**:
-   - Khách bước vào trải nghiệm cảm xúc qua `<ClothingRack3D />`, `<OccasionShowcase />` và `<SeasonLookbookTrack />`; mọi thẻ đều phản ánh giá nhỏ nhất, chấm màu và trạng thái size còn hàng từ BFF.
-   - Tìm kiếm toàn văn trên **Meilisearch** hỗ trợ tiếng Việt có/không dấu (*"ao so mi lua"* → *"Áo sơ mi lụa"*), đồng nghĩa (*"đầm dự tiệc"* ↔ *"váy đi tiệc"*), kết hợp bộ lọc trọng yếu nhất ngành thời trang: **"Còn hàng theo Size của tôi"** bên cạnh Màu sắc, Chất liệu, Dịp mặc, Form dáng và Khoảng giá.
-2. **Luồng 2 — Mix & Match Outfit Studio (Tiến hóa từ `#build`)**:
-   - Khách chọn từng tầng (`TOP`, `BOTTOM`, `ONE_PIECE`, `OUTERWEAR`, `ACCESSORY`); hệ thống tự giải quyết xung đột tầng (`ONE_PIECE` thay `TOP` + `BOTTOM` nhưng giữ `OUTERWEAR` & `ACCESSORY`).
-   - Bảng phải hiển thị bộ chọn **Size + Màu cho từng món** và gọi `POST /v1/inventory/batch-availability` kiểm tra tồn kho đồng thời; cảnh báo ngay món nào hết size đang chọn.
-   - `Payment & Promotion Service` tính thử **ưu đãi Combo Set** (mua >= 2 món giảm 5%, >= 3 món giảm 10%); khách chọn hộp/túi đóng gói (`PackagingOption`), có thể **Lưu bộ phối (`Save Outfit`)** tạo link chia sẻ hoặc **"Thêm cả bộ vào giỏ"** (mang chung `bundle_group_id`).
-3. **Luồng 3 — Giỏ hàng & Giữ chỗ Tồn kho có Thời hạn (Cart & Reservation TTL)**:
-   - Khách vãng lai lưu giỏ trên Redis (`cart_session_id`, TTL 30 ngày) và tự động **hợp nhất (`Cart Merge`)** khi đăng nhập, đồng thời làm mới giá và tồn kho hiện hành.
-   - **Không giữ kho khi mới thêm vào giỏ** (chống bot xả giỏ khóa kho). Chỉ khi bấm **"Đặt hàng / Thanh toán"**, `Order & RMA Service` yêu cầu `Inventory Service` thực hiện **Soft Reserve TTL 15 phút** (cho thanh toán online) hoặc **Commit** (cho COD đã qua lọc rủi ro) bằng **Redis Lua Script + PostgreSQL Atomic Update** (`SELECT ... FOR UPDATE` sắp xếp theo `sku_id` tăng dần chống Deadlock và đảm bảo `available_qty >= 0`). Quá 15 phút chưa thanh toán, cơ chế Delayed Queue tự giải phóng kho và nhả voucher.
-4. **Luồng 4 — Đặt hàng, Thanh toán & Webhook Idempotency**:
-   - **Order Snapshot**: Đóng băng tên, màu, size, giá gốc, mức giảm giá phân bổ từng dòng (`allocated_discount_vnd`), phí gói quà, nội dung thiệp (`gift_note`) và địa chỉ ngay lúc tạo đơn — đảm bảo tính chính xác tuyệt đối số tiền hoàn khi khách trả lẻ 1 món trong đơn.
-   - **Đa kênh thanh toán Việt Nam**: VNPay (QR/ATM/Visa), Ví MoMo, VietQR tự động đối soát (qua PayOS/Casso/Ngân hàng trong 3–10 giây) và COD (có quy tắc kiểm soát rủi ro boom hàng: đơn > 3.000.000₫ hoặc điểm tín nhiệm thấp yêu cầu cọc 20% VietQR hoặc xác thực OTP).
-   - **Bảo mật & Idempotency cho Webhook**: Mọi IPN bắt buộc (a) xác minh chữ ký HMAC-SHA256/RSA, (b) đối chiếu khớp tuyệt đối `amount`, (c) chống xử lý lặp qua bảng `processed_webhooks` có ràng buộc `UNIQUE(provider, provider_event_id)`.
-5. **Luồng 5 — Giao vận Thông minh & Xử lý Sự cố (Fulfillment & Smart Order Routing)**:
-   - **Smart Order Routing**: Tự chọn kho/showroom đủ hàng gần khách nhất (ưu tiên Showroom nội thành HN/HCM để kích hoạt **Giao hỏa tốc 2 giờ** qua Ahamove/GrabExpress kèm chọn khung giờ; đơn tỉnh điều phối về Kho trung tâm qua **GHN / GHTK / Viettel Post**; hỗ trợ tách kiện minh bạch **Split Shipment** khi cần).
-   - **Đóng gói chuẩn Atelier**: Nhân viên kho quét mã vạch từng SKU (`Pick & Pack`) chống nhầm size, chụp ảnh hộp đồ trước khi niêm phong gửi cho khách (kế thừa trải nghiệm *"ảnh chụp trước khi giao"* nổi bật của bản mẫu).
-   - **Sự cố giao vận**: Tự động cập nhật webhook vận đơn; gửi Zalo ZNS nhắc lịch khi giao trượt lần 1–2; chỉ hoàn tồn kho (`restock`) sau khi kiện hoàn quay về kho và qua quét kiểm tra nguyên vẹn.
-6. **Luồng 6 — Nghiệp vụ Đặc thù Ngành Quần Áo (Size Exchange RMA, Size Advisor & Verified Fit Reviews)**:
-   - **Quy trình Đổi Size / Đổi Màu / Trả hàng (RMA & Size Exchange)**: Áp dụng cho đơn `DELIVERED` trong **7–14 ngày** (7 ngày chuẩn, 14 ngày cho hạng thành viên VIP — cấu hình động), loại trừ hàng may đo riêng/đồ lót/xả kho `non_returnable`:
-     - *Chế độ A — Đổi nhanh 2 chiều tại cửa (Instant Doorstep Exchange, nội thành HN/HCM)*: Duyệt yêu cầu xong, `Inventory Service` **khóa ngay SKU size mới (`EXCHANGE_RESERVED`)**; shipper giao size mới đồng thời thu size cũ trong 1 lượt đi.
-     - *Chế độ B — Đổi/Trả tiêu chuẩn toàn quốc (Return → QC → Reship/Refund)*: Cấp vận đơn chiều hoàn (miễn phí lần đổi size đầu tiên) → kho thực hiện **Checklist QC** (*còn nguyên tem mác/seal, chưa giặt/chưa sửa, không vết bẩn/mùi lạ*) → Đạt QC thì xuất size mới + nhập lại kho cũ (hoặc bù trừ chênh lệch giá/hoàn tiền); không đạt QC thì chụp ảnh bằng chứng và hoàn trả khách.
-   - **Tư vấn Chọn Size Thông minh (Size Recommendation Engine)**: Kết hợp số đo khách trong `CustomerBodyProfile` (Chiều cao, Cân nặng, 3 vòng tùy chọn, gu mặc Ôm/Vừa/Rộng) với `ProductSizeChart` (có tính độ co giãn/form) và dữ liệu thực tế `Fit Distribution` từ nhóm khách có hình thể tương đồng (±2cm, ±2kg).
-   - **Đánh giá Xác thực Kèm Thông số (Verified Fit Reviews)**: Chỉ mở sau khi đơn `DELIVERED` (nhắc qua Zalo ZNS sau 3 ngày); thu thập ảnh mặc thật + `size_purchased` + `reviewer_body_snapshot` (`1m62 · 51kg`) + `fit_feedback` (`RUNS_SMALL` / `TRUE_TO_SIZE` / `RUNS_LARGE`) → hiển thị thanh thống kê *"87% khách hàng đánh giá Chuẩn Size"* trên PDP.
-7. **Luồng 7 — Quản trị Backoffice / CMS & Visual Anchor Calibrator**:
-   - Tạo nhanh ma trận biến thể `Màu × Size`, nhập bảng số đo theo template, lập lịch chiến dịch `OccasionLookbook` / `SeasonalCollection` / Flash Sale.
-   - **Visual Anchor Calibrator**: Nhân viên biên tập tải ảnh tách nền lên Backoffice, kéo-thả trực quan điểm móc treo (`hanger_anchor`) và khung neo vai/eo (`layer_bbox`), xem trước ngay trên giá treo 3D & sân khấu Mix & Match trước khi Publish mà không cần viết dòng code nào.
+*(Tóm tắt đồng nhất 100% với phân tích chuyên sâu tại [Phần 2](#phần-2-kiểm-toán-chuyên-sâu-trang-quản-trị-admin-appsadmin-portal-3001)).*
+
+- **`[ĐÃ HOÀN THÀNH]` (8):** Đăng nhập + `AdminRoleGuard` + RBAC 4 vai trò nội bộ; `TwoFactorGate` (TOTP QR & Email OTP Mailpit); `OrdersRmaTab` (Fulfillment + Late-Payment Refund + RMA QC 3 tiêu chí); `MediaStudioTab` (Dual Upload + Anchor Calibrator 2:3 + ISR); `AiLookbookStudioTab` (UI 5 mẫu ảo + gắn 1 chạm — cần sửa bug 404 line 106); `AiOpsHealthTab` (Ollama/11-service health + DLQ Replay/Purge + AI Funnel); `McpCopilotDrawer` (HITL `NHAP_AI` + Sandbox + Hybrid RAG); Error Boundary & API Client (`error.tsx`, `api-client.ts`).
+- **`[HOÀN THÀNH MỘT PHẦN]` (5):** `IamAuditTab`, `CatalogMatrixTab`, `InventoryLedgerTab` (Read-Only), `ProcurementTab` (PO 1 SKU/lần, Payables Read-Only), `HomepageCampaignTab` (chỉ sửa text + sót `/media/rose-desk.*` tại lines 30–31), cùng lỗi SSR 401 tại `admin-overview.ts:22-31`.
+- **`[CHƯA HOÀN THÀNH]` (6 nhóm trên bảng tổng quan / 7 phân hệ mở rộng):** Voucher/Promotion CRUD, Payment/Refund Ledger độc lập, Occasions/Seasons CMS, Category/SizeChart CRUD, Báo cáo BI & Export CSV/Excel, Review Moderation & CRM Khách hàng (cùng UI Role Permissions & User CRUD trong IAM).
+- **`[LEGACY]` (1):** 2 chuỗi fallback `/media/rose-desk.webm` & `/media/rose-desk.mp4` trong `HomepageCampaignTab.tsx:30-31`.
 
 ---
 
-## Phần 3: Kiến Trúc Chuyển Đổi Công Nghệ Frontend (HTML/Vanilla JS → React + TypeScript)
+### 1.4. Tầng C — Partner Portal Cổng Đối Tác B2B (`apps/partner-portal :3002`)
 
-### 3.1. So sánh & Lựa chọn Framework: Next.js (App Router) vs. Vite SPA
-
-| Tiêu chí | Next.js 15+ (App Router + React 19) | Vite 6 + React 19 (SPA thuần) | Đánh giá cho TMĐT Thời trang |
-| :--- | :--- | :--- | :--- |
-| **SEO & OpenGraph (Zalo / FB / Google)** | **Xuất sắc**: SSR/ISR xuất HTML đầy đủ cho PDP (`/san-pham/[slug]`), PLP (`/bo-suu-tap/[slug]`), Lookbook, kèm JSON-LD `Product`/`Offer` và ảnh OG động. | **Hạn chế mặc định**: HTML rỗng, bot tìm kiếm và crawler Zalo/Facebook khó đọc ảnh/giá động nếu không tự dựng tầng prerender/SSR. | Thời trang sống nhờ tìm kiếm tự nhiên & chia sẻ link mẫu đồ → **Next.js thắng tuyệt đối**. |
-| **Core Web Vitals & Tải ban đầu** | Server Components trả HTML + poster LCP ngay; các engine nặng (Three.js, GSAP, Canvas) tách thành `'use client'` + `next/dynamic({ ssr: false })` code-splitting theo section. | Phải tải và thực thi bundle JS trước khi vẽ khung hình đầu tiên, dễ chậm FCP/LCP trên 4G. | Next.js giữ LCP < 2.5s dù trang chủ chứa WebGL & motion phong phú. |
-| **Tích hợp Three.js / GSAP / Lenis** | Đòi hỏi kỷ luật ranh giới Server/Client (`'use client'`, không gọi `window`/`document` khi SSR) và cleanup chặt khi chuyển route. | Đơn giản hơn ở giai đoạn đầu vì toàn bộ chạy phía trình duyệt. | Hoàn toàn kiểm soát gọn gàng bằng mô hình **Hybrid Client Islands**. |
-| **Tối ưu Ảnh & Font** | Tích hợp sẵn `next/font/google` (self-host `Cormorant Garamond`, `Be Vietnam Pro`, `Dancing Script` zero-CLS) và `next/image` (AVIF/WebP responsive). | Phải cấu hình thủ công font preload, plugin nén ảnh và CDN loader. | Tiết kiệm đáng kể công sức tối ưu cho hàng nghìn ảnh thời trang. |
-| **BFF Proxy & Bảo mật Auth** | Có Route Handlers / Server Actions hỗ trợ HttpOnly Cookie auth và On-Demand ISR Revalidation khi Catalog cập nhật giá/ảnh. | Gọi API trực tiếp từ trình duyệt, quản lý cookie bảo mật phức tạp hơn. | Khớp tự nhiên với kiến trúc `API Gateway & Fashion BFF`. |
-
-> [!TIP]
-> **Quyết định kiến trúc Frontend**: Chọn **Next.js 15+ (App Router) + React 19 + TypeScript (Strict Mode)** theo mô hình **Hybrid Client Islands**:
-> - **Server Components (RSC)**: Root Layout, Metadata SEO, trang Danh mục (`/bo-suu-tap/[[...slug]]`), Chi tiết sản phẩm (`/san-pham/[slug]`), và bước Prefetch dữ liệu trang chủ (SSR/ISR) truyền qua TanStack Query `HydrationBoundary`.
-> - **Client Interactive Islands (`'use client'`)**: Đóng gói toàn bộ các engine hiệu ứng (`<IntroCurtain />`, `<HeroEditorial />`, `<ClothingRack3D />`, `<OccasionShowcase />`, `<OutfitStudio />`, `<SeasonLookbookTrack />`, `<AtelierCraftJourney />`, `<FinaleShowcase />`, `<QuickBagDrawer />`), trong đó `<ClothingRack3D />` được nạp bất đồng bộ bằng `dynamic(..., { ssr: false })` và hoàn toàn không đóng gói vào bundle của trang `/thanh-toan` hay `/tai-khoan`.
+- **`[ĐÃ HOÀN THÀNH]` (5):**
+  1. Bảo vệ `SUPPLIER`-Only (`SupplierRoleGuard.tsx`, `PartnerWorkspace.tsx`) chặn cứng 403 `CUSTOMER` và 4 vai trò Admin + bắt buộc 2FA.
+  2. Khóa cô lập tenant theo `supplier_id` từ JWT (`SupplierTenantBar.tsx` + `partner-bff.controller.ts:368-374`).
+  3. Xem & xác nhận PO (`PartnerPurchaseOrdersTab`), lọc sạch `NHAP_AI` ở cả server và client (`POST /purchase-orders/:id/confirm`).
+  4. Xem phiếu nhập kho GRN & tách hàng lỗi (`PartnerGoodsReceiptsTab`: `receivedQty`, `acceptedQty`, `rejectedDefectQty`, `batchCode`).
+  5. Đề xuất mẫu mới & tải ảnh Flat-Lay 3:4 (`PartnerSubmissionPanel.tsx` → `POST /api/v1/partner/media/upload`).
+- **`[HOÀN THÀNH MỘT PHẦN]` (2):**
+  1. **Đối soát Công nợ & Quy trình PO (`PartnerProcurementPanels.tsx`, `partner-bff.controller.ts:283-366`):** Bảng công nợ chỉ đọc (chưa xuất CSV/PDF hay tải hóa đơn); PO chỉ có xác nhận, chưa có nút Từ chối PO (`reject`) hoặc thương lượng ngày giao.
+  2. **SSR Overview bị lỗi 401 & `b2bSummary` hardcode:** `apps/partner-portal/src/lib/partner-overview.ts:29-37` gọi `GET /api/v1/partner/overview` lúc SSR không kèm Bearer JWT → luôn rơi về `offline-fallback`. Kể cả khi gọi có JWT, `apps/bff/src/partner/partner-bff.controller.ts:124-130` vẫn hardcode `purchaseOrdersAwaitingConfirmation: 0`, `scheduledGrnDeliveries: 0`, `activeFabricLots: 0`, `onTimeFulfillmentSlaPct: 100`.
+- **`[CHƯA HOÀN THÀNH]` (1):** Chưa có kịch bản kiểm thử Playwright E2E trên trình duyệt thật cho Partner Portal (mới có HTTP API test ở `verify-all.mjs` Gate 4 & Gate 6).
 
 ---
 
-### 3.2. Hướng dẫn Port chi tiết 5 Engine hiệu ứng sang React 19
+### 1.5. Tầng D — BFF Gateway & Realtime Hub (`apps/bff :4000`)
 
-Ở chế độ Development, **React 19 StrictMode** thực thi chu kỳ `mount → unmount → mount` cho mọi `useEffect`. Nếu chép thẳng code Vanilla JS từ `js/main.js` và `js/rack.js` sang React sẽ lập tức phát sinh 3 lỗi nghiêm trọng: *nhân đôi pin spacer của ScrollTrigger, hai vòng `requestAnimationFrame` chạy đè nhau, và tràn giới hạn `WebGLRenderingContext`*. Dưới đây là quy chuẩn port an toàn cho cả 5 engine:
-
-#### 1) GSAP 3.12+ & ScrollTrigger → `@gsap/react` (`useGSAP`)
-- **Nguyên tắc bắt buộc**: Mọi timeline và `ScrollTrigger` đều khởi tạo bên trong hook **`useGSAP(() => { ... }, { scope: containerRef })`** để tự động thu hồi qua `gsap.context().revert()` khi unmount hoặc đổi route.
-- **Thay `split()` mutate DOM bằng JSX thuần**: Component `<SplitShimmerText text="ATELIER" />` chuẩn hóa `text.normalize('NFC')` và xuất trực tiếp `<span className="word"><span className="ch">...</span></span>` trong JSX để không bao giờ gây lỗi React Hydration và không vỡ dấu tiếng Việt.
-- **Đồng bộ Route Change**: Sau khi dữ liệu động làm thay đổi chiều cao DOM hoặc khi chuyển route, gọi `ScrollTrigger.refresh()` (có debounce). Cấu hình `ScrollTrigger.config({ ignoreMobileResize: true })` chống nhảy khung trên iOS Safari khi thanh địa chỉ ẩn/hiện.
-
-```tsx
-'use client';
-import { useRef } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { useGSAP } from '@gsap/react';
-
-gsap.registerPlugin(ScrollTrigger, useGSAP);
-
-export function HeroEditorial({ title, videoWebm, videoMp4, poster }: HeroProps) {
-  const scopeRef = useRef<HTMLElement>(null);
-
-  useGSAP(() => {
-    const mm = gsap.matchMedia();
-    mm.add('(prefers-reduced-motion: no-preference)', () => {
-      const chars = gsap.utils.toArray<HTMLElement>('.hero__title .ch');
-      gsap.timeline({
-        scrollTrigger: {
-          trigger: scopeRef.current,
-          start: 'top top',
-          end: 'bottom top',
-          scrub: true,
-        },
-      })
-        .to('.hero__film', { scale: 1.18, yPercent: 8, ease: 'none' }, 0)
-        .to('.hero__copy', { yPercent: -30, opacity: 0, ease: 'none' }, 0)
-        .to(chars, {
-          yPercent: (i) => -40 - i * 12,
-          opacity: 0,
-          stagger: 0.02,
-          ease: 'none',
-        }, 0);
-    });
-    // useGSAP tự động revert cả timeline, ScrollTrigger và matchMedia khi unmount
-  }, { scope: scopeRef });
-
-  return <section ref={scopeRef} className="hero" id="top">{/* SplitShimmerText + Video */}</section>;
-}
-```
-
-#### 2) Lenis Smooth Scroll → `lenis/react` đồng bộ GSAP Ticker
-- Bọc toàn ứng dụng bằng `<SmoothScrollProvider>` cấu hình `options={{ autoRaf: false, duration: 1.15, wheelMultiplier: 0.9 }}` — tắt `autoRaf` để đồng bộ nhịp khung hình duy nhất với `gsap.ticker` (`lagSmoothing(0)`), tái tạo chính xác cảm giác mượt của `js/main.js`.
-- Giữ tham chiếu hàm `update` để gọi `gsap.ticker.remove(update)` khi unmount; dùng **Lock Counter / Zustand Selector** (`introActive || drawerOpen || modalOpen`) để gọi `lenis.stop()` / `lenis.start()` an toàn, đồng thời tự động mở khóa và `scrollTo(0, { immediate: true })` khi `usePathname()` đổi (tránh lỗi kẹt cuộn khi người dùng bấm nút Back lúc Drawer đang mở). Luôn giữ `data-lenis-prevent` trên Drawer/Modal có cuộn nội bộ.
-
-```tsx
-'use client';
-import { ReactLenis, useLenis, type LenisRef } from 'lenis/react';
-import { useEffect, useRef } from 'react';
-import { usePathname } from 'next/navigation';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { useUIStore } from '@/stores/ui.store';
-
-function ScrollTriggerSync() {
-  useLenis(() => {
-    ScrollTrigger.update();
-  });
-  return null;
-}
-
-export function SmoothScrollProvider({ children }: { children: React.ReactNode }) {
-  const lenisRef = useRef<LenisRef>(null);
-  const pathname = usePathname();
-  const scrollLocked = useUIStore((s) => s.introActive || s.scrollLockCount > 0);
-
-  useEffect(() => {
-    const update = (time: number) => lenisRef.current?.lenis?.raf(time * 1000);
-    gsap.ticker.add(update);
-    gsap.ticker.lagSmoothing(0);
-    return () => {
-      gsap.ticker.remove(update);
-    };
-  }, []);
-
-  useEffect(() => {
-    const lenis = lenisRef.current?.lenis;
-    if (!lenis) return;
-    if (scrollLocked) lenis.stop();
-    else {
-      lenis.start();
-      ScrollTrigger.refresh();
-    }
-  }, [scrollLocked]);
-
-  useEffect(() => {
-    lenisRef.current?.lenis?.start();
-    lenisRef.current?.lenis?.scrollTo(0, { immediate: true });
-    ScrollTrigger.refresh();
-  }, [pathname]);
-
-  return (
-    <ReactLenis
-      ref={lenisRef}
-      root
-      options={{ autoRaf: false, duration: 1.15, wheelMultiplier: 0.9 }}
-    >
-      <ScrollTriggerSync />
-      {children}
-    </ReactLenis>
-  );
-}
-```
-
-#### 3) Three.js 3D Rack (`js/rack.js`) → `@react-three/fiber` (R3F) + `@react-three/drei`
-- **Khai báo Scene sạch & Chống drop FPS (Zero-Rerender Pattern)**:
-  - Tổ chức cây `<Canvas>` gồm `<BrassRail />`, `<GarmentItem />` (mỗi mẫu áo gắn `GarmentPoissonMaterial` & `WallShadowMaterial`), `<DustParticles />` (118 hạt GPU) và `<Environment resolution={256} frames={1}>` (`RoomEnvironment`).
-  - **Tuyệt đối không dùng `useState` cho các biến cập nhật 60Hz** (`focus`, góc đung đưa `a`/`b`, tốc độ chuột `mx`, tiến độ trình diễn `pres`). Toàn bộ lưu trong `useRef` hoặc Zustand transient state (`useRackStore.getState()`), cập nhật trực tiếp lên `mesh.position`, `mesh.rotation` và `material.uniforms` trong hook **`useFrame((state, delta) => ...)`**. Chỉ kích hoạt re-render React (cập nhật thông tin `.rack__card`) khi `presentedIndex` thay đổi.
-- **Pause GPU & Xử lý Context Loss / Disposal bắt buộc**:
-  1. Dùng `IntersectionObserver` điều khiển `frameloop={inView ? 'always' : 'never'}` trên `<Canvas>` — dừng hẳn render loop khi khách cuộn qua khỏi `#rack`.
-  2. Giới hạn `dpr={[1, 1.5]}` như `js/rack.js` gốc để tiết kiệm tới 56% lượng fragment shader trên màn hình Retina 3x.
-  3. Lắng nghe `webglcontextlost` (`e.preventDefault()` → tự chuyển sang `<FlatRackFallback />`) và `webglcontextrestored`.
-  4. Khi unmount hoặc đổi BST, duyệt toàn scene gọi `geometry.dispose()`, `material.dispose()`, `texture.dispose()`, `envRenderTarget.dispose()`.
-  5. Tự động hiển thị `<FlatRackFallback />` (bản React nâng cấp từ `flatRack()` trong `js/main.js`) nếu thiết bị không có WebGL, GPU yếu (`hardwareConcurrency <= 2` / mobile tầm thấp) hoặc bật `prefers-reduced-motion`.
-
-#### 4) 2D Canvases (`#glints`, `#petalfx`, `#seasons` Pointillism) → Custom React Hooks & Web Worker
-- **`<GlintsCanvas />` & `<FabricParticleCanvas />`**: Đặt 1 lần duy nhất tại `RootLayout` (`pointer-events-none`), nhận lệnh qua Zustand/Event Bus (`triggerBurst(x, y, count)`, `setRainActive(bool)`). Bắt buộc hủy `cancelAnimationFrame`, `ResizeObserver.disconnect()`, tắt hoàn toàn trên thiết bị cảm ứng (`pointer: coarse`) hoặc khi `document.hidden`, và giới hạn `dpr <= 1.5`.
-- **`<HalftoneCardCanvas />` (`#seasons` Lookbook)**: Thay vì chạy 6 vòng `getImageData` đồng loạt trên main thread như `js/main.js`, kích hoạt lazy theo `IntersectionObserver` (`rootMargin: '400px'`), chuyển tính toán luminance & tọa độ chấm dệt sang **Web Worker (`halftone.worker.ts`) + `OffscreenCanvas`** (có fallback main thread cho trình duyệt cũ) và lưu bằng **`Float32Array`** để giảm tải Garbage Collector.
-
-#### 5) Kiến trúc CSS (`css/style.css` → Design Tokens + Tailwind CSS v4 + CSS Modules)
-- **Tầng 1 — `packages/ui-tokens/tokens.css`**: Giữ nguyên toàn bộ biến `:root` (`--ivory`, `--cream`, `--champagne`, `--gold`, `--gold-hi`, `--gold-deep`, `--cocoa`, `--cocoa-2`, `--ink`, `--muted`, `--ease: cubic-bezier(.22,.8,.22,1)`) và ánh xạ trực tiếp vào `@theme` của **Tailwind CSS v4** để dùng nhanh trên toàn bộ các trang TMĐT mới (`bg-cocoa`, `text-gold-hi`, `font-serif`, `ease-atelier`).
-- **Tầng 2 — CSS Modules (`*.module.css`)**: Giữ nguyên các kỹ thuật CSS đặc thù (`clip-path`, `mask-image`, `-webkit-text-stroke`, 5 `@keyframes`: `shimmer`, `btnsheen`, `pulse`, `drip`, `drift`, `.finale__lit`, `.occ__wipe`, `.intro__ring`, `.order__card`) trong CSS Modules đi kèm từng feature.
-- **Tầng 3 — Mobile & Accessibility**: Chuyển toàn bộ `100vh` sang `100svh`/`100dvh` chống lỗi Safari iOS, bảo toàn nguyên khối `@media (prefers-reduced-motion: reduce)` và `@media (hover: none)`.
+- **`[ĐÃ HOÀN THÀNH]` (6):**
+  1. Xác thực RS256 JWKS & thu hồi quyền tức thì qua Redis (`jwt-verifier.service.ts`: kiểm `user:locked:{sub}`, `user:perm_ver:{sub}`, `revoked_jti:{jti}` — đo 29.9ms).
+  2. Phân tách 3 Portal + RBAC (`AdminPortalGuard`, `PartnerPortalGuard`, `@RequirePermissions`) + Layer 5 Cost Redaction (`redactRestrictedFields`, `stripStorefrontSensitiveFields`).
+  3. Rate Limiter cửa sổ trượt 5 bucket (`rate-limit.middleware.ts`: `auth_login: 30/m`, `auth_2fa: 20/m`, `tryon_sessions: 30/m`, `promo_evaluate: 60/m`, `checkout_orders: 120/m`).
+  4. Redis Cache (bootstrap HIT p95 `3.95ms`), On-Demand ISR Revalidation (`cache-invalidation.service.ts`) & Audit Trail `beforeJsonb`/`afterJsonb` (`audit-logger.service.ts`).
+  5. Admin Ops Telemetry & RabbitMQ DLQ Console (`admin-ops.controller.ts`: sức khỏe 11 dịch vụ + 6 hạ tầng, Replay/Purge 4 hàng đợi `*.dlq` khóa `SUPER_ADMIN + 2FA`, AI Funnel).
+  6. Socket.io Realtime Hub (`realtime.gateway.ts`, `internal-realtime.controller.ts`): phòng `order:*` và `tryon:*`, bộ đệm replay 60 giây.
+- **`[HOÀN THÀNH MỘT PHẦN]` (4):**
+  1. **Socket.io thiếu xác thực JWT & bộ đệm replay nằm trong RAM (`realtime.gateway.ts:49-53, 152-253`):** `handleConnection`, `tryon:subscribe`, `order:subscribe` không kiểm tra JWT/quyền sở hữu phòng (rủi ro IDOR mức WebSocket); `recentTryOnEvents`/`recentOrderEvents` dùng `Map` RAM nên mất đồng bộ nếu chạy > 1 node BFF.
+  2. **Endpoint `POST /api/v1/admin/media/validate-garment` là Stub tĩnh (`admin-phase5.controller.ts:752-825`):** Trả cứng `isValid: true`, `qualityScore: 94`, `detectedAspectRatio: '3:4'`, `warnings: []` mà không chạy kiểm định ảnh thật.
+  3. **`/api/v1/admin/overview` & `/api/v1/partner/overview` lỗi thời/hardcode (`admin-bff.controller.ts:128, 151-201`; `partner-bff.controller.ts:100, 124-130`):** Vẫn ghi `phase: 'phase-3'`, `order-rma: 'skeleton_ready'`, `pendingItems: 0`, `onTimeFulfillmentSlaPct: 100`.
+  4. **`CsrfOriginGuard` có điểm lỏng khi thiếu cookie (`apps/bff/src/security/guards.ts:130-141`):** Điều kiện `if (csrfCookie && !timingSafeStringEqual(csrfHeader, csrfCookie))` cho qua nếu request không gửi cookie `atelier_csrf_token` nhưng vẫn kèm header `X-CSRF-Token` bất kỳ và đúng `Origin`.
+- **`[CHƯA HOÀN THÀNH]` (2):** Các tuyến proxy Admin CRUD mở rộng (Promotions, Categories/SizeCharts, Occasions/Seasons, Stock Adjustment, Supplier CRUD, Mark Paid, Cancel Order, Reject RMA, Review Moderation) và Socket.io Redis Adapter cho scale ngang.
 
 ---
 
-### 3.3. Quản lý Trạng thái (Zustand v5 + TanStack Query v5)
+### 1.6. Tầng E — 8 NestJS DDD Microservices (`:4001–:4008`)
 
-Tách bạch hoàn toàn **Client/Motion State** khỏi **Server/Commerce State**:
-
-| Công cụ | Phạm vi quản lý | Quy tắc tối ưu hiệu năng |
-| :--- | :--- | :--- |
-| **Zustand v5** (kèm `persist` middleware cho giỏ cục bộ) | 1. `useCartStore`: Giỏ hàng cục bộ/đồng bộ hỗ trợ cả **Single SKU** và **Outfit Bundle (`bundle_group_id`)**, gói quà và lời nhắn thiệp.<br>2. `useOutfitStudioStore`: Các slot đang mặc (`TOP`, `BOTTOM`, `ONE_PIECE`, `OUTERWEAR`, `ACCESSORY`), size/màu từng món, tùy chọn đóng gói (`PackagingOption`), trạng thái `isWrapped`.<br>3. `useDrawerStore`: Mở/đóng `<QuickBagDrawer />`, chế độ `quick-config` vs `cart`, sản phẩm đang cấu hình.<br>4. `useUIStore`, `useCursorStore`, `useTourStore`: `introActive`, `scrollLockCount`, trạng thái cursor (`default`/`view`/`drag`), trạng thái Lookbook Auto Tour. | **Zero-Rerender Pattern**: Các biến đổi ở tần số 60Hz (`rackFocus`, tọa độ chuột `mx/my`) chỉ đọc qua `store.getState()` / `store.subscribe()` bên trong `useFrame` hoặc GSAP ticker, tuyệt đối không bind vào React render tree. |
-| **TanStack Query v5** | 1. `useHomeBootstrapQuery`: Dữ liệu khởi tạo trang chủ (`GET /bff/v1/storefront/bootstrap`).<br>2. `useRackCollectionQuery`, `useOccasionsQuery`, `useSeasonsQuery`: Dữ liệu từng phân khu hiệu ứng.<br>3. `useSkuStockQuery(skuIds[])`: **Kiểm tra tồn kho real-time** từng size/màu cho 3D Rack Card, Outfit Studio và Drawer (`staleTime: 15_000`, `refetchOnWindowFocus: true`).<br>4. `useOutfitPreviewMutation`, `useCartSyncMutation`, `useCheckoutSubmitMutation`: Giao tiếp đồng bộ giá Combo, giỏ hàng và đặt hàng kèm `Idempotency-Key`. | Kết hợp **SSR Prefetch + `HydrationBoundary`** từ Next.js Server Component cho Trang chủ, PLP và PDP để hiển thị tức thì không nháy loading spinner. |
+| # | Microservice & Port | DB Cô Lập | Trạng Thái | Phần Đã Hoàn Thành Tốt | Bằng Chứng Phần Thiếu / Mock / Stub / Lỗ Hổng Guard |
+|---|---|---|---|---|---|
+| 1 | **`auth-customer` (`:4001`)** | `auth_db` | `[HOÀN THÀNH MỘT PHẦN]` | Argon2id (`crypto/password.ts:41-64`), RS256 JWKS, Refresh Rotation, TOTP RFC 6238 + Recovery Codes, Email OTP Mailpit SMTP, RBAC 6 role + 23 quyền, Redis `permissionVersion`, Body Profile / Addresses / VIP Quota, IDOR guard, Audit Logs. | • `auth.controller.ts`: thiếu `forgot-password`, `reset-password`, `change-password`, verify email, OAuth.<br>• `iam.controller.ts`: thiếu `POST /v1/users`, `DELETE /v1/users/:id`, reset 2FA.<br>• **Lỗ hổng guard:** `POST /v1/internal/audit-logs` (`iam.controller.ts:211-237`) không kiểm `x-internal-secret`. |
+| 2 | **`catalog-lookbook` (`:4002`)** | `catalog_db` (+`pgvector`) | `[HOÀN THÀNH MỘT PHẦN]` | SPU/Variant/SKU, Meilisearch tiếng Việt không dấu, `size-recommender.ts` hiệu chuẩn đám đông, Hybrid RAG `catalog-rag.service.ts`, Homepage Campaign CMS, Lookbook sessions + 1-click attach, Partner Submissions khóa `x-supplier-id`. | • `catalog.controller.ts`: thiếu CRUD Categories, SizeCharts, Occasions/Seasons, Xóa SPU, thêm Variant/SKU riêng.<br>• **Lỗ hổng guard:** 4 endpoint (`internal/reseed`, `internal/skus/snapshot`, `internal/media-processed`, `internal/fit-stats-updated`, lines 738–800) không kiểm `x-internal-secret` (chỉ `stock-replenished` line 821 có kiểm). |
+| 3 | **`media-pipeline` (`:4003`)** | `media_db` | `[ĐÃ HOÀN THÀNH]` | Magic Bytes nhị phân (`image-processor.ts:59-122`), kiểm định 2:3 + 3/4 góc Alpha (`lines 129–179`), Sharp Dual Pipeline (`480×720`, `720×1080`, `768×1024`, `960w`, `1600w`), MinIO presign/upload/stream, `spatial-metadata`. | • Thiếu nhỏ (không cản luồng chính): chưa có `DELETE /v1/media/:assetId`. |
+| 4 | **`inventory` (`:4004`)** | `inventory_db` | `[HOÀN THÀNH MỘT PHẦN]` | Đa kho (`CENTRAL_WH`, `HN_ATELIER`, `HCM_SHOWROOM`), chống Oversell 0% (100 concurrent Flash Sale: 15×201, 85×409, 0 deadlock), giữ chỗ mềm 15p + Expire Sweep, Sổ cái bất biến, B2B PO → `NHAP_AI` → Partial/Defect GRN → Công nợ NCC. | • `inventory.controller.ts`: chỉ có 4 GET Admin, thiếu Điều chỉnh tồn kho thủ công (`ADJUSTMENT`), chuyển kho nội bộ, CRUD kho.<br>• `procurement.controller.ts`: thiếu CRUD NCC, Hủy/Từ chối PO, cập nhật công nợ `PAID`.<br>• **Lỗ hổng guard:** `internal/run-expire`, `internal/test-set-stock`, `internal/test-expire-reservation` (`lines 214–265`) thiếu `assertInternalSecret` và không chặn ở `NODE_ENV=production`. |
+| 5 | **`cart-outfit` (`:4005`)** | `cart_db` | `[ĐÃ HOÀN THÀNH]` | Giỏ hàng Guest & Auth, Merge giỏ, Outfit Bundle tự giảm `-5%/-10%` server-side, Packaging & Gift Card, Saved Outfits & Share Code, `internal/clear` có kiểm `x-internal-secret` (`cart.controller.ts:169-176`). | • Hoàn chỉnh trong phạm vi nghiệp vụ giỏ hàng & phối đồ. |
+| 6 | **`order-rma` (`:4006`)** | `order_db` | `[HOÀN THÀNH MỘT PHẦN]` | Checkout Saga chống trùng `Idempotency-Key`, phân bổ chiết khấu tỷ lệ (`lines 347–365`), COD Risk Shield (`≥3tr` hoặc trust `<60`), `LATE_PAYMENT_NEEDS_REFUND`, Pack/Ship/Deliver, RMA 3 loại (`SIZE_EXCHANGE`, `COLOR_EXCHANGE`, `RETURN_REFUND`), 2 chế độ (`INSTANT_2WAY`/`STANDARD_QC`), QC 3 tiêu chí. | • **Chưa tích hợp API vận chuyển thật:** `order-rma.service.ts:298-345` tính phí cứng (`55k`/`35k`/`0đ`) và tự sinh mã vận đơn giả lập (`AHM2H-...`, `GHN-...`, `GHTK-...`), không gọi API hay nhận webhook của GHN/GHTK/AhaMove.<br>• Thiếu endpoint Hủy đơn (`cancel`), Hoàn tất (`complete`), Từ chối RMA (`reject`). |
+| 7 | **`payment-promo` (`:4007`)** | `payment_db` | `[HOÀN THÀNH MỘT PHẦN]` | Payment Intent idempotent, HMAC-SHA256 `timingSafeEqual` (`payment-helpers.ts:160-180`), chống trùng `processed_webhooks`, khóa `dev-simulate-webhook` ở production (`payments.service.ts:699-705`), Promotion evaluate/lock/release + AI clearance draft, kiểm số dư hoàn tiền. | • **Chưa tích hợp cổng thanh toán thật:** (1) **VietQR (`payment-helpers.ts:27-115`)** vẽ SVG từ bit của SHA-256 hash — **không phải mã QR ISO/IEC 18004 quét được bằng app ngân hàng**; (2) **VNPay/MoMo (`lines 117–154`)** chỉ ghép chuỗi URL sandbox tĩnh; (3) **Refund (`payments.service.ts:895-933`)** chỉ `INSERT` DB nội bộ.<br>• **Promotions thiếu CRUD:** chưa có `POST/PATCH/DELETE` tạo/sửa/vô hiệu hóa voucher. |
+| 8 | **`notify-review` (`:4008`)** | `notify_db` | `[HOÀN THÀNH MỘT PHẦN]` | Verified Fit Review, đồng bộ `fit_stats` sang `catalog-lookbook`, phân tích cảm xúc tiếng Việt bằng **Ollama Fast (`qwen2.5:3b`)** + fallback từ điển (`sentiment.service.ts:164-358`), gửi Email HTML thật qua `nodemailer` → Mailpit SMTP (`:1025`) có deduplication `UNIQUE(event_id, channel)`. | • **Zalo ZNS là giả lập (DB-only stub):** `notification.service.ts:233-266` chỉ `INSERT` dòng `channel='ZALO_ZNS', status='SENT'` vào `notification_logs`, không gọi HTTP API tới Zalo OA/ZNS.<br>• Thiếu API kiểm duyệt/ẩn/xóa đánh giá (`PATCH/DELETE`) cho Admin. |
 
 ---
 
-### 3.4. Cấu trúc thư mục `apps/storefront/src/` & Sơ đồ ánh xạ Legacy → Target
+### 1.7. Tầng F — Python AI Try-On (`:4009`) & MCP Copilot (`:4010`)
 
-```text
-apps/storefront/src/
-├── app/                                # Next.js App Router (SSR / ISR / SEO)
-│   ├── layout.tsx                      # RootLayout: next/font, Providers, Ambient Overlays
-│   ├── page.tsx                        # Trang chủ Editorial Flagship (SSR prefetch & Client Islands)
-│   ├── bo-suu-tap/
-│   │   └── [[...slug]]/page.tsx        # PLP Bộ sưu tập / Dịp mặc / Mùa (Faceted Filter + SEO)
-│   ├── san-pham/
-│   │   └── [slug]/page.tsx             # PDP Chi tiết sản phẩm (JSON-LD, Zoom, Size Advisor, Fit Reviews)
-│   ├── phoi-do/page.tsx                # Trang chuyên biệt Mix & Match Outfit Studio (deeplink chia sẻ)
-│   ├── thanh-toan/page.tsx             # One-Page Checkout 3 bước (VNPay / MoMo / VietQR / COD)
-│   ├── don-hang/[code]/page.tsx        # Theo dõi đơn hàng & trạng thái thanh toán real-time
-│   ├── tai-khoan/                      # Đơn hàng, Đổi Size (RMA), Tủ đồ Outfit, Sổ địa chỉ, Số đo
-│   └── api/                            # Route Handlers mỏng (BFF proxy, On-Demand ISR revalidate)
-│
-├── features/                           # Ánh xạ 1:1 từng phân khu từ d:\doancosothue\ban_hoa
-│   ├── intro/                          # Từ #intro (index.html + js/main.js:playIntro)
-│   │   ├── IntroCurtain.tsx
-│   │   └── intro.module.css
-│   ├── hero/                           # Từ #top (Hero Video + Split Shimmer + Parallax)
-│   │   ├── HeroEditorial.tsx
-│   │   └── SplitShimmerText.tsx
-│   ├── rack-3d/                        # Từ #rack + js/rack.js
-│   │   ├── ClothingRack3D.tsx          # Pinned ScrollTrigger + plateau() + RackCard glassmorphism
-│   │   ├── RackCanvasR3F.tsx           # <Canvas> (dynamic ssr:false) + BrassRail + GarmentMesh + Sparks
-│   │   ├── FlatRackFallback.tsx        # Bản React của flatRack() khi WebGL yếu/context lost
-│   │   ├── shaders/
-│   │   │   ├── garmentPoisson.glsl.ts  # 12-tap Poisson blur + dim + warm rim glow
-│   │   │   ├── wallShadow.glsl.ts      # Soft wall silhouette shadow + UV edge fade
-│   │   │   └── sparkParticles.glsl.ts  # 118 ambient dust + focus halo particles
-│   │   └── physics/
-│   │       └── springPendulum.ts       # Spring-damper 2 trục (Z-swing, Y-twist) theo fabricWeight
-│   ├── occasion/                       # Từ #occasion
-│   │   ├── OccasionShowcase.tsx        # Pinned ScrollTrigger + #occWipe + dual SVG rings
-│   │   ├── OccasionSetThumbnails.tsx
-│   │   └── occasion.module.css
-│   ├── outfit-studio/                  # Từ #build + js/build.js (Mix & Match Outfit Studio)
-│   │   ├── OutfitStudio.tsx            # Layout 3 cột: Palette theo slot / Stage / Size + Stock + Combo
-│   │   ├── GarmentLayerStage.tsx       # Chồng lớp 7 tầng + Box Wrap Back/Front + Offscreen Composite
-│   │   ├── compositor.ts               # Hệ tọa độ neo & luật loại trừ (ONE_PIECE vs TOP+BOTTOM)
-│   │   └── outfitStudio.module.css
-│   ├── seasons-lookbook/               # Từ #seasons
-│   │   ├── SeasonLookbookTrack.tsx     # Pinned Horizontal Track + .scard__now badge
-│   │   ├── HalftoneCardCanvas.tsx      # Pointillism / Fabric-weave transition Canvas
-│   │   └── halftone.worker.ts          # Web Worker xử lý getImageData + Float32Array
-│   ├── atelier-story/                  # Từ #atelier
-│   │   ├── AtelierCraftJourney.tsx     # 4 công đoạn may đo zic-zac + bộ đếm thời gian
-│   │   └── GoldenThreadSvg.tsx         # Cubic Bezier path động + ResizeObserver + #pearl
-│   ├── finale/                         # Từ #contact
-│   │   ├── FinaleShowcase.tsx          # Verified Voices + Spotlight #finaleWord + Mưa tơ ánh kim
-│   │   └── finale.module.css
-│   └── drawer-bag/                     # Từ #order
-│       ├── QuickBagDrawer.tsx          # 2 chế độ Quick Config & Cart + đồng bộ tồn kho
-│       ├── GiftCardPreview.tsx         # Tấm thiệp nghiêng -4deg dùng Dancing Script
-│       └── SizeGuideModal.tsx          # Bảng số đo & Size Recommendation Engine
-│
-├── components/
-│   ├── layout/                         # SiteHeader (.is-light Observer), SearchOverlay, Footer
-│   ├── motion/                         # SmoothScrollProvider, CustomCursor, MagneticButton,
-│   │                                   # GlintsCanvas, FabricParticleCanvas, LookbookAutoTour
-│   └── ui/                             # GoldButton, LineButton, ColorSwatch, ToastProvider, Modal
-├── stores/                             # Zustand stores (ui, cart, outfitStudio, drawer, cursor, tour)
-├── services/                           # BFF API client (X-Correlation-ID) + TanStack Query hooks
-├── types/                              # Generated OpenAPI TypeScript models & Zod schemas
-└── styles/                             # globals.css (kế thừa packages/ui-tokens/tokens.css)
-```
+- **`services/ai-tryon` (FastAPI Python · `:4009`):**
+  - **`[ĐÃ HOÀN THÀNH]` (Lõi Backend):** 9+ endpoint `/v1/tryon/*`; MinIO bucket riêng `atelier-private-tryon`; Magic Bytes + `privacyConsent=true`; Redis SHA-256 `CACHE_HIT` (`< 20ms`, `$0`, không trừ quota); `POSE_TOO_CLOSE` hoàn `+1` quota; tác vụ nền **Auto-Purge cứng sau 15 phút** (`app/tasks/auto_purge.py:53-193`); VTON 3 tầng (`app/providers/auto_provider.py:22-148`: `FAL_CATVTON` → `HF_GRADIO_VTON` → `SMART_POSE_WARP` dùng `rembg` IS-Net + YuNet ONNX + OpenCV Homography); đổi màu quang học CIE-LAB theo mùa (`tryon_v1.py:488-657`).
+  - **`[HOÀN THÀNH MỘT PHẦN]`:** (1) Lookbook Studio (`lookbook_studio.py:192-355, 574-584`) mặc định dùng **Python Pillow 2D (`MOCK`)** vẽ silhouette hình học khi `TRYON_PROVIDER`/`VTON_PROVIDER != "fal"` hoặc thiếu `FAL_KEY`; (2) Worker (`app/workers/consumer.py:140, 171-204`) chạy `asyncio.Queue` trong RAM (chỉ publish fire-and-forget lên RabbitMQ, chưa consume từ broker nên mất job khi restart); (3) Local harness tự fallback sang SQLite (`.local-pgdata/tryon_db.sqlite`); (4) Storefront UI hiện không gọi vào `:4009`.
+- **`apps/mcp-copilot` (`:4010`) & `packages/ai-harness`:**
+  - **`[ĐÃ HOÀN THÀNH]` (Lõi 8-Layer AI Harness):** Đủ 8/8 tầng (Ollama `qwen2.5:3b`/`7b` + `nomic-embed-text` 768d, Prompt Registry v1.1.0, Hybrid RAG RRF `k=60`, MCP Tool Registry, 0 DB giao dịch + JWT Pass-Through, Layer 5 Cost Redaction, Layer 6 Prompt Injection Sandbox + HITL `NHAP_AI`, Redis Semantic Cache, Telemetry), đạt **`43/43 PASSED (100.0%)`** khi chạy LIVE `pnpm eval:ai` (tài liệu cũ `docs/TONG_KET_KIEN_TRUC_VA_NGHIEM_THU.md` vẫn ghi mốc `38/38` trước khi v3.1 bổ sung 5 case `A14–A17`, `C13`), kèm xuất 22 mẫu JSONL sạch PII qua `pnpm ai:export-sft`.
+  - **`[HOÀN THÀNH MỘT PHẦN]` / `[CHƯA HOÀN THÀNH]`:** `validate_and_process_garment_image` gọi tới BFF stub cứng `qualityScore: 94`; 4 Customer tools đọc `DEMO_CATALOG` / snapshot tĩnh và chưa nối Storefront; chưa có pipeline huấn luyện / fine-tune trọng số tự động.
 
-#### Sơ đồ Kiến trúc Ánh xạ Frontend (Legacy `ban_hoa` → Target Next.js + R3F + GSAP)
+---
+
+### 1.8. Tầng G — Hạ Tầng, Bảo Mật, Kiểm Thử & Di Sản Legacy
+
+- **`[ĐÃ HOÀN THÀNH]` (6):**
+  1. `infra/docker-compose.yml`: 8 container hạ tầng (< 2.5 GiB RAM: PostgreSQL 16 `pgvector`, Redis 7, Meilisearch v1.11, RabbitMQ 3.13, MinIO + init 3 bucket, Mailpit, NGINX 1.27) + profile `ollama-docker`.
+  2. `infra/sql/init-isolated-dbs.sql`: 10 DB PostgreSQL 16 cô lập hoàn toàn với 10 user ít đặc quyền nhất và `REVOKE ALL ON DATABASE ... FROM PUBLIC`.
+  3. `infra/nginx/nginx.conf`: Reverse Proxy TLS 1.2/1.3 cho 3 subdomain tách biệt (`https://localhost`, `https://admin.localhost`, `https://partner.localhost` kèm `X-Frame-Options: DENY`).
+  4. `scripts/local-infra-dev.mjs` (3.319 dòng, 0 dependency) + PGlite fallback (`packages/db-client/src/pg-client.ts`) cho Windows không cần Docker.
+  5. `scripts/verify-all.mjs`: 6 cổng nghiệm thu tự động đạt **6/6 PASS** (`artifacts/verify-all-metrics.json`; lưu ý Gate 3 `pnpm eval:ai` đã nâng lên **43/43 PASS** ở mã nguồn v3.1).
+  6. 9 script Playwright Chrome E2E chuyên sâu cho Storefront (`verify-tryon-3d.mjs`, `verify-visual-overhaul.mjs`...) và kịch bản tải `tests/load-k6/flash-sale.js`.
+- **`[HOÀN THÀNH MỘT PHẦN]` (3):**
+  1. **CI/CD Stage 3 chỉ là checklist tĩnh:** `.github/workflows/ci-cd.yml:122-160` (`canary-release-gate`) chỉ chạy `cat << 'EOF'` in văn bản; không build Docker image, không chạy `verify-all.mjs` và không deploy thật.
+  2. **Hardening bảo mật nội bộ:** Cần vá `x-internal-secret` trên các route `internal/*` còn sót, xác thực JWT cho Socket.io, ẩn `QUICK_DEV_ACCOUNTS` / mật khẩu dev `Atelier@2026!` trong `AdminLedgerWorkspace.tsx:49-56, 73-74` bằng biến môi trường và chuyển secret mặc định sang Secret Manager.
+  3. **Kiểm thử tự động mất cân đối:** Mạnh ở integration HTTP và Playwright Storefront, nhưng trống ở lớp Unit Test và Playwright Admin/Partner.
+- **`[CHƯA HOÀN THÀNH]` (4):**
+  1. **0 Unit Test (`*.spec.ts`, `*.test.ts`, `test_*.py`) & 0 ESLint:** Toàn bộ 21 workspace có script `"test"` trống; `"lint"` chỉ chạy `tsc --noEmit` hoặc trống.
+  2. **0 Dockerfile cho 13 ứng dụng/microservice & 0 K8s/Helm manifest:** 3 cổng Next.js + 10 microservice đang chạy trực tiếp trên host qua `scripts/start-all.mjs`.
+  3. **0 Playwright E2E cho Admin Portal (`:3001`) & Partner Portal (`:3002`).**
+  4. **Chưa có Observability Stack tập trung** (OpenTelemetry Collector, Prometheus `/metrics`, Grafana, Jaeger/Tempo).
+- **`[LEGACY]` (1 bộ prototype gốc):** Bộ file tĩnh tiệm hoa tươi ban đầu tại root (`index.html:1-45` *"Tầm Xuân · Flower Atelier"*, `js/*`, `css/style.css`, `images/*`, `media/rose-desk.{mp4,webm}`, `assets/*`) không còn tham gia runtime.
+
+---
+
+## Phần 2: Kiểm Toán Chuyên Sâu Trang Quản Trị Admin (`apps/admin-portal :3001`)
+
+### 2.1. Khẳng Định Kiến Trúc & Quy Mô Thực Tế
+
+> **KHẲNG ĐỊNH DỨT KHOÁT:** Trang Quản trị Admin **ĐÃ ĐƯỢC XÂY DỰNG HOÀN CHỈNH PHẦN LÕI VẬN HÀNH** và gọi API thật vào BFF `:4000` (không phải giao diện giả lập hay skeleton).
+
+- **Kiến trúc kỹ thuật:** Next.js `15.3.0` + React `19.1.0` + Tailwind CSS v4, chạy cô lập vật lý trên cổng **`:3001`** (`https://admin.localhost` với header `X-Frame-Options: DENY`), thiết kế SPA tập trung tại route `/` (`apps/admin-portal/src/app/page.tsx` → `AdminLedgerWorkspace.tsx`, `force-dynamic`).
+- **Quy mô mã nguồn thực tế (`apps/admin-portal/src/`):** **18 tệp**, gồm 1 workspace shell, 2 cổng bảo vệ (`AdminRoleGuard.tsx`, `TwoFactorGate.tsx`), **9 tab nghiệp vụ chuyên sâu**, **1 Drawer Trợ lý AI (`McpCopilotDrawer.tsx`)**, 1 hệ thống thông báo (`PortalToastBanner.tsx`), 2 thư viện (`api-client.ts` 278 dòng hỗ trợ tự silent refresh token + `Authorization: Bearer` + `X-CSRF-Token` + `X-Correlation-Id` + W3C `traceparent`; `admin-overview.ts`), cùng `layout.tsx` và `error.tsx`.
+
+---
+
+### 2.2. Luồng Bảo Vệ 3 Lớp, Che Giá Vốn 2 Tầng & Lỗi SSR 401
+
+1. **Lớp 1 — Đăng nhập RS256 (`AdminLedgerWorkspace.tsx:90-125`):** Gọi `POST /api/v1/auth/login`, lưu phiên tại `sessionStorage` (`atelier_admin_session_v1`). *Lưu ý bảo mật:* Lines `49–56` & `73–74` đang điền sẵn `admin@atelier.local` / `Atelier@2026!` và 6 nút `QUICK_DEV_ACCOUNTS` — cần khóa ẩn ở môi trường production.
+2. **Lớp 2 — `AdminRoleGuard` (`AdminRoleGuard.tsx:17-93`):** Chỉ cho phép 4 vai trò trong `ADMIN_PORTAL_ROLES`; chặn cứng `CUSTOMER` và `SUPPLIER` bằng giao diện `HTTP 403 · Truy cập bị từ chối`, đồng thời BFF `AdminPortalGuard` (`apps/bff/src/security/guards.ts:171-183`) chặn lần 2 ở phía server.
+3. **Lớp 3 — `TwoFactorGate` (`TwoFactorGate.tsx:1-263`):** Bắt buộc với `SUPER_ADMIN` và `WAREHOUSE_MANAGER` (ép lại ở BFF `guards.ts:186-196` trả `403 MFA_REQUIRED`). Hỗ trợ đủ 2 phương thức thật:
+   - **Email OTP (Mailpit SMTP `:1025`):** `POST /api/v1/auth/2fa/email-otp/send` → `verify`.
+   - **TOTP Authenticator (RFC 6238 QR + Recovery Codes):** `POST /api/v1/auth/2fa/totp/setup` → `verify`.
+   - *Phát hiện tinh tế trong code (`AdminLedgerWorkspace.tsx:416-423`):* `<McpCopilotDrawer />` được render bên ngoài `<TwoFactorGate>`, nên khi `SUPER_ADMIN`/`WAREHOUSE_MANAGER` chưa nhập 2FA, khung drawer vẫn hiện ở mép phải (nhưng mọi thao tác gửi chat đều bị BFF chặn `403 MFA_REQUIRED` và nút duyệt tay bị vô hiệu hóa qua biến `twoFactorVerified`).
+4. **Cơ chế Che Giá Vốn `costPriceVnd` 2 Tầng Song Song:**
+   - **Tầng UI:** `CatalogMatrixTab.tsx` (`canReadCostPrice(roles)`) loại bỏ hoàn toàn cột/ô input `costPriceVnd` khỏi DOM và `McpCopilotDrawer.tsx:676-678` thay bằng `[RBAC]` cho `CATALOG_AI_OPERATOR`/`ORDER_STAFF`.
+   - **Tầng BFF Layer 5:** Mọi response trong `admin-bff.controller.ts` & `admin-phase5.controller.ts` đều qua `redactRestrictedFields(payload, user.roles)` xóa đệ quy mọi biến thể khóa giá vốn (`cost_price`, `costPrice`, `costPriceVnd`, `giaNhap`, `unitCostVnd`, `totalCostVnd`, `cogs`...).
+5. **Bug SSR 401 thực tế tại `apps/admin-portal/src/lib/admin-overview.ts:22-31`:** Server Component gọi `GET /api/v1/admin/overview` lúc SSR **không kèm Bearer JWT**, trong khi `AdminBffController` yêu cầu `JwtAuthGuard` toàn cục → luôn nhận `401 Unauthorized` và hiện badge `"BFF Offline Fallback"` trên header (`AdminLedgerWorkspace.tsx:258-262`) dù BFF `:4000` đang chạy bình thường.
+
+---
+
+### 2.3. Ma Trận Phân Quyền Chính Xác 4 Vai Trò Nội Bộ
+
+*(Đối chiếu trực tiếp theo `apps/admin-portal/src/components/AdminLedgerWorkspace.tsx:157-237` và `packages/contracts/src/rbac.ts:134-222`):*
+
+| Vai trò | 2FA Bắt Buộc | Số Tab Mở | Danh Sách Tab Chính Xác Trên UI (`AdminLedgerWorkspace.tsx`) | Xem / Sửa `costPriceVnd` | Phạm Vi Quyền & Giới Hạn Thực Tế |
+|---|:---:|:---:|---|---|---|
+| **`SUPER_ADMIN`** | **Có** | **9 / 9** | `iam`, `ops`, `orders`, `procurement`, `inventory`, `catalog`, `media`, `lookbook`, `campaign` + `McpCopilotDrawer` | **CÓ** | Toàn quyền IAM/Audit, Replay & Purge DLQ, Duyệt PO `NHAP_AI`, Tạo SPU/Sửa SKU & Giá vốn, Duyệt RMA & Hoàn tiền trễ. |
+| **`CATALOG_AI_OPERATOR`** | Không | **4 / 9** | `catalog`, `media`, `lookbook`, `campaign` + `McpCopilotDrawer` | **ẨN & REDACT 100%** | Tạo SPU, sửa giá bán SKU, upload Media 2:3 & 3:4, hiệu chuẩn neo, tạo/gắn AI Lookbook, sửa Homepage Campaign. Không thấy `ops`/`iam`/`orders`/`procurement`/`inventory`; không duyệt được PO `NHAP_AI`. |
+| **`WAREHOUSE_MANAGER`** | **Có** | **4 / 9** | `ops` *(DLQ chỉ đọc)*, `procurement`, `inventory`, `catalog` *(chỉ xem)* + `McpCopilotDrawer` | **CÓ** *(chỉ xem trong Catalog & Procurement)* | Lập PO thủ công, duyệt PO `NHAP_AI` (cả tab Procurement & Copilot HITL), lập GRN tách hàng lỗi, xem sổ cái tồn kho & công nợ. Không Replay/Purge được DLQ (`AiOpsHealthTab.tsx:189`). |
+| **`ORDER_STAFF`** | Không | **2 / 9** | `orders`, `catalog` *(chỉ xem)* + `McpCopilotDrawer` | **ẨN & REDACT 100%** | Đóng gói, giao vận, xác nhận giao, hoàn tiền thanh toán trễ, duyệt RMA & QC 3 tiêu chí. *(Lưu ý: không thấy tab `inventory` trên UI dù `rbac.ts:181` có quyền `INVENTORY_STOCK_READ` vì `AdminLedgerWorkspace.tsx:170-173` khóa tab kho cho `SUPER_ADMIN`/`WAREHOUSE_MANAGER`).* |
+| **`CUSTOMER` / `SUPPLIER`** | Bị chặn | **0 / 9** | **Chặn cứng HTTP 403 (`AdminRoleGuard` + BFF `AdminPortalGuard`)** | Không truy cập | Phải sử dụng Storefront (`:3000`) hoặc Partner Portal (`:3002`). |
+
+---
+
+### 2.4. Đặc Tả Chi Tiết Từng Tab Trong 9 Tab Nghiệp Vụ & `McpCopilotDrawer`
+
+| # | Component (`apps/admin-portal/src/components/`) | Dòng | Vai Trò Mở | API BFF Đang Gọi (`/api/v1/admin/*`) | Thao Tác CRUD / Duyệt Thực Tế | Trạng Thái, Hạn Chế & Bug Thật Đã Phát Hiện |
+|---|---|---:|---|---|---|---|
+| **1** | **`tabs/IamAuditTab.tsx`**<br>*(IAM, RBAC & Audit Logs)* | 362 | `SUPER_ADMIN` | `GET /users`, `PATCH /users/:id/roles`, `PATCH /users/:id/status`, `GET /audit-logs` | **R:** Xem user (`permissionVersion`, `supplierId`), lọc Audit Logs + xem JSON Diff `beforeJsonb ↔ afterJsonb`.<br>**U:** Gán 6 vai trò (thu hồi phiên tức thì `<1s`), khóa/mở tài khoản (`ACTIVE ↔ LOCKED`). | **`[HOÀN THÀNH MỘT PHẦN]`**<br>• BFF có `GET /roles` & `PUT /roles/:id/permissions` (`admin-bff.controller.ts:266-292`) nhưng UI chưa có màn hình sửa quyền cấp Role.<br>• Chưa có Tạo/Xóa User, Reset 2FA.<br>• Audit Trail cắt cứng `.slice(0, 25)` (line 289), chưa phân trang. |
+| **2** | **`tabs/AiOpsHealthTab.tsx`**<br>*(AI Ops, Health & DLQ)* | 992 | `SUPER_ADMIN`, `WAREHOUSE_MANAGER` | `GET /ops/health-cluster`, `GET /ops/dlq`, `POST /ops/dlq/:q/replay`, `DELETE /ops/dlq/:q/purge`, `GET /ops/ai-funnel` | **R:** Giám sát Ollama (`model`, `tok/s`, `0₫`), 11 microservices + 6 hạ tầng, 4 hàng đợi `*.dlq` + soi JSON lỗi, phễu 5 bước Try-On → Paid Order, tỷ lệ RMA đổi size.<br>**Action:** Replay/Purge DLQ (khóa `SUPER_ADMIN + 2FA`). | **`[ĐÃ HOÀN THÀNH]`**<br>• Rất sâu ở cả UI lẫn Backend.<br>• *Hạn chế nhẹ:* chưa auto-refresh theo chu kỳ, chưa lọc khoảng thời gian (7d/30d); Try-On metrics mới hiện 3 nhãn `MOCK`/`FAL`/`CACHE_HIT`, điểm `eval:ai` chưa đưa lên UI. |
+| **3** | **`tabs/OrdersRmaTab.tsx`**<br>*(Đơn hàng, Cảnh báo Trễ & RMA QC)* | 921 | `SUPER_ADMIN`, `ORDER_STAFF` | `GET /orders`, `GET /rma`, `POST /orders/:code/{pack,ship,deliver,refund-late-payment}`, `POST /rma/:id/{approve,qc-complete}` | **R:** Lọc đơn, tìm mã/email/SĐT, xem `netRefundableUnitVnd`, banner đỏ `LATE_PAYMENT_NEEDS_REFUND`, RMA `INSTANT_2WAY`/`STANDARD_QC`.<br>**U/Approve:** Đóng gói, Giao vận, Đã giao, Hoàn tiền trễ 1 chạm, Duyệt RMA & Modal QC 3 tiêu chí tự hoàn tồn/tiền. | **`[ĐÃ HOÀN THÀNH PHẦN LÕI]`**<br>• `packPhotoUrl` (lines 102–103, 612–618) là ô nhập URL text điền sẵn ảnh mẫu, chưa có upload file trực tiếp.<br>• Chưa có nút Hủy đơn (`CANCEL`), Từ chối RMA (`REJECT`) hay in hóa đơn PDF. |
+| **4** | **`tabs/ProcurementTab.tsx`**<br>*(Thu mua B2B · PO → GRN & Công nợ)* | 981 | `SUPER_ADMIN`, `WAREHOUSE_MANAGER` | `GET /procurement/suppliers`, `GET/POST /procurement/purchase-orders`, `POST /purchase-orders/:id/submit`, `GET/POST /procurement/goods-receipts`, `GET /procurement/payables`, `GET /inventory/stock-levels` | **R:** Xem PO (nổi bật `NHAP_AI`), GRN, Công nợ NCC.<br>**C:** Tạo PO thủ công; lập GRN nhập từng phần & tách hàng lỗi (`acceptedQty` + `rejectedDefectQty`, `batchCode`).<br>**Approve:** Duyệt PO `NHAP_AI` → `CHO_NCC_XAC_NHAN` gửi Partner. | **`[HOÀN THÀNH MỘT PHẦN]`**<br>• Form tạo PO (lines 280–287, 519–565) chỉ chọn được **1 SKU/PO**.<br>• **Bảng Công nợ (`Payables`, lines 900–978) 100% Read-Only** — thiếu nút `Mark Paid`.<br>• Không có CRUD NCC, không sửa/hủy PO. |
+| **5** | **`tabs/InventoryLedgerTab.tsx`**<br>*(Tồn kho & Giữ chỗ 15 phút)* | 743 | `SUPER_ADMIN`, `WAREHOUSE_MANAGER` | `GET /inventory/{warehouses,stock-levels,reservations,ledger}` | **R:** Lọc 3 kho (`CENTRAL_WH`, `HN_ATELIER`, `HCM_SHOWROOM`), 5 thẻ KPI, bảng SKU (tối đa 120 dòng), bảng phiếu giữ chỗ 15 phút, sổ cái bất biến (60 dòng).<br>**C/U/D:** **KHÔNG CÓ (100% Read-Only).** | **`[HOÀN THÀNH MỘT PHẦN — CHỈ ĐỌC]`**<br>• Không có kiểm kê/điều chỉnh tồn kho (`ADJUSTMENT`), không có chuyển kho nội bộ, không CRUD kho hay chỉnh ngưỡng `safetyThreshold`. |
+| **6** | **`tabs/CatalogMatrixTab.tsx`**<br>*(Catalog SPU/SKU & Duyệt mẫu Đối tác)* | 540 | Cả 4 vai trò *(chỉ `SUPER_ADMIN` & `CATALOG_AI_OPERATOR` có ghi)* | `GET/POST /products`, `GET /categories`, `PATCH /skus/:id`, `GET /submissions`, `PATCH /submissions/:id/review` | **R:** Danh sách SPU → ma trận SKU màu/size, banner che giá vốn Layer 5, hàng đợi mẫu đối tác.<br>**C/U/Approve:** Tạo nhanh SPU; sửa `salePriceVnd` (và `costPriceVnd` nếu có quyền) kèm xóa cache & Audit Log; duyệt/từ chối mẫu đối tác. | **`[HOÀN THÀNH MỘT PHẦN]`**<br>• BFF có `PATCH /products/:id` (`admin-bff.controller.ts:497`) nhưng UI chưa có form sửa SPU; thiếu thêm Variant/SKU, xóa/lưu trữ SPU, tìm kiếm/phân trang.<br>• `reviewComment` duyệt mẫu bị hardcode (lines 166–170); nút duyệt (lines 502–522) chưa kiểm `canWriteCatalog` ở UI (dựa vào BFF chặn 403). |
+| **7** | **`tabs/MediaStudioTab.tsx`**<br>*(Dual Media Studio & Calibrator)* | 659 | `SUPER_ADMIN`, `CATALOG_AI_OPERATOR` | `GET /media`, `POST /media/upload`, `PATCH /media/:id/spatial-metadata` | **R/C/U:** Thư viện Media, upload 4 chuẩn (`RACK_CUTOUT_2_3`, `TRYON_FLAT_3_4`, `STUDIO_LAYER_2_3`, `LOOKBOOK_PHOTO`) với báo lỗi Magic Bytes/Alpha rõ ràng; Visual Anchor Calibrator 2:3 kéo thả crosshair + preview đung đưa sào đồng thau + ISR. | **`[ĐÃ HOÀN THÀNH]`**<br>• *Hạn chế nhẹ:* `boundingBoxJsonb` bị hardcode tĩnh (lines 219–224); chưa có gắn trực tiếp ảnh vừa tải vào SPU/Variant hay xóa ảnh khỏi thư viện. |
+| **8** | **`tabs/AiLookbookStudioTab.tsx`**<br>*(AI Lookbook Studio)* | 539 | `SUPER_ADMIN`, `CATALOG_AI_OPERATOR` | `GET /catalog/products` *(BUG 404!)*, `GET /lookbook/virtual-models`, `GET/POST /catalog/products/:id/lookbooks`, `POST .../lookbooks/:sid/attach` | **R/C/Approve:** Chọn thiết kế + biến thể màu, chọn 1 trong 5 mẫu ảo, nhập `scenePrompt`, sinh phiên Lookbook và **gắn 1 chạm** làm ảnh chính trên PDP + ISR. | **`[ĐÃ HOÀN THÀNH UI — CÓ BUG 404 THẬT]`**<br>• **BUG 404 THẬT tại `AiLookbookStudioTab.tsx:106`:** gọi `GET /api/v1/admin/catalog/products`, trong khi BFF (`admin-bff.controller.ts:410`) chỉ có **`GET /api/v1/admin/products`** → danh sách sản phẩm sẽ lỗi 404 & rỗng khi chạy thật!<br>• Backend mặc định sinh ảnh ghép Pillow 2D `MOCK` nếu không bật `VTON_PROVIDER=fal` + `FAL_KEY`. |
+| **9** | **`tabs/HomepageCampaignTab.tsx`**<br>*(Chiến dịch Trang chủ)* | 529 | `SUPER_ADMIN`, `CATALOG_AI_OPERATOR` | `GET /homepage-campaign`, `PUT /homepage-campaign` | **R/U:** Biên tập văn bản 4 khối trang chủ (Intro Curtain, Hero Editorial, 4 `atelierSteps`, Finale & 3 `featuredVoices`), lưu `PUT` tự xóa Redis + ISR + Audit Log. | **`[HOÀN THÀNH MỘT PHẦN]`**<br>• **Sót dữ liệu Legacy:** `EMPTY_HERO` tại **lines 30–31** vẫn chứa `/media/rose-desk.webm` và `/media/rose-desk.mp4`.<br>• Chỉ sửa text, chưa có ô nhập/chọn media URL (`posterUrl`, `videoWebmUrl`, `videoMp4Url`, `atelierSteps[].imageUrl`). |
+| **10** | **`McpCopilotDrawer.tsx`**<br>*(Trợ lý AI Nội bộ Ollama MCP + HITL)* | 812 | Cả 4 vai trò nội bộ (`COPILOT_ACCESS`) | `POST /copilot/chat`, `GET /ops/health-cluster`, `POST /procurement/purchase-orders/:id/submit` *(+ `approveEndpoint` động)* | **Chat AI thật:** Drawer 420px phải, trạng thái Ollama Qwen 2.5 (`model`, `tok/s`, `0₫`), badge `UNTRUSTED CUSTOMER DATA SANDBOX ACTIVE`, Tool Trace (`AUTH_OK`/`403_DENIED`), trích dẫn Hybrid RAG 768d, Action Cards HITL (`PO_DRAFT_CREATED`, `GARMENT_IMAGE_PROCESSED`, `SIZING_ADJUSTMENT_PROPOSAL`, `CLEARANCE_CAMPAIGN_DRAFT`). | **`[ĐÃ HOÀN THÀNH]`**<br>• Một trong những thành phần tốt nhất dự án.<br>• *Lưu ý nhỏ:* Render ngoài `TwoFactorGate`; chỉ lưu lịch sử chat trong React state; chưa có nút 👍/👎 phản hồi; thẻ `CLEARANCE_CAMPAIGN_DRAFT` chỉ đọc do chưa có tab Voucher để duyệt kích hoạt. |
+
+---
+
+### 2.5. Các Chức Năng Quản Trị Chuẩn E-Commerce Chưa Có Trên Admin UI
+
+1. **Quản lý Voucher & Chương trình Khuyến mãi (Promotions/Voucher CRUD):** Chưa có tab Admin và `services/payment-promo` chưa có API `POST/PATCH/DELETE` để tạo/sửa/vô hiệu hóa voucher hoặc duyệt kích hoạt nháp `CLEARANCE_CAMPAIGN_DRAFT` từ Copilot.
+2. **Sổ Giao dịch Thanh toán & Hoàn tiền Độc lập (Payment & Refund Ledger):** Dù BFF đã có `POST /api/v1/admin/payments/refunds` (`admin-phase5.controller.ts:365`) và `payment-promo` có `GET /v1/payments/transactions/:orderCode`, Admin UI chưa có tab tra cứu lịch sử giao dịch VietQR/VNPay/MoMo/COD, log webhook hay hoàn tiền chủ động.
+3. **CMS Bộ sưu tập theo Dịp mặc & 6 Mùa (Occasions & Seasons CMS):** `HomepageCampaignTab` chỉ sửa văn bản 4 khối trang chủ; Occasions và 6 Seasons hiện phụ thuộc dữ liệu seed.
+4. **Quản trị Danh mục (Category CRUD), Bảng Kích cỡ (SizeChart CRUD) & Quản trị SPU/Variant đầy đủ:** Chưa có CRUD `categories`, CRUD `size_charts`, form sửa SPU (dù BFF đã có `PATCH /products/:id`), thêm Variant/SKU mới hay xóa/ẩn sản phẩm.
+5. **Quản trị User, Ma trận Quyền cấp Role & CRM Khách hàng:** `IamAuditTab` chưa nối `GET /admin/roles` & `PUT /admin/roles/:id/permissions` lên UI, chưa tạo/xóa user hay reset 2FA; và chưa có màn hình CRM theo dõi hạng VIP, điểm tin cậy `cod_trust_score` và lịch sử mua hàng từng khách.
+6. **Báo cáo Doanh thu, Biên lợi nhuận BI & Xuất Dữ liệu (CSV/Excel/PDF):** `AiOpsHealthTab` chỉ tập trung sức khỏe hệ thống và phễu Try-On/RMA; chưa có biểu đồ doanh thu/lợi nhuận theo thời gian, top sản phẩm bán chạy hay xuất báo cáo kế toán/công nợ.
+7. **Kiểm duyệt Đánh giá (Review Moderation) & Nhật ký Thông báo (Notification Logs Viewer):** `notify-review` đã có `GET /v1/notifications/logs` (`reviews.controller.ts:216`), nhưng Admin UI chưa có màn hình kiểm duyệt bình luận vi phạm hay xem trạng thái gửi Email/ZNS thất bại.
+
+---
+
+## Phần 3: Bản Đồ AI Toàn Hệ Thống — Chức Năng Nào Dùng AI & Vai Trò Thực Sự
+
+### 3.1. Bảng Phân Loại Minh Bạch 15 Tính Năng Liên Quan Đến AI
+
+| # | Tên Chức Năng | Cổng / Service | Công Nghệ / Model Thực Sự Dùng | Vai Trò Cụ Thể Của AI | Nhóm Bản Chất | Trạng Thái |
+|---|---|---|---|---|---|---|
+| **1** | **Admin MCP Copilot** | Admin (`:3001`) → BFF → `mcp-copilot :4010` | **Ollama `qwen2.5:3b`/`7b`** + **`nomic-embed-text` (768d)** + `pgvector` (`rag_vector_db`) | Hiểu yêu cầu tiếng Việt, gọi tool MCP (≤4 bước) đọc cầu Try-On/RMA/RAG, lập nháp `NHAP_AI` (PO, xả lẻ size) & tổng hợp báo cáo | **Nhóm A (AI Thật + Guardrails & Rule Fallback)** | Hoàn thành đầy đủ |
+| **2** | **Review Sentiment NLP** | `services/notify-review :4008` (`sentiment.service.ts`) | **Ollama Fast `qwen2.5:3b`** (Structured JSON Schema) | Tự động chấm điểm `sentimentScore [-1, 1]`, nhãn `POSITIVE`/`NEUTRAL`/`NEGATIVE` & tóm tắt khi khách tạo review | **Nhóm A (AI Thật + Lexicon Fallback)** | Xong Backend; **CHƯA hiển thị lên UI** |
+| **3** | **Storefront 3D AR Try-On Mirror** | Storefront (`:3000`: `/thu-do-ai`, `VirtualTryOnModal`) | **Google MediaPipe Pose Landmarker** (`pose_landmarker_lite.task` + WASM) + Three.js | Nhận diện 33 điểm khung xương 2D/3D trên Camera (`VIDEO`) & Ảnh (`IMAGE`) trực tiếp tại trình duyệt để bám áo 3D & che khuất | **Nhóm A (Computer Vision AI On-Device Thật)** | Xong lớp Client; **chưa nối gọi Backend `:4009`** |
+| **4** | **Backend VTON Pipeline** | BFF (`/bff/v1/storefront/tryon/*`) → `services/ai-tryon :4009` | **OpenCV YuNet ONNX CNN** + **`rembg` IS-Net** + 3 tầng (`FAL_CATVTON` → `HF_GRADIO_VTON` → `SMART_POSE_WARP`) | Chặn `POSE_TOO_CLOSE`, tách nền người/áo bằng mạng nơ-ron, sinh ảnh thử đồ 2D bất đồng bộ, cache SHA-256 Redis & xóa cứng sau 15 phút | **Nhóm A (DL/CV/Diffusion 3 tầng thật)** | Xong Backend; **Storefront UI chưa gọi vào** |
+| **5** | **AI Lookbook Studio** | Admin (`AiLookbookStudioTab`) → `catalog-lookbook` → `ai-tryon :4009` | Mặc định: **Python Pillow 2D (`MOCK`)**. Tùy chọn: **`fal-ai/cat-vton`** nếu `TRYON_PROVIDER`/`VTON_PROVIDER=fal` + `FAL_KEY` | Mặc định vẽ silhouette hình học bằng elip/đa giác và dán ảnh flat-lay (0 GenAI); chỉ gọi Diffusion thật khi cấu hình `fal` có phí | **Nhóm B (Mặc định Đồ họa 2D / Tùy chọn Cloud VTON)** | Xong luồng UI/MinIO; có bug 404 line 106 |
+| **6** | **AI Restock (`NHAP_AI`)** | Admin (`ProcurementTab`) + `mcp-copilot` + `ai-tryon` + `inventory` | **Ollama `qwen2.5`** điều phối tool + **SQL & công thức tất định** | LLM chỉ điều phối tool & viết giải trình; tính rủi ro tồn kho và `suggestedRestockQty` là công thức rule-based; `inventory` là sổ cái thuần HITL | **Nhóm B (Lai: LLM điều phối + Công thức tất định)** | Hoàn thành đầy đủ |
+| **7** | **AI Xả Hàng Lẻ Size (`CLEARANCE_ODD_SIZE`)** | `mcp-copilot :4010` → `payment-promo :4007` | **Rule-based chọn SKU lẻ size** + **Ollama `qwen2.5`** tổng hợp tiếng Việt | Quy tắc chọn SKU `XS`/`XL`/`XXL` tồn đọng tạo nháp `NHAP_AI`; LLM diễn đạt báo cáo | **Nhóm B (Lai: Rule-based + LLM tổng hợp)** | Xong Backend & Copilot; thiếu UI Voucher duyệt |
+| **8** | **Kiểm Chuẩn Ảnh Try-On (`validate_and_process_garment_image`)** | `mcp-copilot :4010` → BFF (`admin-phase5.controller.ts:752`) | **Stub tĩnh** (không có Vision AI) | BFF trả cứng `qualityScore: 94`, `detectedAspectRatio: '3:4'`, `isValid: true`, khóa `NHAP_AI` & `autoAttachAsTryOnGarment: false` | **Nhóm B (Stub kiểm định + LLM tóm tắt)** | Hoàn thành một phần (Stub) |
+| **9** | **AI Ops, Health & DLQ** | Admin (`AiOpsHealthTab`) → BFF (`admin-ops.controller.ts`) | **Giám sát thuần** (0 suy luận AI) | Theo dõi Ollama, 11 service, cache/guardrails, phễu Try-On, 4 DLQ Replay/Purge 2FA | **Nhóm B (Observability Dashboard thuần)** | Hoàn thành tốt |
+| **10** | **Flagship Vitrine / "AI Restyle"** | Storefront → BFF (`/seasons/:slug/ai-restyle`) → `ai-tryon :4009` | **HTML5 Canvas OKLab/OKLCH** (client) + **OpenCV CIE-LAB** & mask PNG tĩnh (server) | Đổi màu áo/quần/phụ kiện giữ nguyên nếp vải theo bảng màu 6 mùa; **không dùng Generative AI** | **Nhóm B (100% Photometric Recoloring)** | Hoàn thành mượt |
+| **11** | **Crowd Size Advisor** | Storefront (`LiveSizeAdvisor`) → `catalog-lookbook :4002` | **Công thức phạt L1 có trọng số** + **SQL `±4cm / ±4kg`** (Tier-0, 0 token) | Tính điểm khớp bảng size + tự chỉnh ±1 size khi `≥50%` review chật hoặc `≥55%` rộng | **Nhóm B (100% Toán học & Thống kê SQL)** | Hoàn thành đầy đủ |
+| **12** | **3D Clothing Rack** | Storefront (`ClothingRack3D`, `RackCanvasR3F`) | **Three.js / React Three Fiber + GLSL** | Vật lý con lắc lò xo, ánh sáng, đổi màu swatch; không dùng AI | **Nhóm B (100% Đồ họa WebGL)** | Hoàn thành đầy đủ |
+| **13** | **Mix & Match Outfit Studio** | Storefront (`OutfitStudio`, `autoCalibrateGarment.ts`, `presets.ts`) | **Canvas BFS + Gaussian smoothing** + 3 preset viết cứng + hài hòa RGB | Căn lề biên ảnh 2D & gợi ý phối đồ theo luật màu sắc | **Nhóm B (100% Xử lý ảnh 2D & Rule-based)** | Hoàn thành đầy đủ |
+| **14** | **Media Pipeline & Studio** | Admin/Partner → `services/media-pipeline :4003` | **Sharp** tất định + chỉnh neo thủ công | Kiểm định Magic Bytes, tỷ lệ 2:3/3:4, Alpha 4 góc, rút màu chủ đạo, nén WebP đa cỡ | **Nhóm B (100% Xử lý ảnh tất định)** | Hoàn thành đầy đủ |
+| **15** | **Partner Portal (`:3002`)** | `apps/partner-portal` → BFF (`/api/v1/partner/*`) | **Không dùng AI trực tiếp** | Chỉ nhận PO đã duyệt từ nháp `NHAP_AI` (ẩn hoàn toàn bản nháp) & upload ảnh phẳng qua Sharp | **Không AI (Thuần B2B CRUD)** | Hoàn thành lõi B2B |
+
+---
+
+### 3.2. Nhóm A — 4 Trụ Cột Sử Dụng AI, Deep Learning, Computer Vision & LLM Thật
+
+1. **Admin MCP Copilot (Local LLM + Hybrid RAG 768d):**
+   - **Đầu vào:** Câu hỏi vận hành tiếng Việt từ `McpCopilotDrawer.tsx` gửi qua `POST /api/v1/admin/copilot/chat` → `apps/mcp-copilot :4010` (`/v1/copilot/chat`) kèm Bearer JWT gốc của nhân sự.
+   - **Mô hình/Engine:** Ollama cục bộ (`http://127.0.0.1:11434`): `qwen2.5:3b` (`.env` mặc định) hoặc `qwen2.5:7b` (`.env.example`, tự hạ về `3b` nếu host có tổng RAM `<= 16.5GB` hoặc free RAM `< 6GB` trong `ollama-client.ts`) + `nomic-embed-text` (`768` chiều) truy vấn `rag_vector_db` (`pgvector`) + Meilisearch live.
+   - **Vai trò của AI:** Chạy vòng lặp Ollama Tool-Calling tối đa 4 bước (`orchestrator.ts:1232-1344`), gọi các tool đọc cầu thử đồ/RMA/chính sách RAG và tool ghi nháp `NHAP_AI`, rồi viết báo cáo tiếng Việt (`synthesizeVietnameseWithOllama`).
+   - **Đầu ra & Fallback:** Trả văn bản có trích dẫn RAG, Tool Execution Trace và Action Cards khóa `NHAP_AI`. Khi model nhỏ 3B bỏ sót bước, *Deterministic Small-Model Completion Guard* (`orchestrator.ts:1349-1371`) tự bù bước; khi tắt Ollama, chuyển êm sang `RuleBasedMcpOrchestrator` và `embedLocalDeterministic768` (`$0`).
+
+2. **Review Sentiment NLP (`services/notify-review :4008`):**
+   - **Đầu vào:** Nội dung đánh giá và số sao từ `POST /v1/reviews` (`reviews.service.ts:845`) hoặc `POST /v1/reviews/analyze-sentiment` (`reviews.controller.ts:151`).
+   - **Mô hình/Engine:** Ollama Fast (`qwen2.5:3b`) gọi `/api/chat` (`temperature: 0.1`, `num_ctx: 2048`, timeout `10s`) ép JSON qua `format: SENTIMENT_JSON_SCHEMA` (`sentiment.service.ts:164-358`).
+   - **Vai trò & Đầu ra:** Trả `{ sentimentScore: [-1..1], label: 'POSITIVE'|'NEUTRAL'|'NEGATIVE', summary }`, lưu vào `notify_db.product_reviews` (`sentiment_score`, `sentiment_label`).
+   - **Fallback & Khoảng trống quan trọng:** Khi Ollama lỗi/timeout, rơi về từ điển tiếng Việt (23 cụm tích cực, 22 cụm tiêu cực + số sao + `Math.tanh`). **Hiện chưa có màn hình nào trên Admin Portal hay Storefront hiển thị `sentimentScore`/`sentimentLabel`** (dù dữ liệu đã có sẵn trong DB & DTO).
+
+3. **Storefront 3D AR Try-On Mirror (On-Device Computer Vision AI):**
+   - **Đầu vào:** Luồng Webcam thời gian thực (`VIDEO`) hoặc ảnh người dùng tải lên (`IMAGE`) trên `/thu-do-ai` & `VirtualTryOnModal.tsx`.
+   - **Mô hình/Engine:** `@mediapipe/tasks-vision` chạy mô hình cục bộ `/models/pose_landmarker_lite.task` + WebAssembly `/models/wasm/*` (`apps/storefront/src/features/virtual-tryon/engine/poseTracker.ts`), kết hợp Three.js (`TryOn3DScene.tsx`, `VolumetricGarmentMesh.ts`, `DepthOccluderMesh.ts`).
+   - **Vai trò & Đầu ra:** Nhận diện **33 điểm khung xương 2D & 3D (`worldLandmarks`)** hoàn toàn trên thiết bị người dùng (không gửi ảnh lên server), lọc nhiễu bằng One-Euro Filter, tính `yaw/pitch/roll`, tự bù góc ngồi trước webcam (`Seated Webcam Auto-Adaptation`) để bám trang phục 3D theo thời gian thực.
+   - **Fallback & Lưu ý:** Tab Ma-nơ-canh 3D 360° (`AtelierMannequin3D.ts`) dùng hình học tham số không cần AI. Toàn bộ module UI hiện chỉ gọi `/bff/v1/storefront/cart`, **chưa nối gọi Backend VTON `:4009`**.
+
+4. **Backend VTON Pipeline (`services/ai-tryon :4009`):**
+   - **Đầu vào:** Ảnh người dùng tải qua presigned URL vào bucket riêng `atelier-private-tryon` + ảnh flat-lay trang phục (bắt buộc `privacyConsent=true` & Magic Bytes hợp lệ).
+   - **Mô hình/Engine:** Tiền xử lý cục bộ bằng **OpenCV YuNet ONNX CNN** (`face_detection_yunet_2023mar.onnx`, fallback Haar Cascade) + **`rembg` IS-Net neural segmentation** (`isnet-general-use`) để phát hiện `POSE_TOO_CLOSE` (tự hoàn `+1` quota). Bộ điều phối 3 tầng (`auto_provider.py`, mặc định `TRYON_PROVIDER=auto`):
+     - *Tầng 1:* `FAL_CATVTON` (`fal-ai/cat-vton`, ~$0.03/lần — hiện bỏ qua vì `FAL_KEY` trống trong `.env`).
+     - *Tầng 2:* `HF_GRADIO_VTON` (`gradio_client` gọi tuần tự `yisol/IDM-VTON` → `zhengchong/CatVTON` → `Kwai-Kolors/Kolors-Virtual-Try-On`, bật mặc định `HF_VTON_ENABLED=true`, timeout 40s).
+     - *Tầng 3 mặc định cục bộ `$0`:* `SMART_POSE_WARP` (`rembg` IS-Net + YuNet ONNX + OpenCV `warpPerspective` Homography + đồng bộ ánh sáng CIE-LAB + mặt nạ bảo vệ khuôn mặt/cằm; chế độ `MOCK` cũng ủy quyền về đây).
+   - **Đầu ra & Bảo mật:** Ảnh thử đồ 2D cache SHA-256 trên Redis 900s (`CACHE_HIT`, `$0`, không trừ quota) và tác vụ `TryOnAutoPurgeTask` **xóa cứng vĩnh viễn ảnh riêng tư trên MinIO sau 15 phút**. *(Lưu ý: đang bị ngắt khỏi UI Storefront).*
+
+---
+
+### 3.3. Nhóm B — Các Chức Năng Lai, Đồ Họa, Quy Tắc & Thống Kê (Không Phải Generative AI / ML Thuần)
+
+- **AI Lookbook Studio (`lookbook_studio.py:192-356, 574-584`):** Điều kiện gọi Diffusion thật là `self.vton_provider == "fal" and bool(self.fal_key)` (`config.py:100-108` nhận `TRYON_PROVIDER` hoặc `VTON_PROVIDER`, mặc định `"auto"`). Do `auto != "fal"` và `FAL_KEY` trống, hệ thống mặc định chạy `_render_editorial_lookbook_sync()` bằng **Python Pillow 2D (`providerUsed = "MOCK"`)**: đọc từ khóa sáng/tối từ prompt, vẽ nền gradient + bóng người hình học bằng đa giác/elip rồi dán ảnh flat-lay lên thân.
+- **AI Restock `NHAP_AI` & Clearance `CLEARANCE_ODD_SIZE`:** Không dùng mô hình dự báo chuỗi thời gian (Time-Series ML). `ai-tryon` chỉ đếm sự kiện SQL (`tryon_demand_events`), `mcp-copilot` tính rủi ro `HIGH`/`MEDIUM`/`LOW` và `suggestedRestockQty = max(15, safetyThreshold * 2 - availableQty)` bằng công thức tất định; AI chỉ đóng vai trò ngôn ngữ & điều phối tool.
+- **AI Ops & Health / DLQ Dashboard (`AiOpsHealthTab.tsx`):** 100% giao diện giám sát telemetry & hàng đợi RabbitMQ; không thực hiện suy luận AI.
+- **Flagship Vitrine / "AI Restyle" (`photometric-recolor.ts` & `tryon_v1.py`):** 100% đổi màu trắc quang bằng **OKLab/OKLCH** trên Canvas trình duyệt (0ms) và **OpenCV CIE-LAB** + mask PNG cắt sẵn ở server (cache Redis 7 ngày) — nhãn *"AI Restyle"* mang tính truyền thông trải nghiệm.
+- **Crowd Size Advisor (`size-recommender.ts` & `reviews.service.ts:478-486`):** 100% công thức chấm điểm phạt L1 có trọng số (`height * 0.9`, `weight * 1.35`, `bust * 1.5`, `waist * 1.7`, `hip * 1.4`, `shoulder * 1.3`) + dung sai độ giãn vải + quy tắc hiệu chuẩn cộng đồng (`totalReviews >= 3`, `runsSmallPct >= 50%` tăng +1 size, `runsLargePct >= 55%` giảm -1 size) + lọc SQL `ABS(height - $h) <= 4 AND ABS(weight - $w) <= 4`.
+- **Công cụ `validate_and_process_garment_image` (`admin-phase5.controller.ts:752-825`):** Stub tĩnh trả cứng `qualityScore: 94`, `detectedAspectRatio: '3:4'`; không chạy mô hình Vision AI.
+- **3D Rack, Outfit Studio, Media Pipeline & Partner Portal:** Thuần Three.js/GLSL, BFS + Gaussian làm mượt biên 2D, 3 preset cứng & lọc màu RGB, Sharp tất định và CRUD B2B.
+
+---
+
+## Phần 4: Đánh Giá Chức Năng Chatbot Hỗ Trợ Khách Hàng (Customer Support Chatbot)
+
+### 4.1. Kết Luận Dứt Khoát Theo 2 Tầng
+
+| Tầng Hệ Thống | Trạng Thái Thực Tế | Bằng Chứng Mã Nguồn Trực Tiếp |
+|---|---|---|
+| **Giao diện Storefront (`apps/storefront :3000`)** | **CHƯA CÓ (0%)** | `apps/storefront/src/app/layout.tsx` và `src/components/layout/StorefrontShellOverlays.tsx` chỉ gắn đúng 2 overlay toàn cục là `QuickBagDrawer` (giỏ hàng) và `VirtualTryOnModal` (thử đồ 3D AR). Toàn bộ `apps/storefront/src/**` có **0 component chat**, **0 route tư vấn AI** và **0 lời gọi** tới `/rag/query` hay `/copilot/chat`. |
+| **Backend / BFF / MCP / RAG (`apps/bff`, `apps/mcp-copilot`, `packages/ai-harness`)** | **ĐÃ CÓ ~50% NỀN TẢNG, CHƯA NỐI ĐẦU-CUỐI** | Đã có `POST /bff/v1/storefront/rag/query` công khai (retrieval-only, chưa qua LLM), 4 Customer Read-Only MCP Tools và prompt `CUSTOMER_STYLIST@v1.1.0`, nhưng **chưa có BFF Storefront chat route**, 2/4 tool đọc `DEMO_CATALOG` tĩnh, và `orchestrator.ts` chưa mở luồng chat cho khách hàng. |
+
+---
+
+### 4.2. Kiểm Toán Nền Tảng Backend Sẵn Có & Ma Trận RBAC Hiện Tại
+
+1. **Những mảnh đã có sẵn ở Backend:**
+   - **Hybrid RAG Công khai (`POST /bff/v1/storefront/rag/query`):** Định nghĩa tại `apps/bff/src/storefront/storefront-bff.controller.ts:1139-1146` → `services/catalog-lookbook/src/catalog/catalog.controller.ts:477` (`CatalogRagService` → `PgVectorRagStore`). Đã nạp sẵn **12 tài liệu tiếng Việt** (`ATELIER_RAG_KNOWLEDGE_DOCS`: đổi trả RMA 7–14 ngày, bảo mật ảnh Try-On 15 phút, hướng dẫn chọn size, bảo quản vải lụa/linen/tweed/len, khuyến mãi combo/VietQR, giao hàng & hoàn tiền). Tuy nhiên endpoint này chỉ ghép các đoạn trích thô (retrieval-only), **chưa qua Ollama LLM để tổng hợp hội thoại** và chưa hỗ trợ ngữ cảnh nhiều lượt.
+   - **4 Customer Read-Only MCP Tools & Prompt `CUSTOMER_STYLIST@v1.1.0`:** Khai báo tại `packages/contracts/src/mcp-tools.ts:15-18, 176-320`, `apps/mcp-copilot/src/tools.ts:1277-1385`, `packages/ai-harness/src/layer4-mcp-registry/tier0-customer-tools.ts` và `prompt-registry.ts:93-111`:
+     - `search_catalog_and_size_guide` (`READ_ONLY`) — hiện lọc trên mảng tĩnh **`DEMO_CATALOG`** (3 sản phẩm).
+     - `get_outfit_compatibility_advice` (`READ_ONLY`) — hiện đọc **`DEMO_CATALOG`** tĩnh.
+     - `calculate_verified_size` (`Tier-0 READ_ONLY`, 0 token) — hiện dùng trong `eval:ai` / `/mcp/invoke`.
+     - `search_in_stock_outfits` (`Tier-0 READ_ONLY`, 0 token) — mặc định đọc snapshot tĩnh **`DEFAULT_TIER0_CATALOG_SNAPSHOT`** (4 sản phẩm).
+
+2. **Ma trận kiểm toán RBAC & các điểm chặn luồng Customer Chat hiện tại:**
+
+| Endpoint | Vị Trí Mã Nguồn | Quyền Hiện Tại | Khách Hàng (`CUSTOMER` / Khách Vãng Lai) Gọi Được Không? |
+|---|---|---|---|
+| `POST /bff/v1/storefront/rag/query` | `apps/bff/src/storefront/storefront-bff.controller.ts:1139` | Công khai (không gắn `JwtAuthGuard`) | **CÓ** — nhưng chỉ trả trích đoạn tài liệu thô, chưa phải chatbot hội thoại. |
+| `POST /api/v1/admin/copilot/chat` | `apps/bff/src/admin/admin-phase5.controller.ts:851` | `JwtAuthGuard` + `AdminPortalGuard` + `Permission.COPILOT_ACCESS` | **KHÔNG (`401`/`403 Forbidden`)** — khóa cứng cho 4 vai trò Admin. |
+| `POST /v1/copilot/chat` (`:4010`) | `apps/mcp-copilot/src/server.ts:535-621` | Bắt buộc `Authorization: Bearer <JWT>` (`server.ts:559`); DTO cho phép `portal: 'STOREFRONT'` | **Không gọi được từ Storefront** vì BFF thiếu route proxy, khách vãng lai bị `401` do ép Bearer JWT, và `orchestrator.ts:1218` chỉ gọi `toOllamaTools('ADMIN', ...)` (chưa đấu nối 4 Customer tools vào vòng lặp chat). |
+
+---
+
+### 4.3. So Sánh Trực Diện: Admin MCP Copilot (`:3001`) vs Customer Support Chatbot (`:3000`)
+
+| Tiêu Chí | Admin MCP Copilot (ĐÃ CÓ) | Customer Support Chatbot (CHƯA CÓ UI / CHƯA NỐI ĐẦU-CUỐI) |
+|---|---|---|
+| **Đối tượng sử dụng** | 4 vai trò nội bộ (`SUPER_ADMIN`, `WAREHOUSE_MANAGER`, `CATALOG_AI_OPERATOR`, `ORDER_STAFF`) | Khách hàng đăng nhập (`CUSTOMER`) & khách vãng lai trên Storefront |
+| **Giao diện (UI)** | Đã có hoàn chỉnh: `McpCopilotDrawer.tsx` (812 dòng) trên `:3001` | **Chưa có (0%)** trên `:3000` |
+| **Cổng BFF & RBAC** | `POST /api/v1/admin/copilot/chat` (JWT + `AdminPortalGuard` + `COPILOT_ACCESS`) | Thiếu route `POST /bff/v1/storefront/chat` (mới chỉ có `/rag/query` retrieval thô) |
+| **Quyền công cụ MCP** | Read-Only + Mutating Draft (`NHAP_AI` khóa HITL) | Thiết kế chỉ Read-Only (4 tool tra cứu SP, tính size, phối đồ, chính sách), nghiêm cấm giá vốn/PO/NCC |
+| **Dữ liệu kết nối** | **Dữ liệu thật live** qua API `ai-tryon`, `inventory`, `order-rma`, `notify-review`, `payment-promo`, `rag_vector_db` | `rag_vector_db` (12 tài liệu) là thật, nhưng 4 Customer tools đang đọc `DEMO_CATALOG` / snapshot tĩnh |
+| **Đấu nối LLM Orchestrator** | Đầy đủ vòng lặp Ollama 4 bước + Completion Guard + `RuleBasedMcpOrchestrator` | Mới viết prompt `CUSTOMER_STYLIST` & bộ eval ở `ai-harness`; chưa đấu nối trong `orchestrator.ts` |
+
+---
+
+### 4.4. Kiến Trúc Đề Xuất Nối Đầu-Cuối Customer Support Chatbot
+
+Để tận dụng tối đa 50% nền tảng sẵn có mà vẫn bảo toàn tuyệt đối nguyên tắc cô lập 3-Portal và Zero-Trust, cần bổ sung đúng **4 mảnh ghép**:
+1. **BFF Storefront Chat Route (`POST /bff/v1/storefront/chat`):** Hỗ trợ cả khách vãng lai (JWT tùy chọn, rate-limit theo `guestSessionId`/IP), ép cứng `portal: 'STOREFRONT'`, luôn chạy `stripStorefrontSensitiveFields` để không bao giờ lộ giá vốn hay dữ liệu nội bộ.
+2. **Nhánh `STOREFRONT` trong `apps/mcp-copilot/src/orchestrator.ts`:** Cho phép chế độ `GUEST_CUSTOMER` read-only (không cần Admin JWT), nạp prompt `CUSTOMER_STYLIST@v1.1.0` và `toOllamaTools('CUSTOMER', ...)` (4 công cụ chỉ đọc), tổng hợp câu trả lời hội thoại tiếng Việt từ Hybrid RAG + Tool results qua Ollama `qwen2.5` (có fallback khi tắt Ollama).
+3. **Nối dữ liệu live cho 4 Customer Tools:** Thay `DEMO_CATALOG` & `DEFAULT_TIER0_CATALOG_SNAPSHOT` bằng lời gọi live sang `catalog-lookbook` (`/products`, `/size-recommend`), `inventory` (tồn kho khả dụng) và `order-rma` (tra cứu đơn hàng của chính mình khi khách đã đăng nhập theo `userId`).
+4. **Widget Chat trên Storefront (`StorefrontChatDrawer.tsx`):** Gắn vào `StorefrontShellOverlays.tsx`, hỗ trợ lịch sử hội thoại ngắn, hiển thị trích dẫn chính sách, thẻ sản phẩm gợi ý có tồn kho size thật và nút mở thẳng PDP hoặc Phòng Thử đồ 3D AR.
 
 ```mermaid
 flowchart LR
-    subgraph LEGACY["Ma nguon tinh ban_hoa (HTML / CSS / Vanilla JS)"]
-        L_HTML["index.html (241 dong · 9 Sections)"]
-        L_CSS["css/style.css (Tokens · Keyframes · Mask)"]
-        L_DATA["js/data.js (window.TX tinh)"]
-        L_MAIN["js/main.js (GSAP · Lenis · Canvas · Tour)"]
-        L_RACK["js/rack.js (Three.js 0.160 · 3 GLSL Shaders)"]
-        L_BUILD["js/build.js (14 Canh Phyllotaxis · Wrap)"]
-        L_ASSETS["assets/img/*.webp & media/*.webm"]
-    end
-
-    subgraph NEXT["Next.js App Router + React 19 + TypeScript"]
-        subgraph RSC["Server Layer (SSR / ISR / SEO)"]
-            N_PAGES["Trang Chu · PLP Bo Suu Tap · PDP San Pham"]
-            N_API["Fashion BFF + TanStack Query Hydration"]
-        end
-
-        subgraph ISLANDS["Client Interactive Islands (use client)"]
-            N_GLOBAL["Global Motion Shell (Lenis · Cursor · Glints · Particles · Tour)"]
-            N_GSAP["GSAP + useGSAP Islands (Intro · Hero · Occasion · Atelier · Finale)"]
-            N_R3F["ClothingRack3D (R3F + 3 GLSL Shaders + FlatRackFallback)"]
-            N_STUDIO["OutfitStudio (Layer Slot Compositor + Batch Stock Check)"]
-            N_LOOKBOOK["SeasonLookbookTrack (Horizontal Pin + Web Worker Halftone)"]
-            N_DRAWER["QuickBagDrawer (SKU Size/Mau + GiftCardPreview + SizeGuide)"]
-        end
-
-        subgraph STATE["State & Styling"]
-            N_ZUSTAND["Zustand v5 Stores (Cart · Studio · Drawer · Transient Refs)"]
-            N_STYLE["tokens.css + Tailwind v4 + CSS Modules"]
-        end
-    end
-
-    subgraph CDN["Media & Asset Pipeline + Cloudflare CDN"]
-        C_MEDIA["Cutout WebP/AVIF 2:3 · Sprite 4x4 · Hero WebM/MP4"]
-    end
-
-    L_HTML --> N_PAGES
-    L_CSS --> N_STYLE
-    L_DATA --> N_API
-    L_MAIN --> N_GLOBAL
-    L_MAIN --> N_GSAP
-    L_MAIN --> N_LOOKBOOK
-    L_MAIN --> N_DRAWER
-    L_RACK --> N_R3F
-    L_BUILD --> N_STUDIO
-    L_ASSETS --> C_MEDIA
-
-    N_API --> N_R3F
-    N_API --> N_STUDIO
-    N_API --> N_DRAWER
-    N_ZUSTAND <--> N_STUDIO
-    N_ZUSTAND <--> N_DRAWER
-    N_ZUSTAND <--> N_GLOBAL
-    C_MEDIA --> N_R3F
-    C_MEDIA --> N_STUDIO
-    C_MEDIA --> N_LOOKBOOK
+    UI["Storefront Chat Widget (:3000)"] -->|"POST /bff/v1/storefront/chat"| BFF["BFF Storefront Gateway (:4000)"]
+    BFF -->|"Rate Limit + Optional JWT + Strip Sensitive"| MCP["MCP Copilot :4010 (portal=STOREFRONT)"]
+    MCP --> G6["Layer 6 Guardrails (Injection + PII Mask)"]
+    G6 --> ORCH["Customer Orchestrator (CUSTOMER_STYLIST v1.1.0)"]
+    ORCH --> RAG["Layer 3 Hybrid RAG (pgvector 768d + Meilisearch)"]
+    ORCH --> T4["4 Customer Read-Only Tools (Live Catalog / Size / Outfit / My Order)"]
+    ORCH --> LLM["Ollama qwen2.5:3b / 7b (Fallback Rule Engine)"]
+    T4 -->|"BFF Live Read-Only"| SVCS["catalog-lookbook + inventory + order-rma"]
+    LLM -->|"Grounded Answer + Product Cards"| UI
 ```
 
 ---
 
-### 3.5. Quy chuẩn Tài nguyên Ảnh & Video cho Thời trang (Asset & Photography Pipeline)
+## Phần 5: Kiểm Định 8 Tầng Chuẩn AI Harness & Trạng Thái Huấn Luyện Mô Hình
 
-Chất lượng thị giác của `<ClothingRack3D />`, `<OutfitStudio />` và `<SeasonLookbookTrack />` phụ thuộc tới **60% vào kỷ luật sản xuất media**. Dựa trên thông số đo thực tế trong `ban_hoa`, toàn bộ khâu chụp và xử lý ảnh phải khóa chặt 5 quy chuẩn sau ngay từ Phase 0:
+### 5.1. Kết Luận Trung Thực: Đã Qua 8/8 Tầng Harness vs Chưa Fine-Tune Trọng Số
 
-1. **Ảnh cho Giá Treo 3D (`<ClothingRack3D />`)**:
-   - **Master Studio Export**: **`1200×1800px` (tỷ lệ chuẩn `2:3`)**, PNG/WebP alpha lossless upload lên bucket gốc `atelier-raw-uploads`.
-   - **Biến thể phục vụ WebGL** (sinh tự động bởi `Media & Asset Pipeline`): Desktop **`720×1080px`**, Mobile/Tablet **`480×720px`**, định dạng **WebP (VP8X, Lossy Q82–85, Alpha)**, dung lượng mục tiêu **70–140 KB/ảnh**.
-   - **Tọa độ neo móc treo đồng nhất (Hanger Anchor Spec)**: Mọi mẫu chụp trên **cùng một mẫu móc gỗ/đồng chuẩn** ở tiêu cự cố định 85mm (chống méo phối cảnh). Tâm đầu móc tiếp xúc thanh đồng nằm chuẩn tại **`(x = 50%, y = 4%–8.5%)`** (tinh chỉnh chính xác qua Visual Anchor Calibrator trong Backoffice).
-   - **Vùng an toàn biên (Safe Margin >= 15%)**: Mép tay áo và gấu váy phải cách 4 biên ảnh tối thiểu **14%–15%** (nằm trọn trong vùng UV `[0.14, 0.86]`) để shader bóng đổ `SHADOW_FRAG` (`smoothstep(0.0, 0.14, vUv)`) không cắt cụt bóng vạt áo.
-   - **Xử lý viền Alpha chống ám đen (Edge Color Padding / Dilation)**: Bắt buộc áp dụng Color Bleed cho pixel rìa trong suốt mang đúng màu vải sát cạnh để khi 12-tap Poisson blur lấy mẫu quanh viền váy trắng/kem không tạo quầng xám bẩn.
-   - **Chụp đủ 2 mặt & Màu sắc**: Chụp đồng trục cả `front.webp` và `back.webp` cho từng biến thể màu để hỗ trợ xoay 3D lật mặt và đổi swatch ngay trên giá treo.
-2. **Ảnh lớp cho Mix & Match Outfit Studio (`<GarmentLayerStage />`)**:
-   - **Lưới Ghost Mannequin Chuẩn hóa (Normalized Body Grid)**: Mọi Áo, Quần, Chân váy, Đầm, Áo khoác chụp trên **cùng 1 cỡ ma-nơ-canh tàng hình (cỡ S/M)** và xuất trên canvas `720×1080px` (master `1200×1800px`) WebP alpha theo 4 đường gióng cố định:
-     - **Đường vai (`Shoulder Line`)**: `y = 18%`
-     - **Đường eo (`Waist Line`)**: `y = 44%`
-     - **Đường hông (`Hip Line`)**: `y = 54%`
-     - **Đường gấu mắt cá (`Ankle Line`)**: `y = 92%`
-   - Nhờ chuẩn hóa ngay lúc chụp/xuất PSD, 4 lớp `<img>` chồng khít tự nhiên (chỉ tinh chỉnh `offsetY` ±2% trong DB cho áo croptop hoặc quần cạp trễ).
-   - **Ảnh bao bì Back / Front**: 3 bộ đóng gói (Túi vải Dustbag Linen / Hộp Signature Ivory / Hộp Cao cấp Cocoa) tách thành cặp `back.webp` (`z: 0`) và `front.webp` (`z: 200`), `720×1080px`, ~25–35 KB/ảnh.
-3. **Ảnh Editorial cho Seasons Lookbook (`#seasons`) & Atelier Story (`#atelier`)**:
-   - **Lookbook `#seasons`**: Ảnh `720×1080` có độ tương phản sáng–tối và chiều sâu nếp vải rõ ràng để công thức luminance (`0.3R + 0.59G + 0.11B`) của Halftone Pointillism thể hiện chuyển sắc sắc nét.
-   - **Atelier Story `#atelier`**: Ảnh tỷ lệ **`4:5`** (`800×1000` hoặc `1000×1250`, WebP Q82 không alpha) quay/chụp thực tế xưởng may ánh sáng ấm tương thích nền `--cocoa` và hiệu ứng `@keyframes drift`.
-4. **Sprite Hạt & Hero Video (`#petalfx` & `#top`)**:
-   - **Sprite hạt bay**: Thay `assets/petals/petals.png` (`512×512`, lưới `4×4` ô `128×128`) bằng 16 biến thể mảnh lá vàng / sợi tơ ánh champagne / đốm nhũ bokeh (< 120 KB), tái sử dụng 100% logic vật lý rơi và lật 3D.
-   - **Hero Video**: Xuất song song `hero-atelier.webm` (VP9/AV1, 1080p 24/30fps, không âm thanh `-an`, loop mượt 10–15s, **< 1.2–1.5 MB**, chừa khoảng tương phản tối bên trái cho tiêu đề), `hero-atelier.mp4` (H.264 High Profile, `-movflags +faststart`, **< 2.0–2.5 MB** cho Safari/iOS) và ảnh poster `hero-atelier-poster.webp` (**< 45–80 KB**).
+Cần phân biệt rạch ròi giữa **AI Harness Engineering** (đóng gói, bảo mật, định tuyến, RAG, kiểm định) và **Model Weight Training** (cập nhật trọng số mô hình qua SFT/LoRA/QLoRA/DPO):
 
-**Checklist Nghiệm thu Kỹ thuật Frontend & Hiệu ứng**:
-- [ ] Duy trì **55–60 FPS** ổn định trên desktop tầm trung tại `<ClothingRack3D />` và `<SeasonLookbookTrack />`; dừng 100% WebGL/rAF loop khi cuộn qua khỏi khung nhìn hoặc chuyển tab.
-- [ ] **Zero StrictMode / Route Leak**: Chuyển qua lại `/` ↔ `/san-pham/[slug]` ↔ `/phoi-do` ↔ `/thanh-toan` 20 lần liên tiếp không tăng số `WebGLRenderingContext`, không dư pin-spacer của `ScrollTrigger`, JS Heap ổn định.
-- [ ] **Graceful Degradation & A11y**: Tắt WebGL hoặc mobile yếu tự chuyển sang `<FlatRackFallback />`; bật `prefers-reduced-motion: reduce` rút gọn Intro, tắt hạt bay và giữ trọn luồng mua sắm.
-- [ ] **Tiếng Việt & Thương mại thật**: `<SplitShimmerText />` chuẩn `"NFC"` hiển thị hoàn hảo trên Chrome/Safari/Firefox; mọi thao tác chọn màu/size trên 3D Rack, Occasion, Outfit Studio phản ánh tồn kho thật từ BFF.
+1. **ĐÃ đóng gói, bảo vệ & kiểm định qua đủ 8/8 tầng chuẩn AI Harness chưa?** → **RỒI (8/8 TẦNG ĐÃ CÓ MÃ NGUỒN THẬT & ĐẠT 100% EVAL).**
+   - Được hiện thực hóa tường minh qua 8 thư mục `layer1-models` → `layer8-telemetry-eval` trong `packages/ai-harness/src/` (`AiSecurityHarness`), vận hành thực tế trên `apps/mcp-copilot :4010`, kết nối qua `apps/bff :4000` lên `McpCopilotDrawer.tsx` (`:3001`).
+   - Kết quả chạy LIVE `pnpm eval:ai` tại thời điểm kiểm toán (`2026-11-24`): **`43/43 PASSED (100.0%, 0 FAIL)`** phủ kín cả 8 tầng.
+2. **ĐÃ huấn luyện / fine-tune trọng số mô hình AI (SFT / LoRA / QLoRA / DPO) chưa?** → **CHƯA.**
+   - Trong toàn repo có **0 script training** (`train*.py`, `finetune*.py`, `peft`, `unsloth`, `trl`), **0 `Modelfile` custom** của Atelier, **0 checkpoint/adapter tự huấn luyện** (`.safetensors`, `.pt`, `.gguf` riêng).
+   - Hệ thống đang chạy **Pre-trained Local Models sẵn có của Ollama** (`qwen2.5:3b`/`7b` & `nomic-embed-text:latest`) kết hợp Prompt Engineering v1.1.0 + Hybrid RAG 12 tài liệu + MCP Tool Calling + 8 tầng Guardrails/Cache/Eval.
+   - Tầng 8 (M5 Data Flywheel) hiện **dừng ở bước xuất tập dữ liệu JSONL sạch 100% PII** (`pnpm ai:export-sft` → `artifacts/ai-sft-preference-dataset.jsonl`: **22 bản ghi**, gồm `7 DPO_PREFERENCE` + `15 SFT_SIZE_CALIBRATION`, `0` rò rỉ PII), sẵn sàng cho giai đoạn fine-tune offline sau này. Ngoài ra, chính sách bảo mật 15 phút Auto-Purge (`rag_doc_02_tryon_privacy_15min`) quy định **tuyệt đối không lưu và không dùng ảnh khách hàng Try-On để huấn luyện AI**.
+
+> **Khuyến nghị cách diễn đạt chuẩn xác khi báo cáo / bảo vệ:**  
+> *"AI Copilot (vận hành trên pre-trained local Ollama `qwen2.5:3b`/`7b` & `nomic-embed-text`) đã được đóng gói, bảo vệ và kiểm định định lượng qua đủ 8/8 tầng AI Harness Engineering (`43/43 = 100%` `pnpm eval:ai`), đồng thời đã hoàn thiện pipeline thu thập & xuất bộ dữ liệu DPO/SFT sạch 100% PII (`pnpm ai:export-sft`) sẵn sàng cho giai đoạn fine-tune offline; trọng số mô hình gốc hiện chưa được fine-tune lại."*
 
 ---
 
-## Phần 4: Kiến Trúc Backend Microservices (DDD & Chiến Lược Thực Chiến)
-
-### 4.1. Sơ đồ Kiến trúc Tổng thể Hệ thống
-
-Hệ thống Backend được phân rã theo **Domain-Driven Design (DDD Bounded Contexts)** thành **9 dịch vụ lõi** (1 lớp `API Gateway & Fashion BFF` + 8 Microservices nghiệp vụ sở hữu cơ sở dữ liệu độc lập theo nguyên tắc **Database-per-Service**):
-
-```mermaid
-flowchart TB
-    subgraph Clients["Kenh Khach hang va Quan tri"]
-        Web["Storefront Next.js + React 19 + R3F"]
-        Admin["Backoffice CMS va Visual Anchor Calibrator"]
-    end
-
-    subgraph Edge["Tang Bien va Tong hop"]
-        CDN["Cloudflare CDN va WAF"]
-        GW["API Gateway (Kong / Nginx)"]
-        BFF["Fashion BFF (Node.js / TypeScript)"]
-        AdminAPI["Admin Gateway Routes"]
-    end
-
-    subgraph CoreServices["8 Microservices Nghiep vu Theo DDD Bounded Contexts"]
-        Auth["Auth va Customer Service"]
-        Catalog["Catalog va Lookbook Service"]
-        Media["Media va Asset Pipeline Service"]
-        Inventory["Inventory Service"]
-        Cart["Cart va Outfit Studio Service"]
-        Order["Order va RMA Service"]
-        Payment["Payment va Promotion Service"]
-        Notify["Notification va Review Service"]
-    end
-
-    subgraph DataLayer["Database-per-Service va Cache"]
-        DB_Auth[("PostgreSQL Auth + Redis Session")]
-        DB_Cat[("PostgreSQL Catalog + Meilisearch")]
-        DB_Med[("Cloudflare R2 / S3 + PG Metadata")]
-        DB_Inv[("PostgreSQL Inventory + Redis Lock")]
-        DB_Cart[("Redis Cart + PG Saved Outfits")]
-        DB_Ord[("PostgreSQL Order va Outbox")]
-        DB_Pay[("PostgreSQL Payment va Promo")]
-        DB_Not[("PostgreSQL Reviews va Logs")]
-    end
-
-    subgraph Messaging["He thong Su kien Bat dong bo"]
-        Broker{{"Event Broker (Kafka / RabbitMQ)"}}
-    end
-
-    subgraph External["Doi tac Ngoai He thong"]
-        PayGW["VNPay / MoMo / VietQR"]
-        ShipGW["GHN / GHTK / Ahamove 2h"]
-        MsgGW["Zalo ZNS / Email / SMS"]
-    end
-
-    Web --> CDN
-    Admin --> CDN
-    CDN --> GW
-    CDN -.->|"Static WebP / Video HLS"| DB_Med
-    GW --> BFF
-    GW --> AdminAPI
-
-    AdminAPI --> Catalog
-    AdminAPI --> Media
-    AdminAPI --> Inventory
-    AdminAPI --> Order
-
-    BFF --> Auth
-    BFF --> Catalog
-    BFF --> Inventory
-    BFF --> Cart
-    BFF --> Order
-    BFF --> Payment
-    BFF --> Notify
-
-    Auth --> DB_Auth
-    Catalog --> DB_Cat
-    Media --> DB_Med
-    Inventory --> DB_Inv
-    Cart --> DB_Cart
-    Order --> DB_Ord
-    Payment --> DB_Pay
-    Notify --> DB_Not
-
-    Auth <--> Broker
-    Order <--> Broker
-    Inventory <--> Broker
-    Payment <--> Broker
-    Catalog <--> Broker
-    Media <--> Broker
-    Cart <--> Broker
-    Notify <--> Broker
-
-    Payment <--> PayGW
-    Order <--> ShipGW
-    Notify --> MsgGW
-```
-
----
-
-### 4.2. Đặc tả chi tiết 9 Dịch vụ Lõi (Bounded Contexts)
-
-#### 1. `API Gateway & Fashion BFF`
-- **Trách nhiệm nghiệp vụ**:
-  - **API Gateway (Kong / Nginx)**: Điểm vào duy nhất, chấm dứt TLS, xác thực JWT sơ bộ, Rate Limiting (chống bot xả giỏ / gom hàng Flash Sale), định tuyến `/api/*` và bảo vệ endpoint Webhook theo IP whitelist.
-  - **Fashion BFF (Node.js / TypeScript)**: Lớp tổng hợp & định dạng payload chuyên biệt cho trải nghiệm giàu hiệu ứng của Frontend. Thay vì buộc trình duyệt gọi 5 API rời rạc cho `<ClothingRack3D />`, `<OccasionShowcase />` hay `<OutfitStudio />`, BFF gom song song (`Promise.allSettled`) dữ liệu từ Catalog + Inventory + Media + Promotion kèm **Graceful Degradation** (ví dụ `Notification & Review Service` chậm vẫn không làm sập trang PDP).
-- **Công nghệ lưu trữ**: Không sở hữu DB nghiệp vụ; dùng **Redis Response Cache** (Cache-Aside TTL 15–300s + xóa cache tức thì theo sự kiện) để `p95 < 80ms`.
-- **Core DTOs**: `StorefrontBootstrapDTO`, `RackCollectionDTO`, `OccasionLookbookDTO`, `OutfitPreviewDTO`, `PdpCompositeDTO`.
-- **Key REST APIs**:
-  - `GET /bff/v1/storefront/bootstrap` (trả Hero Campaign, cấu hình trang chủ, 6 Occasion, 6 Season — thay thế hoàn toàn `window.TX`).
-  - `GET /bff/v1/rack-collection`, `GET /bff/v1/occasions`, `GET /bff/v1/seasons`.
-  - `GET /bff/v1/products/{slug}` (Product + Ma trận SKU + Tồn kho theo size + Size Recommendation + Verified Fit Reviews).
-  - `POST /bff/v1/outfit-studio/preview` (gọi song song Inventory batch check + Promotion tính chiết khấu Combo).
-  - `POST /bff/v1/checkout/submit` (chuyển tiếp lệnh tạo đơn kèm `Idempotency-Key` và `X-Correlation-ID`).
-- **Domain Events**: Không phát event; tiêu thụ `catalog.product.updated`, `catalog.lookbook.updated` để xóa cache BFF và kích hoạt Next.js On-Demand ISR (`revalidateTag`).
-
-#### 2. `Auth & Customer Service`
-- **Trách nhiệm nghiệp vụ**: Đăng ký/đăng nhập đa phương thức (SĐT OTP Zalo/SMS, Email/Password, Google/Apple OAuth2), quản lý Refresh Token Rotation (HttpOnly Cookie), phân quyền RBAC (`CUSTOMER`, `VIP_MEMBER`, `STYLIST`, `WAREHOUSE_STAFF`, `ADMIN`), sổ địa chỉ chuẩn hành chính Việt Nam khớp mã GHN/GHTK, điểm tín nhiệm COD (`cod_trust_score`), và **Hồ sơ Số đo Cơ thể (`CustomerBodyProfile`)**.
-- **Database-per-Service**: **PostgreSQL** (ACID) + **Redis** (OTP TTL, Refresh Token Blacklist, Rate-limit đăng nhập).
-- **Core Entities**:
-  - `users` (`id`, `phone`, `email`, `password_hash`, `role`, `loyalty_tier`, `cod_trust_score`, `status`)
-  - `customer_addresses` (`id`, `user_id`, `recipient_name`, `phone`, `province_code`, `district_code`, `ward_code`, `street_line`, `is_default`)
-  - `customer_body_profiles` (`user_id`, `height_cm`, `weight_kg`, `bust_cm`, `waist_cm`, `hip_cm`, `shoulder_cm`, `fit_preference`, `updated_at`)
-  - `oauth_identities`, `refresh_tokens`
-- **Key REST / gRPC APIs**:
-  - `POST /v1/auth/otp/request`, `POST /v1/auth/otp/verify`, `POST /v1/auth/refresh`
-  - `GET/PUT /v1/customers/me/body-profile`, `GET/POST/PATCH /v1/customers/me/addresses`
-  - `gRPC CustomerService.GetCustomerCheckoutContext(userId)` (cung cấp hạng VIP & điểm tín nhiệm COD cho Order/Promotion).
-- **Domain Events**:
-  - *Published*: `customer.registered`, `customer.body_profile.updated`, `customer.tier.upgraded`
-  - *Consumed*: `order.delivered` (cộng tích lũy nâng hạng VIP), `order.delivery_failed_cod` (giảm `cod_trust_score`).
-
-#### 3. `Catalog & Lookbook Service`
-- **Trách nhiệm nghiệp vụ**: Single Source of Truth cho toàn bộ danh mục thời trang: SPU (`products`), Biến thể Màu/Vải (`product_variants`), SKU Size (`skus`), Bảng số đo (`size_charts`), Quy tắc Layer cho `<OutfitStudio />`, **Occasion Lookbooks**, **Seasonal Collections**, cấu hình **3D Rack Showcase**, **Homepage Campaigns** (Hero Video & 4 bước Atelier) và **Packaging Options**. Đồng bộ chỉ mục tìm kiếm tiếng Việt.
-- **Database-per-Service**: **PostgreSQL** (quan hệ + JSONB cho thuộc tính thời trang & tọa độ layer) + **Meilisearch** (hoặc Elasticsearch khi > 500.000 SKU — hỗ trợ tiếng Việt không dấu, từ đồng nghĩa, faceted search < 30ms).
-- **Core Entities**:
-  - `products` (`id`, `slug`, `name`, `subtitle`, `category_id`, `fabric_composition`, `fit_type`, `stretch_level`, `fabric_weight`, `status`, `size_chart_id`)
-  - `product_variants` (`id`, `product_id`, `color_name`, `color_hex`, `rack_front_asset_id`, `rack_back_asset_id`, `studio_layer_asset_id`, `layer_spec_jsonb`)
-  - `skus` (`id`, `variant_id`, `sku_code`, `size_code`, `base_price_vnd`, `sale_price_vnd`, `weight_grams`, `is_returnable`, `status`)
-  - `size_charts` (`id`, `name`, `measurements_jsonb`)
-  - `occasion_lookbooks`, `occasion_lookbook_items`, `seasonal_collections`, `outfit_presets`, `packaging_options`, `homepage_campaigns`
-- **Key REST / gRPC APIs**:
-  - `GET /v1/catalog/search?q=&size=&color=&occasion=&season=&minPrice=&maxPrice=&inStockOnly=true`
-  - `GET /v1/catalog/products/{slug}`, `GET /v1/catalog/rack-showcase`, `GET /v1/catalog/occasions`, `GET /v1/catalog/seasons`, `GET /v1/catalog/studio-items`
-  - `POST /v1/catalog/size-recommend` (đối chiếu `ProductSizeChart` + `fit_stats` với `CustomerBodyProfile`)
-  - `gRPC CatalogService.GetSkusSnapshot(skuIds[])` (trả giá & thông tin đóng băng cho Cart/Order).
-- **Domain Events**:
-  - *Published*: `catalog.product.published`, `catalog.product.updated`, `catalog.sku.created`, `catalog.sku.price_updated`, `catalog.lookbook.updated`
-  - *Consumed*: `media.asset.processed`, `inventory.stock.status_changed` (cập nhật mảng `in_stock_sizes` trên Meilisearch), `review.fit_stats.aggregated`.
-
-#### 4. `Media & Asset Pipeline Service`
-- **Trách nhiệm nghiệp vụ**: Quản lý vòng đời toàn bộ tài nguyên đồ họa WebGL/Editorial: cấp presigned upload trực tiếp lên Object Storage, kiểm định tự động tỷ lệ `2:3` và kênh Alpha trong suốt (chống viền tối), chuyển mã **WebP/AVIF đa độ phân giải**, transcode Hero Video (`VP9/AV1 .webm`, `H.264 .mp4`, poster), lưu tọa độ `hanger_anchor` và `layer_bbox` từ Visual Anchor Calibrator, và phân phối qua CDN với cache bất biến (`immutable`).
-- **Database-per-Service**: **Cloudflare R2 / AWS S3** + **CDN** cho tệp nhị phân; **PostgreSQL** lưu metadata & spatial anchors; **Redis (BullMQ)** điều phối worker xử lý **Sharp / FFmpeg**.
-- **Core Entities**:
-  - `media_assets` (`id`, `asset_type`: `RACK_CUTOUT | STUDIO_LAYER | PACKAGING_LAYER | LOOKBOOK_PHOTO | HERO_VIDEO | REVIEW_PHOTO`, `original_key`, `variants_jsonb`, `width`, `height`, `has_alpha`, `dominant_hex`, `status`)
-  - `asset_spatial_metadata` (`asset_id`, `hanger_anchor_x`, `hanger_anchor_y`, `bounding_box_jsonb`, `layer_z_hint`)
-- **Key REST APIs**:
-  - `POST /v1/media/presigned-upload`, `POST /v1/media/{assetId}/finalize`, `PATCH /v1/media/{assetId}/spatial-metadata`
-- **Domain Events**:
-  - *Published*: `media.asset.processed`, `media.asset.failed`
-  - *Consumed*: `review.photo.uploaded` (nén & kiểm duyệt ảnh khách mặc thật).
-
-#### 5. `Inventory Service`
-- **Trách nhiệm nghiệp vụ**: Quản lý chính xác tuyệt đối tồn kho theo `(sku_id, warehouse_id)` đa kho/showroom với tính nhất quán mạnh (**Strong Consistency**). Thực thi chu trình **Reserve (TTL 15 phút) → Commit / Release**, giữ chỗ riêng cho Đổi Size (`EXCHANGE_RESERVED`), chống oversell và chống Deadlock khi đặt nguyên bộ Outfit nhiều SKU, đồng thời ghi sổ cái bất biến (`inventory_ledger`) phục vụ kiểm toán.
-- **Database-per-Service**: **PostgreSQL** (`CHECK (available_qty >= 0)` + sổ cái ledger) + **Redis** (Atomic Lua Script / Distributed Lock cho hot SKU & TTL expiration).
-- **Core Entities**:
-  - `warehouses` (`id`, `code`, `name`, `type`: `CENTRAL | SHOWROOM`, `province_code`, `district_code`, `lat`, `lng`, `supports_2h_delivery`)
-  - `stock_levels` (`sku_id`, `warehouse_id`, `available_qty`, `reserved_qty`, `committed_qty`, `safety_buffer`, `version`) — PK kép `(sku_id, warehouse_id)`
-  - `stock_reservations` (`id`, `reservation_type`: `CHECKOUT | SIZE_EXCHANGE`, `reference_id`, `sku_id`, `warehouse_id`, `qty`, `status`, `expires_at`)
-  - `inventory_ledger` (`id`, `sku_id`, `warehouse_id`, `delta_qty`, `reason`: `INBOUND | SALE | RETURN_RESTOCK | DAMAGE | TRANSFER`, `ref_id`, `created_at`)
-- **Key REST / gRPC APIs**:
-  - `POST /v1/inventory/batch-availability`
-  - `gRPC InventoryService.ReserveStock(orderId, items[], preferredRegion, ttlSeconds)` (sắp xếp `sku_id` tăng dần chống Deadlock, bắt buộc `idempotency_key`)
-  - `gRPC InventoryService.CommitReservation(orderId)`, `gRPC InventoryService.ReleaseReservation(orderId)`
-  - `POST /v1/inventory/adjustments` (nhập/xuất/chuyển kho từ Backoffice).
-- **Domain Events**:
-  - *Published*: `inventory.stock.reserved`, `inventory.stock.reserve_failed`, `inventory.stock.committed`, `inventory.stock.released`, `inventory.stock.status_changed`
-  - *Consumed*: `catalog.sku.created`, `order.cancelled`, `payment.failed`, `rma.qc_passed`.
-
-#### 6. `Cart & Outfit Studio Service`
-- **Trách nhiệm nghiệp vụ**: Quản lý giỏ hàng Guest & User (tự động `Cart Merge` khi đăng nhập), hỗ trợ nhóm sản phẩm Combo (`bundle_group_id`), tùy chọn đóng gói + lời nhắn thiệp (`gift_note`), và kho bộ phối đã lưu (`Saved Outfits`) kèm link chia sẻ (`share_code`) + ảnh Offscreen Composite.
-- **Database-per-Service**: **Redis** (Active Cart đọc/ghi < 5ms, TTL 30 ngày cho khách vãng lai) + **PostgreSQL** (`saved_outfits` lưu lâu dài).
-- **Core Entities**:
-  - Redis `cart:{sessionOrUserId}` (`items[]`, `packaging_option_id`, `gift_note`, `applied_voucher_codes[]`, `updated_at`)
-  - PG `saved_outfits` (`id`, `user_id`, `share_code`, `title`, `items_jsonb`, `packaging_option_id`, `preview_snapshot_url`, `created_at`)
-- **Key REST APIs**:
-  - `GET /v1/cart`, `POST /v1/cart/items`, `POST /v1/cart/outfit-bundle`, `PATCH /v1/cart/items/{itemId}`, `PUT /v1/cart/packaging`, `POST /v1/cart/merge`
-  - `POST /v1/outfits`, `GET /v1/outfits/share/{shareCode}`, `GET /v1/outfits/me`
-- **Domain Events**:
-  - *Published*: `cart.abandoned`, `outfit.saved`
-  - *Consumed*: `order.created` (xóa các món đã đặt thành công khỏi giỏ).
-
-#### 7. `Order & RMA Service`
-- **Trách nhiệm nghiệp vụ**: Trái tim vận hành hệ thống — đảm nhiệm vai trò **Saga Orchestrator** cho luồng Checkout, quản lý **Order State Machine**, Smart Order Routing & Shipping Carrier Adapter (GHN / GHTK / Ahamove 2h / Nhận tại cửa hàng), và toàn bộ **RMA & Size Exchange State Machine**. *(Khi team vượt 10+ kỹ sư, lớp Carrier Adapter & Pick/Pack có thể tách gọn thành `Fulfillment & Shipping Service` độc lập).*
-- **Database-per-Service**: **PostgreSQL** tích hợp bảng **Transactional Outbox** (`outbox_events`).
-- **Core Entities**:
-  - `orders` (`id`, `order_code`, `user_id`, `status`, `subtotal_vnd`, `discount_vnd`, `packaging_fee_vnd`, `shipping_fee_vnd`, `grand_total_vnd`, `payment_method`, `shipping_method`, `shipping_address_jsonb`, `gift_note`, `idempotency_key`, `created_at`)
-  - `order_items` (`id`, `order_id`, `sku_id`, `product_name`, `color_name`, `size_code`, `unit_price_vnd`, `allocated_discount_vnd`, `qty`, `bundle_group_id`)
-  - `shipments` (`id`, `order_id`, `warehouse_id`, `carrier`: `GHN | GHTK | AHAMOVE_2H | PICKUP`, `tracking_code`, `status`, `pack_photo_url`, `cod_amount_vnd`)
-  - `rma_requests` (`id`, `rma_code`, `order_id`, `type`: `SIZE_EXCHANGE | COLOR_EXCHANGE | RETURN_REFUND`, `exchange_mode`: `INSTANT_2WAY | STANDARD_QC`, `status`, `reason_code`, `customer_photos_jsonb`, `qc_result_jsonb`, `replacement_order_id`, `price_diff_vnd`) & `rma_items`
-  - `outbox_events` (`id`, `aggregate_type`, `aggregate_id`, `event_type`, `payload_jsonb`, `published_at`)
-- **Key REST APIs**:
-  - `POST /v1/orders` (bắt buộc `Idempotency-Key`), `GET /v1/orders/{orderCode}`, `POST /v1/orders/{orderCode}/cancel`
-  - `POST /v1/orders/{orderCode}/rma`, `POST /v1/admin/rma/{rmaId}/approve`, `POST /v1/admin/rma/{rmaId}/qc-complete`
-  - `POST /v1/webhooks/carriers/{carrier}`
-- **Domain Events**:
-  - *Published*: `order.created`, `order.confirmed`, `order.packed`, `order.shipped`, `order.delivered`, `order.cancelled`, `order.delivery_failed_cod`, `rma.requested`, `rma.approved`, `rma.qc_passed`, `rma.completed`
-  - *Consumed*: `payment.succeeded`, `payment.failed`, `payment.expired`, `inventory.stock.reserved`, `inventory.stock.reserve_failed`.
-
-#### 8. `Payment & Promotion Service`
-- **Trách nhiệm nghiệp vụ**:
-  - **Payment**: Tích hợp VNPay, MoMo, VietQR (PayOS/Casso), COD; sinh Payment Intent; xác thực chữ ký IPN có Idempotency; xử lý hoàn tiền toàn phần/một phần (Partial Refund khi trả lẻ 1 món hoặc bù trừ đổi hàng); đối soát định kỳ (Settlement Reconciliation mỗi 15 phút).
-  - **Promotion**: Tính chiết khấu Voucher, Combo Outfit Set, Flash Sale có giới hạn tổng suất (`max_redemptions`, `per_user_limit`) và phân bổ chiết khấu xuống từng `order_item`.
-- **Database-per-Service**: **PostgreSQL** (bảng giao dịch tài chính append-only + bảng chiến dịch) + **Redis** (đếm lượt Flash Sale & khóa tạm Voucher 15 phút).
-- **Core Entities**:
-  - `payment_transactions` (`id`, `order_id`, `provider`: `VNPAY | MOMO | VIETQR | COD`, `type`: `CHARGE | REFUND`, `amount_vnd`, `status`, `provider_tx_id`, `idempotency_key`, `raw_response_jsonb`)
-  - `processed_webhooks` (`provider`, `provider_event_id`, `received_at`) — `UNIQUE(provider, provider_event_id)`
-  - `promotions` (`id`, `code`, `type`: `PERCENT | FIXED | FREESHIP | OUTFIT_COMBO | FLASH_SALE`, `rules_jsonb`, `start_at`, `end_at`, `usage_limit`, `used_count`)
-  - `voucher_redemptions` (`id`, `promotion_id`, `user_id`, `order_id`, `status`: `LOCKED | REDEEMED | RELEASED`, `expires_at`)
-- **Key REST / gRPC APIs**:
-  - `POST /v1/promotions/evaluate`
-  - `gRPC PromotionService.LockVoucher` / `ReleaseVoucher`, `gRPC PaymentService.CreatePaymentIntent`
-  - `POST /v1/payments/{txId}/refund`, `POST /v1/webhooks/payments/{provider}`
-- **Domain Events**:
-  - *Published*: `payment.succeeded`, `payment.failed`, `payment.expired`, `payment.refunded`
-  - *Consumed*: `order.cancelled`, `rma.qc_passed`.
-
-#### 9. `Notification & Review Service`
-- **Trách nhiệm nghiệp vụ**:
-  - **Omnichannel Notification**: Gửi thông báo ưu tiên **Zalo ZNS** (tỷ lệ mở > 85% tại Việt Nam, nâng cấp chính thống từ nút giả lập Zalo của bản mẫu), kết hợp Email HTML (kèm hóa đơn và ảnh chụp hộp đồ trước khi giao) và SMS dự phòng, có Retry + Dead Letter Queue.
-  - **Verified Fit Reviews**: Chỉ cho phép đánh giá khi đơn ở trạng thái `DELIVERED`, thu thập ảnh thật + số đo + `fit_feedback` (`RUNS_SMALL / TRUE_TO_SIZE / RUNS_LARGE`), kiểm duyệt và tổng hợp Fit Distribution đẩy ngược về `Catalog & Lookbook Service`.
-- **Database-per-Service**: **PostgreSQL**.
-- **Core Entities**:
-  - `product_reviews` (`id`, `order_id`, `order_item_id`, `product_id`, `sku_id`, `user_id`, `rating`, `fit_feedback`, `reviewer_height_cm`, `reviewer_weight_kg`, `size_purchased`, `comment`, `media_asset_ids`, `moderation_status`, `created_at`) — `UNIQUE(order_item_id)`
-  - `notification_logs` (`id`, `event_id`, `channel`: `ZALO_ZNS | EMAIL | SMS`, `recipient`, `template_code`, `status`, `retry_count`, `sent_at`) — `UNIQUE(event_id, channel)` chống gửi trùng.
-- **Key REST APIs**: `GET /v1/reviews/products/{productId}`, `POST /v1/reviews`, `PATCH /v1/admin/reviews/{id}/moderate`.
-- **Domain Events**:
-  - *Published*: `review.fit_stats.aggregated`, `review.photo.uploaded`
-  - *Consumed*: `order.confirmed`, `order.packed`, `order.shipped`, `order.delivered`, `order.cancelled`, `rma.approved`, `rma.completed`, `payment.refunded`.
-
----
-
-### 4.3. Giao tiếp Liên dịch vụ (Sync vs. Async) & Mẫu Đảm bảo Độ tin cậy
-
-| Tiêu chí | Giao tiếp Đồng bộ (Sync: gRPC / HTTP2 REST) | Giao tiếp Bất đồng bộ (Async: Kafka / RabbitMQ) |
-| :--- | :--- | :--- |
-| **Phạm vi áp dụng** | - Truy vấn đọc tổng hợp ở `Fashion BFF` (Catalog, Inventory availability, Size Recommend).<br>- Bước khởi tạo cần phản hồi tức thì lúc khách bấm đặt hàng: `ReserveStock`, `LockVoucher`, `CreatePaymentIntent`. | - Toàn bộ chuỗi hậu xử lý sau sự kiện: Xác nhận thanh toán → Chốt kho → Tạo vận đơn → Xóa giỏ → Gửi Zalo ZNS.<br>- Tác vụ nặng/dài ngày: Transcode WebP/Video, đồng bộ Meilisearch, tổng hợp Fit Reviews, luồng RMA đổi size. |
-| **Mẫu bảo vệ bắt buộc** | - **Strict Timeout**: 200–800ms nội bộ, không chờ vô hạn.<br>- **Circuit Breaker**: Mở mạch khi tỷ lệ lỗi > 50%, kích hoạt fallback mượt ở BFF.<br>- **Retry + Exponential Backoff + Jitter**: Chỉ retry lệnh đọc hoặc lệnh ghi có `Idempotency-Key`.<br>- **Bulkhead**: Tách connection pool luồng thanh toán khỏi luồng duyệt sản phẩm. | - **Transactional Outbox Pattern**: Ghi thay đổi DB và bản ghi `outbox_events` trong cùng 1 transaction PostgreSQL; Relay/Debezium đẩy lên Broker đảm bảo **At-Least-Once Delivery**.<br>- **Idempotent Consumer**: Lưu `processed_event_id` để nhận lặp tin nhắn vẫn an toàn tuyệt đối.<br>- **Dead Letter Queue (DLQ)**: Đưa message lỗi sau N lần retry vào DLQ + bắn cảnh báo tức thời. |
-
-> [!IMPORTANT]
-> **Vì sao chọn Saga Orchestration thay vì 2PC (Two-Phase Commit)?**  
-> Không thể giữ khóa phân tán 2PC xuyên qua `Inventory`, `Promotion` và cổng `VNPay/MoMo` khi người dùng mất 2–10 phút để mở app ngân hàng quét mã QR. Vì vậy `Order & RMA Service` đóng vai trò **Saga Orchestrator**: quản lý trạng thái đơn rõ ràng, gọi từng bước với `Idempotency-Key`, và kích hoạt **Compensating Transactions** (`ReleaseReservation`, `ReleaseVoucher`, `RefundPayment`) ngay khi có lỗi hoặc hết hạn 15 phút.
-
----
-
-### 4.4. Sơ đồ Tuần tự Luồng Checkout Order Saga (Happy Path & Compensation)
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Customer as Khach hang
-    participant BFF as API Gateway & Fashion BFF
-    participant Cart as Cart & Outfit Studio Service
-    participant Order as Order & RMA Service - Saga
-    participant Inv as Inventory Service
-    participant Promo as Payment & Promotion Service
-    participant PayGW as VNPay / MoMo / VietQR
-    participant Notify as Notification & Review Service
-
-    Customer->>BFF: POST /bff/v1/checkout/submit (Idempotency-Key, items, voucher)
-    BFF->>Order: CreateOrderCommand (snapshot gia va dia chi)
-    Order->>Order: Luu Order trang thai PENDING_RESERVATION
-
-    Order->>Inv: gRPC ReserveStock (orderId, skuList sorted, ttl=15m)
-    alt Het hang / Khong du ton kho
-        Inv-->>Order: ReserveFailed (outOfStockSkus)
-        Order->>Order: Cap nhat FAILED_OUT_OF_STOCK
-        Order-->>BFF: 409 Conflict (chi tiet SKU het size)
-        BFF-->>Customer: Thong bao size vua het va goi y thay the
-    else Giu cho ton kho thanh cong
-        Inv-->>Order: Reserved (reservationId, warehouseId)
-        Order->>Promo: gRPC LockVoucher va CreatePaymentIntent
-        Promo->>PayGW: Khoi tao giao dich / Sinh ma VietQR
-        PayGW-->>Promo: paymentUrl / qrPayload
-        Promo-->>Order: PaymentIntentCreated
-        Order->>Order: Cap nhat AWAITING_PAYMENT va ghi Outbox (order.created)
-        Order-->>BFF: 201 Created (orderCode, paymentUrl, expiresAt)
-        BFF-->>Customer: Chuyen huong VNPay/MoMo hoac hien ma QR 15 phut
-        Order--)Cart: Event order.created (xoa cac mon da dat khoi gio)
-
-        alt Thanh toan thanh cong (Happy Path)
-            Customer->>PayGW: Hoan tat thanh toan / Quet ma QR
-            PayGW->>Promo: Webhook IPN (Verify HMAC + Idempotency Check)
-            Promo->>Promo: Ghi payment.succeeded va chot Voucher
-            Promo--)Order: Event payment.succeeded
-            Order->>Inv: gRPC CommitReservation (orderId)
-            Inv-->>Order: Committed (tru ton kho thuc te)
-            Order->>Order: Cap nhat CONFIRMED + tao Shipment + Outbox (order.confirmed)
-            Order--)Notify: Event order.confirmed
-            Notify-->>Customer: Gui Zalo ZNS va Email xac nhan don hang
-        else Thanh toan that bai hoac qua han 15 phut (Compensation Path)
-            Promo--)Order: Event payment.failed / payment.expired
-            Order->>Inv: gRPC ReleaseReservation (orderId)
-            Inv-->>Order: Released (hoan lai available_qty)
-            Order->>Promo: gRPC ReleaseVoucher (orderId)
-            Order->>Order: Cap nhat CANCELLED + ghi Outbox (order.cancelled)
-            Order--)Notify: Event order.cancelled
-            Notify-->>Customer: Thong bao het han giu cho va nut dat lai nhanh
-        end
-    end
-```
-
----
-
-### 4.5. Sơ đồ Trạng thái Vòng đời Đơn hàng & Đổi Size / Trả hàng (Order & RMA State Machine)
-
-```mermaid
-stateDiagram-v2
-    [*] --> PENDING_RESERVATION: Khach bam Dat hang
-    PENDING_RESERVATION --> FAILED_OUT_OF_STOCK: Het ton kho SKU
-    PENDING_RESERVATION --> AWAITING_PAYMENT: Giu kho thanh cong (Thanh toan Online)
-    PENDING_RESERVATION --> CONFIRMED: Giu kho va duyet tin nhiem (COD)
-
-    AWAITING_PAYMENT --> CONFIRMED: Webhook thanh toan thanh cong
-    AWAITING_PAYMENT --> CANCELLED: Khach huy hoac qua han 15 phut (nha kho)
-
-    CONFIRMED --> PACKING: Kho nhan don va quet ma Pick-Pack
-    CONFIRMED --> CANCELLED: Khach huy truoc khi dong goi (nha kho va hoan tien)
-
-    PACKING --> SHIPPED: Ban giao don vi van chuyen (GHN/GHTK/2h)
-    SHIPPED --> DELIVERED: Khach nhan hang thanh cong
-    SHIPPED --> DELIVERY_FAILED: Giao that bai 3 lan / Tu choi nhan
-    DELIVERY_FAILED --> RETURNED_TO_WAREHOUSE: Hang hoan ve kho va nhap lai ton
-
-    DELIVERED --> COMPLETED: Het han doi tra 7-14 ngay (mo danh gia)
-    DELIVERED --> RMA_Flow: Khach tao yeu cau Doi Size / Tra hang
-
-    state RMA_Flow {
-        [*] --> RMA_REQUESTED
-        RMA_REQUESTED --> RMA_APPROVED: He thong hoac CSKH duyet dieu kien
-        RMA_REQUESTED --> RMA_REJECTED: Ngoai han hoac hang khong ho tro doi
-
-        RMA_APPROVED --> EXCHANGE_RESERVED: Giu cho ngay SKU Size moi
-        EXCHANGE_RESERVED --> INSTANT_2WAY_DISPATCHED: Doi nhanh 2 chieu tai cua (Noi thanh)
-        EXCHANGE_RESERVED --> RETURN_IN_TRANSIT: Khach gui hang hoan (Toan quoc)
-
-        RMA_APPROVED --> RETURN_IN_TRANSIT: Tra hang hoan tien (Khong doi size)
-
-        INSTANT_2WAY_DISPATCHED --> QC_INSPECTING: Shipper mang hang cu ve kho
-        RETURN_IN_TRANSIT --> QC_INSPECTING: Kho nhan kien hang hoan
-
-        QC_INSPECTING --> QC_PASSED: Nguyen tem mac, chua giat, khong loi
-        QC_INSPECTING --> QC_FAILED: Mat mac hoac ban hong (tra lai khach)
-
-        QC_PASSED --> EXCHANGE_SHIPPED: Xuat size moi (che do tieu chuan)
-        QC_PASSED --> REFUND_PROCESSING: Hoan tien hoac bu tru chenh lech
-        EXCHANGE_SHIPPED --> RMA_COMPLETED: Khach nhan duoc size moi
-        REFUND_PROCESSING --> RMA_COMPLETED: Hoan tien thanh cong va hoan ton kho
-
-        RMA_COMPLETED --> [*]
-        RMA_REJECTED --> [*]
-        QC_FAILED --> [*]
-    }
-
-    RMA_Flow --> [*]
-    COMPLETED --> [*]
-    CANCELLED --> [*]
-    FAILED_OUT_OF_STOCK --> [*]
-    RETURNED_TO_WAREHOUSE --> [*]
-```
-
----
-
-### 4.6. Tư vấn Thực chiến: Lộ trình Tiến hóa Kiến trúc (Modular Monolith → Strangler Fig → Microservices)
-
-> [!WARNING]
-> **Cảnh báo "Thuế phân tán" (Microservices Tax)**: Bản thiết kế 9 dịch vụ theo DDD ở trên là **kiến trúc đích (Target Architecture)** để đảm bảo ranh giới dữ liệu không bao giờ rối chéo. Tuy nhiên, nếu nhóm chỉ có **1–3 kỹ sư** mà dựng ngay 9 cụm DB, Kubernetes và Kafka ngay Tuần 1, khoảng 60% thời gian sẽ bị tiêu tốn vào DevOps, CI/CD và gỡ lỗi mạng trước khi bán được chiếc áo đầu tiên.
-
-Hãy chọn cấu hình triển khai khớp đúng quy mô đội ngũ theo tiến trình **Modular Monolith → Strangler Fig → Full Microservices**:
-
-| Giai đoạn & Quy mô Team | Mô hình Khuyến nghị | Cấu trúc Triển khai | Lý do & Điểm kích hoạt nâng cấp |
-| :--- | :--- | :--- | :--- |
-| **Giai đoạn 1: 1–3 Devs**<br>*(MVP → 1.000 đơn/tháng)* | **Modular Monolith** (1 Backend NestJS/Go/Spring Modulith + Next.js Storefront) | - **1 deployable backend**, **1 cụm PostgreSQL** tách **8 schemas độc lập** (`auth.*`, `catalog.*`, `inventory.*`, `order.*`, `payment.*`, `review.*`...) + **1 Redis** + **Cloudflare R2**.<br>- Dùng **BullMQ (Redis)** thay Kafka.<br>- Dùng **In-process Event Bus + bảng Outbox** giữ ranh giới sự kiện sạch. | Tốc độ ra sản phẩm nhanh gấp **3–4 lần**, debug tại một chỗ, chi phí cloud chỉ **50–150 USD/tháng**, vẫn đầy đủ 100% nghiệp vụ (SKU, Reserve TTL, VietQR/VNPay, Mix & Match, RMA). |
-| **Giai đoạn 2: 4–8 Devs**<br>*(Tăng trưởng → 1.000–15.000 đơn/tháng, Flash Sale)* | **Strangler Fig (Tách chọn lọc 3–4 Services)** | Tách trước các miền có đặc thù tài nguyên & độ nhạy cảm cao:<br>1. **`Media & Asset Pipeline`** (tốn CPU xử lý ảnh/video).<br>2. **`Inventory Service` + `Payment & Promotion Service`** (chịu tải đột biến Flash Sale, cô lập lỗi tuyệt đối).<br>3. **`Fashion BFF`** (cache & tổng hợp cho WebGL/Mobile).<br>Giữ lõi `Auth`, `Catalog`, `Order`, `Notify` gọn nhẹ. | Hết xung đột merge code giữa 2 squad (Squad Trải nghiệm/Catalog & Squad Đơn hàng/Kho), scale riêng được cụm Flash Sale mà không nhân bản thừa. |
-| **Giai đoạn 3: 10+ Devs**<br>*(Đa thương hiệu / Chuỗi showroom / Hàng nghìn đơn/phút)* | **Full Microservices (Đủ 9 Services + Kubernetes + Kafka)** | Tách hoàn chỉnh 9 Bounded Contexts theo Sơ đồ 4.1; mỗi squad 3–5 kỹ sư sở hữu trọn vẹn 1–2 service (code → DB → deploy → on-call). Có đội Platform/DevOps vận hành K8s, OpenTelemetry, Kong và Chaos Testing. | Triển khai độc lập, cô lập sự cố đa vùng, mở rộng dễ dàng sang Mobile App, POS showroom và đồng bộ sàn (Shopee / TikTok Shop). |
-
-**Năm nguyên tắc "Chuẩn Microservices từ Ngày 1" (áp dụng ngay cả khi bắt đầu bằng Modular Monolith)** để sau này tách bất kỳ module nào chỉ mất **2–5 ngày**:
-1. **Cấm `SQL JOIN` xuyên Bounded Context**: `order.orders` chỉ lưu `user_id`, `sku_id` (UUIDv7); tuyệt đối không đặt Foreign Key hay `JOIN` sang `auth.users` hoặc `catalog.skus`.
-2. **Giao tiếp xuyên module chỉ qua Public Facade / DTO**: Module `Order` muốn giữ kho chỉ gọi `InventoryFacade.reserveStock(cmd)`, không chạm trực tiếp `StockRepository`. Khi tách service, chỉ đổi `InventoryFacade` thành `InventoryGrpcClient`.
-3. **Bắt buộc `Idempotency-Key` & `Transactional Outbox` ngay từ MVP**: Dù dùng BullMQ hay Kafka, mọi API đặt hàng, trừ kho và Webhook thanh toán phải an toàn khi chạy lặp.
-4. **Đóng băng Snapshot dữ liệu tài chính**: Mọi `order_items` luôn lưu bản sao tên, size, màu, giá và giảm giá phân bổ tại thời điểm mua — không truy vấn ngược `catalog` để tính tiền hoàn RMA.
-5. **Tách biệt Asset tĩnh & Metadata 3D khỏi mã nguồn**: Lưu toàn bộ WebP/Video lên Object Storage + CDN kèm tọa độ `hanger_anchor` và `layer_bbox` trong DB ngay từ ngày đầu (không nhúng ảnh vào `public/` như `ban_hoa`).
-
----
-
-## Phần 5: Lộ Trình Chuyển Đổi Chi Tiết Từng Giai Đoạn (Phase 0 → Phase 6)
-
-### 5.1. Nguyên tắc dẫn dắt & So sánh 2 Kịch bản Triển khai (Chuẩn 16–17 tuần vs. MVP 8–10 tuần)
-
-Để tránh bẫy **"Big Bang Rewrite"** (viết lại 6 tháng không có sản phẩm chạy thật), lộ trình áp dụng 3 nguyên tắc: (1) **Tách rõ lớp Storefront Motion và Commerce Domain** để kiểm chứng hiệu ứng trên dữ liệu thật sớm; (2) **Value-First Strangler Fig** (lên trước các dịch vụ Read-heavy phục vụ trưng bày/SEO ở Phase 1–3, rồi mới đưa dịch vụ giao dịch Write-heavy vào Phase 4–5); và (3) **Khóa quy chuẩn ảnh tách nền `2:3` + tọa độ neo từ Tuần 1**.
-
-| Tiêu chí | Kịch bản Chuẩn (Full Platform — 16–17 tuần) | Kịch bản Rút gọn (Fast-Track MVP — 8–10 tuần) |
-| :--- | :--- | :--- |
-| **Quy mô đội ngũ** | **4–6 kỹ sư** (1 Tech Lead, 2 FE/Motion, 2 BE, 1 DevOps/QA) + 1 UI/UX & Media Producer | **2–3 kỹ sư** (1 FE/Motion, 1 Fullstack/BE, 0.5 DevOps/QA) + 1 Designer/Media |
-| **Kiến trúc Backend** | Đầy đủ **9 Dịch vụ lõi** (8 Microservices độc lập DB + Gateway/BFF) + Kafka/RabbitMQ + Saga Orchestration | **Modular Monolith** (1 repo NestJS/Go tách sẵn schema DDD + 1 PostgreSQL + Redis/BullMQ) giữ nguyên OpenAPI/AsyncAPI contracts |
-| **Hiệu ứng đặc trưng** | Tái tạo **100%** toàn bộ 9 khu vực + lớp toàn cục (`IntroCurtain`, `HeroEditorial`, `ClothingRack3D`, `OccasionShowcase`, `OutfitStudio` full 7 lớp, `SeasonLookbookTrack` Pointillism, `AtelierCraftJourney`, `FinaleShowcase`, `LookbookAutoTour`) | Giữ **4 hiệu ứng chuyển đổi cao nhất**: `HeroEditorial`, `ClothingRack3D` (kèm `FlatRackFallback`), `OccasionShowcase`, `OutfitStudio` cơ bản (Áo/Quần-Váy/Áo khoác); dùng CSS transition nhẹ cho Seasons & hoãn AutoTour sang v2 |
-| **Nghiệp vụ Thời trang** | Full SKU (Size/Màu/Fit), Multi-warehouse Inventory Lock, Combo Outfit discount, VNPay/MoMo/VietQR/COD, GHN/GHTK/Giao 2h, **RMA Đổi Size tự động 2 chiều & QC**, Zalo ZNS, Verified Fit Reviews, Backoffice + Visual Anchor Calibrator | Catalog SKU (Size/Màu), 1 kho trung tâm + Redis lock, Giỏ hàng & Mix & Match, VietQR + COD (VNPay thêm ở tuần 10), GHN + Giao 2h bán tự động, Đổi size qua form ticket + Zalo OA, Admin CMS tinh gọn |
-| **Hạ tầng Production** | Managed Cloud (Cloud Run / ECS Fargate hoặc EKS/GKE + Helm) + Full Observability (OTel/Prometheus/Grafana/Loki) + Canary Deploy | Vercel (Next.js) + Railway/Render/Cloud Run (Modular Backend) + Managed Postgres/Redis + Cloudflare R2/CDN + Sentry |
-| **Mục tiêu kinh doanh** | Vận hành đa kho quy mô lớn, sẵn sàng Flash Sale 1.000–3.000 CCU và tự động hóa hậu mãi | Ra mắt thương hiệu nhanh trong ~2 tháng để kiểm chứng thị trường & chuyển đổi của 3D Rack / Mix & Match với chi phí tối thiểu |
-
----
-
-### 5.2. Sơ đồ Lộ trình Tiến hóa Hệ thống
-
-```mermaid
-flowchart LR
-    subgraph SRC["Hien Trang (Static Demo)"]
-        S0["ban_hoa Static HTML/CSS/JS · window.TX · 40+ assets · Chot don demo"]
-    end
-
-    subgraph P01["Nen Tang (Phase 0 - Phase 1 · Tuan 1-4)"]
-        P0["Phase 0 (Tuan 1-2): Nghiep vu · Figma · Chuan anh 2:3 · OpenAPI/AsyncAPI"]
-        P1["Phase 1 (Tuan 3-4): Next.js 15 Monorepo · Tokens · CI/CD · BFF/Auth/Catalog/Media"]
-        P0 --> P1
-    end
-
-    subgraph P23["Trai Nghiem va Showcase (Phase 2 - Phase 3 · Tuan 5-9)"]
-        P2["Phase 2 (Tuan 5-6): Core Motion React 19 · Intro · Lenis · Hero · Atelier · Finale"]
-        P3["Phase 3 (Tuan 7-9): ClothingRack3D · OccasionShowcase · SeasonLookbookTrack · PDP/PLP SEO"]
-        P2 --> P3
-    end
-
-    subgraph MVP["Cot Moc Rut Gon (Tuan 8-10)"]
-        M1["MVP Fast-Track Go-Live: Modular Monolith + Next.js · Rack3D + OutfitStudio · VietQR/COD + GHN"]
-    end
-
-    subgraph P45["TMDT va Giao Dich (Phase 4 - Phase 5 · Tuan 10-15)"]
-        P4["Phase 4 (Tuan 10-12): OutfitStudio · QuickBagDrawer · Cart Service · Inventory Redis Lock"]
-        P5["Phase 5 (Tuan 13-15): Order Saga/Outbox · RMA Doi Size · VNPay/MoMo/VietQR · GHN/2h · Zalo ZNS · Admin"]
-        P4 --> P5
-    end
-
-    subgraph P6["Van Hanh va Go-Live (Phase 6 · Tuan 16-17)"]
-        P6N["Phase 6 (Tuan 16-17): WebGL 60fps & CWV · k6 Flash Sale · OWASP · OTel/Grafana · Canary Go-Live"]
-    end
-
-    S0 --> P0
-    P1 --> P2
-    P3 -.->|"Nhanh rut gon (Team 2-3 nguoi)"| M1
-    P3 --> P4
-    P5 --> P6N
-    M1 -.->|"Mo rong Wave 2 (Strangler Fig)"| P4
-```
-
----
-
-### 5.3. Kế hoạch Thực thi Chi tiết Phase 0 → Phase 6
-
-#### Phase 0 (Tuần 1–2): Khám Phá, Thiết Kế Nghiệp Vụ Thời Trang, Brand/Design System & Chuẩn Hóa Asset
-1. **Mục tiêu & Thời gian**: **2 tuần (Tuần 1–2)** — Khóa phạm vi nghiệp vụ thời trang, Design System, quy chuẩn chụp ảnh/video tương thích tuyệt đối với shader `js/rack.js` & layer `js/build.js`, và ký duyệt hợp đồng API/Event trước khi lập trình sản phẩm.
-2. **Nghiệp vụ thời trang**:
-   - Chốt cấu trúc SPU/Variant/SKU (`[BST]-[MẪU]-[MÀU]-[SIZE]`), bảng Size Việt Nam/Quốc tế (`XS`–`XXL` + số đo vòng ngực/eo/hông/vai/dài), phân loại form (`Slim`/`Regular`/`Relaxed`/`Oversize`).
-   - Chốt 6 Dịp mặc (`OccasionLookbook` thay `TX.occasions`), 6 BST theo mùa (`SeasonalCollection` thay `TX.seasons`), 3 gói đóng gói (`PackagingOption` thay `TX.wraps`), luật phối đồ & mức giảm giá Combo Set (`>= 2 món -5%`, `>= 3 món -10%`).
-   - Chốt chính sách Đổi Size/Hoàn trả (7–14 ngày, 2 chế độ đổi 2 chiều nội thành & tiêu chuẩn QC) và chính sách giao vận (GHN/GHTK + Giao 2h).
-3. **Công việc Frontend (HTML → React + Hiệu ứng)**:
-   - Trích xuất toàn bộ biến màu, font và motion easing từ `css/style.css` sang **Figma Design System** (Desktop 1440px, Tablet 1024px, Mobile 390px) cho Trang chủ Storytelling, PLP, PDP, Outfit Studio, Checkout và Tài khoản/RMA.
-   - Ban hành **Asset Specification Playbook**: khóa chuẩn `1200×1800px` (`2:3`) master → `720×1080px` WebP alpha, Safe Margin >= 15%, Edge Color Padding, tọa độ móc treo `(50%, 4%–8.5%)`, lưới Ghost Mannequin (Vai 18% / Eo 44% / Hông 54% / Gấu 92%), Sprite `4×4` (`512×512`) và storyboard Hero Video.
-   - Chạy **Technical Spike 2 ngày**: đưa thử 3 ảnh quần áo tách nền thật lên prototype `js/rack.js` để kiểm chứng viền alpha, bóng đổ `SHADOW_FRAG` và biên độ đung đưa.
-4. **Công việc Backend (Microservices & Data)**:
-   - Chốt Domain Model & Bounded Context Map cho 9 dịch vụ lõi.
-   - Viết đặc tả **OpenAPI 3.1** (REST/BFF) & **AsyncAPI 3.0** (toàn bộ Domain Events) cùng ERD Database-per-Service (UUIDv7, bảng `outbox_events`).
-   - Nộp hồ sơ đăng ký Sandbox đối tác sớm (tránh tắc Phase 5): VNPay Sandbox, MoMo Test, PayOS/VietQR, GHN/GHTK, Zalo OA & mẫu ZNS.
-5. **Deliverables & Tiêu chí Nghiệm thu (DoD)**:
-   - [ ] BRD/PRD Thời trang + Asset Specification Playbook được ký duyệt.
-   - [ ] Figma Design System đầy đủ 3 breakpoint + tối thiểu **10 ảnh áo treo 3D, 12 món phối đồ, 3 cặp hộp back/front, 1 video Hero mẫu** đạt chuẩn kỹ thuật.
-   - [ ] Thư mục `packages/contracts/` (OpenAPI + AsyncAPI + ERD) sẵn sàng cho FE chạy Mock Server (MSW/Prism) song song với BE.
-
----
-
-#### Phase 1 (Tuần 3–4): Nền Tảng React/Next.js + Hạ Tầng DevOps + 4 Core Services Đầu Tiên
-1. **Mục tiêu & Thời gian**: **2 tuần (Tuần 3–4)** — Dựng xong "Walking Skeleton" chạy thông suốt từ Storefront Next.js → Gateway/BFF → 4 Core Services → Database/R2/Meilisearch kèm CI/CD lên Staging.
-2. **Nghiệp vụ thời trang**:
-   - Đăng ký/đăng nhập đa phương thức (SĐT OTP/Email/OAuth), sổ địa chỉ hành chính VN và **Hồ sơ số đo cơ thể (`CustomerBodyProfile`)**.
-   - Quản lý danh mục SPU/Variant/SKU, Size Chart, 6 Occasions & 6 Seasons.
-   - Upload & xử lý tự động ảnh tách nền WebP/AVIF đa kích thước, kiểm định tỷ lệ `2:3` & alpha channel, lưu tọa độ móc treo/layer.
-3. **Công việc Frontend (HTML → React + Hiệu ứng)**:
-   - Khởi tạo **Monorepo (`Turborepo + pnpm`)**: `apps/storefront` (Next.js 15 App Router + React 19 + TypeScript Strict), `packages/ui-tokens` (port toàn bộ `:root` & 5 `@keyframes` từ `css/style.css` sang Tailwind CSS v4 `@theme`), `packages/contracts` (sinh tự động TS types + Zod schemas từ OpenAPI).
-   - Xây dựng `app/layout.tsx` dùng `next/font/google` (`Cormorant Garamond`, `Be Vietnam Pro`, `Dancing Script` chống FOUT/CLS), bộ UI Primitives (`<GoldButton />`, `<LineButton />`, `<ToastProvider />`, `<Modal />`, `<Skeleton />`), cài đặt TanStack Query v5 + Zustand v5 + BFF client gắn `X-Correlation-ID`.
-4. **Công việc Backend (Microservices & Data)**:
-   - Dựng `infra/docker-compose.yml` (PostgreSQL 16, Redis 7, Meilisearch, MinIO, Redpanda, Kong/Nginx) và GitHub Actions CI/CD (PR lint/typecheck/test → Docker multi-stage → Staging).
-   - Triển khai **4 dịch vụ đầu tiên**:
-     1. **`API Gateway & Fashion BFF`**: Routing, Rate limiting cơ bản, JWT validation, `GET /bff/v1/storefront/bootstrap`.
-     2. **`Auth & Customer Service`**: OTP/Email/OAuth, HttpOnly JWT Refresh Rotation, RBAC, Sổ địa chỉ & `customer_body_profiles`.
-     3. **`Catalog & Lookbook Service`**: CRUD Product/Variant/SKU/SizeChart/Occasions/Seasons + đồng bộ index Meilisearch.
-     4. **`Media & Asset Pipeline Service`**: Presigned upload S3/R2, Sharp/FFmpeg worker (BullMQ) kiểm định `2:3` + alpha, xuất biến thể `480w/720w` (WebGL `2:3`) và `480w/960w/1600w` (PDP/PLP), lưu `asset_spatial_metadata`.
-   - Viết script seed dữ liệu mẫu (~30 mẫu thời trang × 2–3 màu × 4 size ≈ 300 SKU + 6 Occasions + 6 Seasons).
-5. **Deliverables & Tiêu chí Nghiệm thu (DoD)**:
-   - [x] Chạy `pnpm install && pnpm verify:phase1` khởi động & nghiệm thu toàn bộ stack local trong **~23s** (`INFRA_MODE=LOCAL_DEV_HARNESS` trên Windows host chưa cài Docker Desktop/WSL2; tự động nhường sang `infra/docker-compose.yml` khi Docker sẵn sàng).
-   - [x] 3 cổng Next.js 15 (`storefront:3000`, `admin-portal:3001`, `partner-portal:3002`), `apps/bff:4000`, `auth-customer:4001`, `catalog-lookbook:4002`, `media-pipeline:4003`, `packages/ai-harness` (`rag_vector_db` pgvector + RRF) và 21 workspaces build & typecheck xanh 100%; Next.js render dữ liệu thật từ `GET /bff/v1/storefront/bootstrap` (Redis Cache HIT `2.1ms`).
-   - [x] `Media & Asset Pipeline` kiểm định Magic Bytes (`malware.jpg` → `400 INVALID_MAGIC_BYTES` + xóa MinIO `404`), từ chối ảnh 3D Rack sai tỷ lệ `2:3` hoặc thiếu alpha (`422 INVALID_ASPECT_OR_ALPHA`), xuất biến thể kép `2:3` Alpha (`480w`/`720w`) + `3:4` Flat-Lay (`768x1024`) và lưu `asset_spatial_metadata`.
-   - [x] **Phase 1 Acceptance Gate (`pnpm verify:phase1` — 8/8 PASS, `pnpm eval:ai` — 25/25 PASS 100%)**: RS256 JWKS & Refresh Token Reuse Attack (`401 TOKEN_REUSE_DETECTED` + revoke cả `token_family_id`), CSRF + Origin (`403 CSRF_INVALID`), Instant Redis RBAC revocation (`23.6ms < 1000ms`, `403 PERMISSION_REVOKED`) + Audit Logs (`before/after` + `correlationId`), Mandatory 2FA Mailpit OTP (`SUPER_ADMIN`/`SUPPLIER`), Supplier tenant isolation (`403`), `costPriceVnd` redaction (`CATALOG_AI_OPERATOR` = 0 leak), Storefront static scan (23 files, 0 violations / 0 fake size %), Meilisearch tiếng Việt (`ao so mi lua` `17.1ms`, synonym `vay di tiec` `11.3ms` < `120ms`), Hybrid RAG `rag_vector_db` (5 grounded citations `"7–14 ngày"` & `"15 phút"`).
-
----
-
-#### Phase 2 (Tuần 5–6): Chuyển Đổi Hệ Thống Hiệu Ứng Lõi Sang React 19
-1. **Mục tiêu & Thời gian**: **2 tuần (Tuần 5–6)** — Port trọn vẹn lớp Global Motion Engine và các phân khu Storytelling/Editorial từ `index.html` + `js/main.js` sang React 19 không rò rỉ bộ nhớ, không lỗi StrictMode, không kẹt cuộn khi đổi trang.
-2. **Nghiệp vụ thời trang**:
-   - Trải nghiệm Brand Flagship Storytelling có thể quản trị động từ CMS: Màn khai màn thương hiệu, Hero Lookbook Campaign Video, Hành trình Xưởng may đo 4 bước và Đánh giá nổi bật / Lời mời hẹn thử đồ tại showroom.
-3. **Công việc Frontend (HTML → React + Hiệu ứng)**:
-   - `<SmoothScrollProvider />` (`lenis/react` đồng bộ `gsap.ticker`, `lagSmoothing(0)`, Lock Counter cho Drawer/Modal, reset cuộn sạch khi `usePathname()` đổi).
-   - `<IntroCurtain />` (`useGSAP`, chỉ chạy 1 lần/session ở `/`, <= 1.8s + nút bỏ qua + safety-net 5–8s, không chặn deep-link PDP).
-   - Global FX: `<CustomCursor />`, `<MagneticButton />`, `<GlintsCanvas />`, `<FabricParticleCanvas />` (sprite nhũ/sợi tơ 4×4; tắt trên `pointer: coarse`, `prefers-reduced-motion`, dừng khi `document.hidden`).
-   - `<HeroEditorial />` + `<SplitShimmerText />` (JSX thuần chuẩn `"NFC"`, poster `priority` cho LCP, video WebM/MP4 tải từ Media Service).
-   - `<SiteHeader />` (`IntersectionObserver` đổi `.is-light` theo `data-theme="light" | "dark"`, kèm Search, Tài khoản và Badge Giỏ hàng).
-   - `<AtelierCraftJourney />` + `<GoldenThreadSvg />` (`ResizeObserver` tính lại Cubic Bezier động + `#pearl` `translate3d` + bộ đếm thời gian may đo).
-   - `<FinaleShowcase />` (rAF-throttled `--mx`/`--my` spotlight khi in-view) & `<LookbookAutoTour />` (lazy-load khi bấm nút xem tự động).
-4. **Công việc Backend (Microservices & Data)**:
-   - Mở rộng `Catalog & Lookbook Service` với bảng `homepage_campaigns` (cấu hình Hero Video, thông điệp campaign, 4 bước Atelier, trích dẫn nổi bật).
-   - Bật Redis Cache-Aside (TTL 5 phút + Event Invalidation) tại `Fashion BFF` cho `/bff/v1/storefront/bootstrap` đạt **p95 < 80ms**.
-5. **Deliverables & Tiêu chí Nghiệm thu (DoD)**:
-   - [x] Toàn bộ 9 phân khu & lớp hiệu ứng lõi (`SmoothScrollProvider` + Lenis synced `gsap.ticker`, `IntroCurtain`, `CustomCursor`, `MagneticButton`, `GlintsCanvas`, `FabricParticleCanvas`, `LookbookAutoTour`, `SiteHeader` `.is-light`, `HeroEditorial` + `SplitShimmerText` NFC/`Intl.Segmenter`, `AtelierCraftJourney` + `GoldenThreadSvg`, `FinaleShowcase` `#finaleWord` spotlight, Admin CMS `HomepageCampaignTab`) chạy mượt trên dữ liệu BFF thật (**22/22** asset WebP trả `200 OK`, 0 ảnh vỡ `404`; 30x `GET /bff/v1/storefront/bootstrap` đạt `X-Cache: HIT` 30/30, `p50=1.50ms`, **`p95=4.21ms < 80ms`**, `p99=7.33ms`; `PUT /api/v1/admin/homepage-campaign` xóa cache tức thì + ghi `HOMEPAGE_CAMPAIGN_UPDATED` trong `audit_logs`).
-   - [x] Kiểm thử **Headless Chrome thật (`playwright-core`)** chuyển route `/` → `/bo-suu-tap` → `/san-pham/[slug]` → `/` **20 chu kỳ liên tiếp (61 navigations trong `7.9s`)**: **0 lỗi Hydration/PageError**, **0 Console Error**, **0 `.pin-spacer` rò rỉ**, scroll mở khóa ổn định (`scrollY=300px`); 7/7 file GSAP/ScrollTrigger bọc trong `useGSAP`.
-   - [x] Kiểm thử `prefers-reduced-motion: reduce` (`IntroCurtain` đóng trong `335ms`, `bodyLocked=false`, `errors=0`) và **Camera GPU Guard** (`data-camera-active="true"` dừng ngay `LookbookAutoTour` & canvas loops); Storefront isolation scan **43 file = 0 vi phạm**; hồi quy Phase 1 + `pnpm eval:ai` **25/25 PASS (100%)**; `pnpm verify:phase2` đạt **7/7 PASS (`27.6s`, `INFRA_MODE=LOCAL_DEV_HARNESS`, `STRAY_PORTS=NONE`)**.
-
----
-
-#### Phase 3 (Tuần 7–9): Tái Tạo 3 Hiệu Ứng Đinh Thời Trang & Hoàn Thiện PLP / PDP Chuẩn SEO
-1. **Mục tiêu & Thời gian**: **3 tuần (Tuần 7–9)** — Hoàn thiện 3 phân khu hiệu ứng phức tạp nhất (`<ClothingRack3D />`, `<OccasionShowcase />`, `<SeasonLookbookTrack />`) nối dữ liệu SKU/Media thật và triển khai hệ thống trang bán hàng chuẩn SEO (PLP, PDP, Search).
-2. **Nghiệp vụ thời trang**:
-   - Duyệt bộ sưu tập trên Giá treo 3D, đổi màu trực tiếp (Color Swatch), lật xem Mặt trước/Mặt sau, xem trạng thái size còn/hết.
-   - Khám phá theo 6 Dịp mặc & 6 BST theo mùa (có nhãn *"Đang mở bán"*).
-   - Trang Danh mục (PLP) lọc đa chiều kết hợp *"Còn hàng theo Size của tôi"*, Tìm kiếm tiếng Việt không dấu, và Trang Chi tiết Sản phẩm (PDP) đầy đủ ảnh zoom, chọn Màu × Size, Bảng Size Chart.
-3. **Công việc Frontend (HTML → React + Hiệu ứng)**:
-   - **`<ClothingRack3D />`** (từ `#rack` & `js/rack.js`, tải `next/dynamic({ ssr: false })`): Dựng `<RackCanvasR3F />` với thanh đồng `MeshPhysicalMaterial` + `RoomEnvironment`, bỏ lật ngược `Math.PI`, thêm xoay Y showcase & swap texture Front/Back/Swatch, bảo toàn 3 shader GLSL (`garmentPoisson`, `wallShadow`, `sparkParticles`), con lắc gió theo `fabricWeight`, pause `frameloop` theo `IntersectionObserver`, `webglcontextlost`, explicit `dispose()`, và `<FlatRackFallback />`.
-   - **`<OccasionShowcase />`** (từ `#occasion`): Radial wipe `clip-path`, 2 vòng SVG `#occRingC`/`#occRingG`, đổi theme palette động, rơi đàn hồi `elastic.out`, nối `GET /bff/v1/occasions` và chuyển thẳng sang `/bo-suu-tap/[occasion-slug]`.
-   - **`<SeasonLookbookTrack />`** (từ `#seasons`): Pinned horizontal scroll trên desktop + native snap scroll trên mobile; `<HalftoneCardCanvas />` chạy thuật toán chấm dệt/pointillism trên **Web Worker (`halftone.worker.ts`) + `OffscreenCanvas` + `Float32Array`**.
-   - **Trang TMĐT chuẩn SEO (SSR/ISR)**: `/bo-suu-tap/[[...slug]]` (PLP đồng bộ URL query params), `/san-pham/[slug]` (PDP có JSON-LD `Product`/`Offer`/`AggregateRating` + Dynamic OG Image), và `<SearchOverlay />` debounce 200ms.
-4. **Công việc Backend (Microservices & Data)**:
-   - Hoàn thiện 3 endpoint BFF chuyên biệt: `GET /bff/v1/rack-collection`, `GET /bff/v1/occasions`, `GET /bff/v1/seasons` và `GET /bff/v1/products/{slug}`.
-   - Cấu hình **Meilisearch Vietnamese Tokenizer, Synonyms & Facets** (`size`, `color_family`, `occasion`, `season`, `fabric`, `price_range`).
-   - Kết nối sự kiện `catalog.product.updated` → Webhook gọi Next.js **On-Demand ISR (`revalidateTag`)** cập nhật giá/ảnh tức thì không cần rebuild.
-5. **Deliverables & Tiêu chí Nghiệm thu (DoD)**:
-   - [x] Cả 3 hiệu ứng đinh (`<ClothingRack3D />` `next/dynamic ssr:false` + 3 GLSL shaders `PD[12]`/`uMix`, `wallShadow` `smoothstep`, `118` sparks, con lắc `fabricWeight`, `frameloop` + `cameraActive` guard, explicit `dispose()`, `webglcontextlost` fallback; `<OccasionShowcase />` radial wipe + 2 vòng SVG + `img.decode()`; `<SeasonLookbookTrack />` Web Worker `halftone.worker.ts` + `OffscreenCanvas` + `Float32Array`) nối dữ liệu thật từ BFF (`12` mẫu áo rack 2:3 WebP HTTP `200`, `6` dịp mặc, `6` mùa có `isNow`, `0` rò rỉ `costPriceVnd`/`supplierId`).
-   - [x] Mobile (390px) có `<FlatRackFallback />` & native horizontal snap scroll (`scroll-snap-type: x mandatory`); kiểm thử **Headless Chrome thật (`playwright-core`)** 20 chu kỳ liên tiếp `/` → `/bo-suu-tap` → `/san-pham/ao-blazer-linen-dang-suong` → `/` (**61 navigations trong `27.3s`**): **`consoleErrors=0`**, **`pageErrors/hydration=0`**, **`orphanedPinSpacers=0`**, **`maxHomeRackCanvases=1<=1`**, **`plpWebGLCanvases=0`**, `scrollY=320px` mở khóa ổn định.
-   - [x] PDP & PLP chuẩn SEO SSR (`200 OK`, `<title>`, `og:title`, `rel="canonical"`), JSON-LD `@type="Product"` + `priceCurrency="VND"` + **`aggregateRating=4.7/5` (6 đánh giá xác thực)** từ `services/notify-review`, `/sitemap.xml` (`200`), Dynamic OG PNG (`image/png`, `39,178 bytes`, magic `89504e47`), tìm kiếm tiếng Việt không dấu & đồng nghĩa Meilisearch (`ao blazer` **`52.0ms`**, synonym `vay di tiec` **`29.2ms`**, facet `size=M&isTryonEnabled=true` **`32.6ms`** — tất cả **`< 120ms`**).
-   - [x] **Honest Live Size Advisor + Crowd Calibration & On-Demand ISR (`pnpm verify:phase3` — 8/8 PASS trong `87.1s`, `pnpm eval:ai` — 27/27 PASS 100% gồm Tier-0 `calculate_verified_size` & `search_in_stock_outfits`)**: 0 % size giả trên SSR; `158cm/47kg → Size M (crowdAdjusted=true, runsSmallPct=67%)` vs `175cm/72kg → Size XL (crowdAdjusted=false)`; `POST /api/revalidate` (`401` sai secret / `200` hợp lệ); **Visual Anchor Calibrator** (`PATCH hangerAnchorY 0.06 → 0.11` đồng bộ tức thì sang `GET /bff/v1/storefront/rack-collection` `X-Cache=MISS`); Storefront isolation scan **58 file = 0 vi phạm**; toàn bộ 21 workspaces build & typecheck xanh (`INFRA_MODE=LOCAL_DEV_HARNESS`, `STRAY_PORTS=NONE`) — sẵn sàng bước sang Phase 4.
-
----
-
-#### Phase 4 (Tuần 10–12): Mix & Match Outfit Studio (từ `js/build.js`) + Cart & Inventory Service
-1. **Mục tiêu & Thời gian**: **3 tuần (Tuần 10–12)** — Ra mắt tính năng tạo khác biệt cạnh tranh cao nhất (**`<OutfitStudio />`**), nâng cấp `<QuickBagDrawer />` và triển khai `Inventory Service` + `Cart & Outfit Studio Service` với cơ chế khóa tồn kho chống bán lố tuyệt đối.
-2. **Nghiệp vụ thời trang**:
-   - Phối đồ trực quan theo 5 slot trang phục trên 4 lớp hiển thị (`TOP`/`BOTTOM`/`ONE_PIECE`/`OUTERWEAR`/`ACCESSORY`) có giải quyết xung đột tầng tự động; chọn Size & Màu riêng cho từng món; kiểm tra tồn kho đồng thời (`batch-availability`).
-   - Chọn 3 cấp độ đóng gói quà tặng (`PackagingOption`), tự động tính ưu đãi **Combo Set** (`-5%` / `-10%`), lưu bộ phối (`Save Outfit`) & tạo link chia sẻ.
-   - **Tư vấn Chọn Size (`<SizeGuideModal />`)** kết nối `CustomerBodyProfile` và `ProductSizeChart`.
-   - Giỏ hàng đồng bộ Guest ↔ User (Cart Merge) và giữ chỗ tồn kho nguyên tử (Reservation TTL 15 phút).
-3. **Công việc Frontend (HTML → React + Hiệu ứng)**:
-   - **`<OutfitStudio />`** (`/phoi-do` và section `#build` trang chủ): Thay xoắn phyllotaxis bằng `<GarmentLayerStage />` + `compositor.ts` (7 tầng `z-index`, đường gióng Ghost Mannequin); giữ animation bay `back.out(1.3)` từ palette vào sân khấu và hiệu ứng đóng hộp `back`/`front` + burst nhũ vàng; thay DOM `snapshot()` bằng **Offscreen Canvas Composite** tạo ảnh preview sắc nét.
-   - **`<QuickBagDrawer />` + `<GiftCardPreview />`** (từ `#order`): Hỗ trợ 2 chế độ `quick-config` (từ 3D Rack / Occasion) và `cart` (món lẻ + Outfit Bundle), giữ thiệp viết tay nghiêng `-4deg` font `Dancing Script`, đổi size/số lượng ngay trong drawer, thanh tiến trình Freeship/Combo và cảnh báo *"Chỉ còn 2 chiếc size M"*.
-   - **`<SizeGuideModal />`**: Nhúng đồng bộ tại PDP, `<OutfitStudio />` và `<QuickBagDrawer />`.
-4. **Công việc Backend (Microservices & Data)**:
-   - Triển khai **`Inventory Service`** (PostgreSQL + Redis): Bảng `warehouses`, `stock_levels` (`available`/`reserved`/`committed` với `CHECK (available_qty >= 0)`), `stock_reservations`, `inventory_ledger`; **Atomic Multi-SKU Reserve** bằng Redis Lua Script + PostgreSQL `SELECT ... FOR UPDATE` sắp xếp `sku_id` tăng dần chống Deadlock; Delayed Queue tự động **Auto-Release** sau 15 phút.
-   - Triển khai **`Cart & Outfit Studio Service`** (Redis + PostgreSQL): Active Cart tốc độ < 5ms, sự kiện Merge Cart khi login, bảng `saved_outfits` lưu link chia sẻ, và endpoint `POST /bff/v1/outfit-studio/preview`.
-5. **Deliverables & Tiêu chí Nghiệm thu (DoD)**:
-   - [x] Khách phối trọn bộ 3–4 món trong `<OutfitStudio />` (7 tầng `z-index` + loại trừ `ONE_PIECE` vs `TOP+BOTTOM`, `OffscreenCanvas` composite snapshot, burst nhũ vàng) & `<QuickBagDrawer />` + `<GiftCardPreview />` (thiệp nghiêng `-4deg` font `Dancing Script`, 140 ký tự): Combo Set chuẩn xác từ server (`2` slot `TOP+BOTTOM` → **`-5% [-302.000₫]`**; `3` slot `TOP+BOTTOM+OUTERWEAR` → **`-10% [-749.000₫]`**), link chia sẻ `shareCode` (`ATELBSCPJE`) khôi phục trọn bộ, và Admin Portal 5th tab `InventoryLedgerTab` (`WAREHOUSE_MANAGER`/`SUPER_ADMIN`).
-   - [x] **Concurrency Integration Test (50-way Flash Sale trên SKU tồn `5`)**: 50 request đồng thời `Promise.all` → đúng **5 giữ chỗ thành công (`HTTP 201`)**, **45 nhận `HTTP 409 INSUFFICIENT_STOCK`** trong **`255.1ms`**, tồn kho sau stress `availableQty=0, reservedQty=5` (**0% oversell**, không bao giờ âm).
-   - [x] **Multi-SKU Deadlock Test & 15m Auto-Release**: 20 request đặt đồng thời 2 chiều đảo ngược (`10x [A,B,C]` + `10x [C,B,A]` trên tồn `30`) → **`20/20 HTTP 201`**, **`0` deadlock** (`511.8ms`, `avail=10/reserved=20`, `60` dòng `RESERVE` trong `inventory_ledger`); quét hết hạn TTL 15 phút (`EXPIRED`) hoàn tồn đồng bộ `+1` (`10→11`) trên cả PostgreSQL và Redis (`inv:avail:*`).
-   - [x] **Idempotent Cart Merge & AI Virtual Try-On Engine (`services/ai-tryon:4009` + Socket.io `/realtime` + 15m Auto-Purge)**: Merge giỏ hàng Guest → User lặp 2 lần liên tiếp chính xác 100% (`totalQty=2` + `giftNote`, **0 nhân đôi**); `tryon_db` cách ly (`REVOKE PUBLIC`), Privacy Consent Gate (`400`), Magic Bytes (`400 INVALID_MAGIC_BYTES`), `atelier-private-tryon` unsigned `GET 403`; 2-Step `MIX_MATCH_OUTFIT` Socket.io (`PROCESSING_STEP_1 → PROCESSING_STEP_2 → COMPLETED`, WebP `9,944B` + HTTP Polling fallback); Redis SHA-256 **`CACHE_HIT` trong `15.7ms` (`< 1000ms`, `0₫`, không trừ quota `14→14`)**; Failure Auto-Refund (`+1`, `14→14`); Max-3 Bookmarks (`409 BOOKMARK_LIMIT_EXCEEDED`), `fromAiTryon=true` + `ADD_TO_CART_AFTER_TRYON`; **15m Hard Auto-Purge MinIO** (`purgedImages=1, purgedResults=2`, signed `GET 404` / unsigned `GET 403`); Storefront isolation **73 file = 0 vi phạm**; **`pnpm eval:ai` 30/30 PASS (100.0%)**; **`pnpm verify:phase4` 8/8 PASS (`21.3s`, `INFRA_MODE=LOCAL_DEV_HARNESS`, `STRAY_PORTS=NONE`)**.
-
----
-
-#### Phase 5 (Tuần 13–15): Hoàn Thiện Nghiệp Vụ TMĐT Cốt Lõi (Checkout, Thanh Toán, Giao Vận, RMA Đổi Size, Reviews & Backoffice)
-1. **Mục tiêu & Thời gian**: **3 tuần (Tuần 13–15)** — Khép kín 100% vòng đời giao dịch thương mại điện tử thời trang từ đặt hàng, thanh toán Việt Nam, giao vận, thông báo Zalo ZNS, hậu mãi Đổi Size/RMA đến công cụ vận hành Backoffice CMS.
-2. **Nghiệp vụ thời trang**:
-   - Thanh toán VNPay, MoMo, VietQR đối soát tự động và COD (kèm luật chống boom hàng).
-   - Promotion Engine: Voucher %, tiền cố định, Freeship, Combo Outfit, Flash Sale có giới hạn suất & phân bổ chiết khấu từng dòng.
-   - Giao vận đa kênh: GHN / GHTK toàn quốc + **Giao nhanh 2 giờ nội thành** (Ahamove/GrabExpress kèm chọn ngày/khung giờ kế thừa `#odDays`/`#odSlots`) + Smart Order Routing + ảnh chụp đóng gói trước khi giao.
-   - **RMA & Đổi Size 1 chạm**: 2 chế độ Đổi nhanh 2 chiều tại cửa (khóa ngay `EXCHANGE_RESERVED`) & Đổi/Trả tiêu chuẩn qua Checklist QC.
-   - **Zalo ZNS + Email** tự động theo vòng đời đơn hàng và **Verified Fit Reviews** kèm số đo & cảm nhận form dáng.
-   - **Backoffice CMS (`apps/admin`)**: CRUD Ma trận SKU, Visual Anchor Calibrator, duyệt đơn/in vận đơn, duyệt RMA & kiểm kê kho.
-3. **Công việc Frontend (HTML → React + Hiệu ứng)**:
-   - **One-Page Checkout (`/thanh-toan`)**: 3 bước gọn (Địa chỉ & Giao vận → Voucher & Thiệp quà → Thanh toán kèm QR động đếm ngược 15 phút theo TTL) + trang kết quả `/don-hang/[code]` cập nhật trạng thái real-time (SSE/polling nhẹ).
-   - **Cổng Khách hàng (`/tai-khoan/*`)**: Timeline vận đơn, **Form tự yêu cầu Đổi Size / Hoàn trả 1 chạm**, Tủ đồ Outfit đã lưu, Hồ sơ số đo & Gửi đánh giá Verified Fit Review.
-   - **Backoffice Admin (`apps/admin`)**: Quản trị ma trận Màu × Size, **Visual Anchor Calibrator** kéo-thả trực quan điểm móc treo `hangerAnchor` & khung layer `layer_bbox` có Live Preview trên 3D Rack/Outfit Studio, xử lý đơn/in vận đơn/duyệt RMA.
-4. **Công việc Backend (Microservices & Data)**:
-   - Triển khai **`Order & RMA Service`**: Checkout Saga Orchestrator + **Transactional Outbox (`outbox_events`)** + Shipping Carrier Adapters (GHN/GHTK/Ahamove 2h) + **RMA State Machine** (đổi 2 chiều & QC).
-   - Triển khai **`Payment & Promotion Service`**: Adapter VNPay/MoMo/VietQR/COD, xác thực chữ ký HMAC/RSA, bảng `processed_webhooks` đảm bảo **Idempotency 100%**, Partial Refund, Promotion/Flash Sale counter trên Redis.
-   - Triển khai **`Notification & Review Service`**: Kafka Consumer tiêu thụ vòng đời Order/RMA gửi Zalo ZNS & Email (có Retry + DLQ + `UNIQUE(event_id, channel)`), lưu Verified Fit Reviews và phát `review.fit_stats.aggregated` cập nhật Size Advisor.
-5. **Deliverables & Tiêu chí Nghiệm thu (DoD)**:
-   - [x] **Checkout Order Saga, Authoritative Pricing, Idempotency & VIP Try-On Bonus (+5)**: Đơn `TX-2026ABF27B` ghi đè tuyệt đối giá giả mạo client (`1₫ → 1.450.000₫` từ `catalog-lookbook`), `Idempotency-Key` lặp lại trả nguyên `orderCode` (0 trùng đơn), xóa giỏ tự động; thanh toán VietQR → `CONFIRMED`, trừ kho `reserved → committed`, sinh vận đơn `AHM2H-2026ABF27B-5BDE`, gửi email Mailpit + log ZNS chống trùng `UNIQUE(event_id, channel)`, cộng thưởng VIP Try-On **`12 → 17 (+5)`**.
-   - [x] **Webhook Idempotency 100%, HMAC-SHA256 & Late-Payment Edge Case**: Chữ ký HMAC giả mạo bị chặn **`HTTP 401 PAYMENT_SIGNATURE_INVALID`**; gửi lặp **5 lần** cùng 1 IPN hợp lệ (`evt-p5-idem-883db430`) → lần 1 xử lý, lần 2–5 trả `200 OK { deduplicated: true }`, trừ kho **đúng 1 lần duy nhất (`0 → 1`)**; kịch bản thanh toán trễ (`TX-2026177DE6`: `avail 1 → 0 → expire CANCELLED avail=1 → late IPN`) chuyển **`LATE_PAYMENT_NEEDS_REFUND`** với `avail=1` (**0 âm kho**) và `SUPER_ADMIN` (2FA) hoàn tiền 1 chạm (`HTTP 200`).
-   - [x] **Cả 2 chế độ Đổi Size / RMA + Pack Photo + Partial Refund**: Đóng gói gửi email ảnh hộp `packPhotoUrl` qua Mailpit → `SHIPPED → DELIVERED`; **Mode A `INSTANT_2WAY`** (`RMA-2026521C98`) giữ chỗ `SIZE_EXCHANGE`, QC 3 tiêu chí đạt → hoàn tồn size M cũ (`14 → 15`, `RMA_COMPLETED`); **Mode B `STANDARD_QC`** (`RMA-2026959347`) hoàn tiền bán phần chính xác tuyệt đối **`1.325.250₫ === netRefundableUnitVnd` (`1.550.000₫ - 224.750₫` phân bổ chiết khấu)**, `RMA_COMPLETED`.
-   - [x] **B2B Supply Chain (`PO → Partial/Defect GRN`), Admin MCP Copilot HITL, Strict RBAC & AI Lookbook Studio (`pnpm verify:phase5` — 9/9 PASS trong `24.1s`, `pnpm eval:ai` — 34/34 PASS 100.0%)**:
-     - PO B2B (`PO-20261123-AFE9DF`) gửi email Mailpit tới `SUPPLIER_A`, khóa cách ly chéo `SUPPLIER_B` (`GET=404`, `CONFIRM=403`), nghiệm thu Partial/Defect GRN (`10 nhận = 8 đạt / 2 lỗi`) cập nhật `availableQty 0 → 8`, `damagedQty += 2`, công nợ `supplier_payables = 3.600.000₫ (8 × 450.000₫)`, Storefront tự động bật lại `inStock=true`.
-     - Admin MCP Copilot chuỗi 2 tool (`get_tryon_demand_signals → create_purchase_order_draft`) tạo `PO-20261123-30A819` khóa cứng `status=NHAP_AI`, `createdSource=AI_COPILOT`, `audit_logs actorType=AI_COPILOT`, ẩn với `SUPPLIER_A` (`403`) cho đến khi `WAREHOUSE_MANAGER` duyệt gửi (`CHO_NCC_XAC_NHAN`).
-     - Strict JWT Pass-Through RBAC chặn `ORDER_STAFF` (`HTTP 403`, 0 PO tạo mới, 0 rò rỉ `costPriceVnd`); Prompt Injection trên RMA `customer_note` bị bọc `<untrusted_customer_note>` (`promptInjectionDetected=true`, trả `SIZING_ADJUSTMENT_PROPOSAL` + 3 trích dẫn RAG, **0 PO/hoàn tiền trái phép**).
-     - `CATALOG_AI_OPERATOR` chạy Tool 1 (`GARMENT_IMAGE_PROCESSED`: `status=NHAP_AI`, `autoAttachAsTryOnGarment=false`, `attached=false`) + **AI Lookbook Studio** (`MODEL_VN_FEMALE_01` → `atelier-public` WebP `25,016B HTTP 200` → gắn 1 chạm hiển thị tức thì trên Storefront PDP); Storefront isolation (`76` file = `0` vi phạm), MCP DB isolation (`8` file = `0` kết nối DB nghiệp vụ), 21 workspaces build & typecheck xanh (`INFRA_MODE=LOCAL_DEV_HARNESS`, `STRAY_PORTS=NONE`).
-
----
-
-#### Phase 6 (Tuần 16–17): Tối Ưu Hiệu Năng WebGL/CWV, Kiểm Thử Tải, Bảo Mật, Observability & Go-Live
-1. **Mục tiêu & Thời gian**: **2 tuần (Tuần 16–17)** — Đạt chuẩn vận hành Production cho ngày khai trương & chiến dịch Flash Sale: đồ họa mượt 60 FPS, Core Web Vitals xanh, chịu tải không oversell, an toàn bảo mật, giám sát toàn trình và cutover không gián đoạn.
-2. **Nghiệp vụ thời trang**:
-   - Diễn tập kịch bản **Grand Opening & Flash Sale** (đồng bộ kho, vận hành Pick-Pack, xử lý RMA).
-   - Triển khai **Commerce Analytics Funnel**: đo tỷ lệ chuyển đổi riêng của `<ClothingRack3D />` → PDP, `<OutfitStudio />` → Add Set, và tỷ lệ đổi size theo từng dòng sản phẩm.
-3. **Công việc Frontend (HTML → React + Hiệu ứng)**:
-   - Tinh chỉnh WebGL & Media: kiểm tra nén texture `720×1080` Desktop / `480×720` Mobile, kiểm tra `dpr <= 1.5`, nén video Hero `< 1.2 MB` WebM / `< 2 MB` MP4, gắn `fetchPriority="high"` cho poster LCP, đặt `aspect-ratio` cố định giữ **CLS < 0.05**.
-   - Kiểm tra rò rỉ bộ nhớ GPU & JS Heap trên Chrome DevTools Memory Profiler (chuyển qua lại Home ↔ PDP ↔ Outfit Studio ↔ Checkout 30 lượt).
-   - Gắn GA4 / PostHog phễu thương mại và **Sentry Frontend RUM** kèm Source Maps.
-4. **Công việc Backend, Hạ tầng & Bảo mật**:
-   - **Kiểm thử tải `k6`** trên Staging tương đương Production:
-     - *Browse & Search*: 2.000 người dùng ảo lướt Home/3D Rack/PLP/PDP/Search.
-     - *Flash Sale Spike*: 1.000 người dùng cùng đặt 50 chiếc váy cuối cùng trong 30 giây → xác nhận **0 oversell**, không cạn DB connection pool, p95 Checkout < 800ms.
-   - **Rà soát Bảo mật (OWASP Top 10)**: Cloudflare WAF + Bot Fight Mode + Kong Rate Limit (Login/OTP, Apply Voucher, Create Order); kiểm thử **IDOR** (khách A không xem/đổi size đơn hay số đo của khách B); xác minh chữ ký webhook; quét `pnpm audit` & Trivy container scan.
-   - **Hoàn thiện Observability Stack**: OpenTelemetry tracing xuyên suốt 9 dịch vụ, dashboard Grafana (Hệ thống + Kinh doanh), cảnh báo Telegram/Slack/PagerDuty khi Error Rate > 1%, p95 > 1s hoặc DLQ phát sinh message.
-   - **Diễn tập Rollback & Cutover**: Backup & Restore Drill (RPO <= 15 phút, RTO <= 30 phút), triển khai **Canary (10% → 50% → 100%)** hoặc **Blue-Green**, trực chiến Hypercare 72 giờ đầu sau Go-Live.
-5. **Deliverables & Tiêu chí Nghiệm thu (DoD)**:
-   - [x] **Frontend Performance, Quiet Luxury UI & CWV Guardrails (`pnpm verify:ui` — 10/10 PASS)**: Đủ 7 hex Quiet Luxury (`#FBF7EF..#2B2019`) & 3 font (`Cormorant Garamond`, `Be Vietnam Pro`, `Dancing Script`), `HeroEditorial` `fetchPriority="high"` + deferred `video/webm` & `video/mp4`, `100svh`/`100dvh` + `ignoreMobileResize: true`, CSS `aspect-ratio` + warm `--cream` skeletons, `.normalize('NFC')`, GPU/Worker/Camera cleanup (`dispose()`/`terminate()`/`track.stop()`), `error.tsx` & W3C `traceparent` trên đủ 3 portals, `0` vi phạm cách ly Storefront trên `80` file nguồn; warm BFF Bootstrap **`p50=2.29ms, p95=3.95ms < 80ms` (`HIT 20/20`)**, Meilisearch không dấu/đồng nghĩa **`19.6ms / 15.5ms < 120ms`**.
-   - [x] **Backend Resilience (`pnpm test:flash-sale` & Gate 5)**: 100 request Flash Sale đồng thời trên tồn `15` (`AT-ALCSCL-C1-L`) → đúng **`15` `HTTP 201` / `85` `HTTP 409` / `0%` oversell / `0` `5xx` / `0` Deadlock**, `availableQty=0 / reservedQty=15`, độ trễ **`p50=215.27ms | p95=460.04ms | p99=460.26ms`** (`tests/load-k6/flash-sale.js` sẵn sàng cho CI `k6`); Late Payment (`TX-2026571E81`) → `LATE_PAYMENT_NEEDS_REFUND` với `0` âm kho + hoàn tiền 1 chạm `HTTP 200`.
-   - [x] **Security, 8-Layer AI Harness & IDOR Hardening (Gates 3 & 4)**: `pnpm eval:ai` đạt **`38/38 PASSED (100.0%)`** (`Tool=100%`, `RAG=100%`, `Prompt Injection=100%`, `PII=100%`, `RBAC=100%`); `pnpm ai:export-sft` xuất `22` bản ghi JSONL (`DPO=7, SFT=15`, **`0`** rò rỉ PII); chặn 100% CSRF/Evil Origin (`403`), Mandatory 2FA Mailpit (`SUPER_ADMIN`/`WAREHOUSE_MANAGER`/`SUPPLIER`), Instant Redis revocation **`29.9ms < 1000ms`**, **Strict IDOR** (`order=403`, `rma=403`, `profile=403`, `tryon=403`, `partnerPO=404/403` kể cả khi giả mạo header `x-user-id`), Tiered Rate Limit **`HTTP 429`** ở req `#61` (`X-RateLimit-Limit: 60`), và 15m MinIO Hard Auto-Purge (`purgedImages=3, purgedResults=2`, signed `404` / unsigned `403`).
-   - [x] **Operations, Observability, DLQ Console & Release Package (`pnpm verify:all` — 6/6 GATES PASS trong `20.3s`, `STRAY_PORTS=NONE`)**: `11/11` warm `/health < 20ms` (**max `0.74ms`**), `11/11` `/ready 200 OK`, W3C `traceparent` trên **`11/11`** dịch vụ, tổng RAM đo thực tế **`2,783.8 MB < 3,072 MB`** (`INFRA_MODE=LOCAL_DEV_HARNESS`); Admin **AI Ops, Cluster Health & `*.dlq` Console** (`seed → inspect → replay → purge → count=0` + audit `DLQ_REPLAY`/`DLQ_PURGE`, `/api/v1/admin/ops/ai-funnel` live); `2x` idempotent `pnpm db:seed` (`20` thiết kế, `20/20` ảnh MinIO `200`, `54` reviews, `166` tín hiệu Try-On); hoàn thiện `.github/workflows/ci-cd.yml`, `pnpm demo:ready`, `pnpm start:all`, `README.md`, `docs/KICH_BAN_BAO_VE_10_PHUT.md`, và `docs/TONG_KET_KIEN_TRUC_VA_NGHIEM_THU.md`.
-
----
-
-## Phần 6: Hạ Tầng, DevOps, Kiểm Thử, Observability, Rủi Ro & Kế Hoạch Hành Động Tuần 1
-
-### 6.1. Chiến lược Monorepo, Môi trường Local/Production & CI/CD
-
-Với đội ngũ **4–6 kỹ sư**, khuyến nghị **Monorepo dùng Turborepo + pnpm** để chia sẻ tức thì OpenAPI/AsyncAPI contracts, Design Tokens và cấu hình Observability giữa Frontend, BFF và các dịch vụ Node.js/TypeScript. *(Nếu tách riêng `Inventory Service` bằng Go để chịu tải > 5.000 CCU, vẫn có thể đặt chung dưới `services/inventory` qua Turborepo task wrapper hoặc tách repo riêng khi team > 12 người).*
-
-```text
-fashion-atelier-platform/
-├── apps/
-│   ├── storefront/          # Next.js 15 (App Router) + React 19 + R3F + GSAP + Lenis
-│   ├── admin/               # Next.js Backoffice CMS + Visual Anchor Calibrator
-│   └── bff/                 # Fashion BFF (Node.js / TypeScript Aggregation)
-├── services/
-│   ├── auth-customer/       # Auth & Customer Service (RBAC, Address, Body Profile)
-│   ├── catalog-lookbook/    # Catalog & Lookbook Service (SPU/SKU, Occasions, Seasons, Meilisearch)
-│   ├── media-pipeline/      # Media & Asset Pipeline Service (R2/S3, WebP Alpha Validator, FFmpeg)
-│   ├── inventory/           # Inventory Service (Multi-warehouse, Redis Lua Lock, Reservation TTL)
-│   ├── cart-outfit/         # Cart & Outfit Studio Service (Redis Cart, Combo Bundle, Saved Outfits)
-│   ├── order-rma/           # Order & RMA Service (Saga Orchestrator, Outbox, Size Exchange RMA)
-│   ├── payment-promo/       # Payment & Promotion Service (VNPay/MoMo/VietQR/COD, Voucher/Flash Sale)
-│   └── notify-review/       # Notification & Review Service (Zalo ZNS/Email Consumer, Fit Reviews)
-├── packages/
-│   ├── ui-tokens/           # Design tokens trích từ css/style.css + Tailwind CSS v4 @theme
-│   ├── motion-kit/          # Reusable useGSAP / Lenis / Canvas hooks & ReducedMotion guards
-│   ├── contracts/           # OpenAPI 3.1, AsyncAPI 3.0, generated TypeScript & Zod schemas
-│   └── observability/       # Shared OpenTelemetry + Pino JSON logger (PII redaction)
-├── infra/
-│   ├── docker-compose.yml   # Local full-stack (Postgres 16, Redis 7, Meilisearch, MinIO, Redpanda, Kong)
-│   ├── terraform/           # IaC (Cloud Run/ECS/EKS, RDS/Cloud SQL, Redis, Cloudflare R2/WAF)
-│   └── helm/                # Helm charts (sẵn sàng khi mở rộng sang Kubernetes)
-└── tests/
-    ├── e2e-playwright/      # E2E UI Motion + WebGL Fallback + Outfit Studio + Checkout + RMA
-    └── load-k6/             # Browse & Flash Sale stress scripts (0% oversell verification)
-```
-
-#### Bảng so sánh Hạ tầng Local & 2 Phương án Production
-
-| Lớp hạ tầng | Local Development | Production — Phương án A (Khuyến nghị team 4–6 người) | Production — Phương án B (Scale lớn > 10 kỹ sư / > 10.000 CCU) |
-| :--- | :--- | :--- | :--- |
-| **Storefront & Admin** | `turbo dev` (Next.js HMR) | **Vercel Pro** hoặc **Cloudflare Pages/Workers** (Edge SSR + On-Demand ISR tự động) | Next.js Standalone trên **Kubernetes (EKS/GKE)** sau Cloudflare CDN |
-| **Gateway & Microservices** | Kong/Nginx + Services local / Docker | **Managed Containers (Google Cloud Run hoặc AWS ECS Fargate)** + Kong/API Gateway (scale-to-zero cho Staging, autoscale theo CPU/RPS cho Prod) | **Kubernetes (EKS/GKE) + Helm Charts + ArgoCD (GitOps)** + HPA/KEDA autoscale theo lag Kafka |
-| **Cơ sở dữ liệu & Cache** | `docker-compose` (PostgreSQL 16, Redis 7, Meilisearch) | **Managed PostgreSQL** (Cloud SQL/RDS — tách logical DB/schema riêng từng service) + **Managed Redis** (Memorystore/Upstash) + **Meilisearch Cloud** | Cụm DB độc lập cho từng service trọng yếu (Read Replicas cho `Catalog`, High-IOPS cho `Inventory` & `Order`) + Redis Cluster |
-| **Message Broker** | Redpanda single-node (tương thích Kafka) | **CloudAMQP (RabbitMQ)** hoặc **Confluent Cloud / Redpanda Serverless** | **Managed Kafka (AWS MSK / Confluent)** multi-AZ |
-| **Media Storage & CDN** | MinIO (tương thích S3) | **Cloudflare R2** (0₫ phí băng thông egress) + **Cloudflare CDN / Images** | **AWS S3 / Cloudflare R2** + Multi-CDN + Edge Worker tối ưu ảnh/video |
-
-#### Luồng CI/CD Tự động (GitHub Actions)
-1. **On Pull Request**: `turbo run lint typecheck test --affected` (chỉ kiểm tra app/service bị ảnh hưởng) → OpenAPI/Pact contract verification → `pnpm audit` & Trivy quét bảo mật dependency.
-2. **On Merge `main` (Staging)**: Build Docker multi-stage có layer caching → Push registry → Chạy DB migration an toàn theo mẫu **Expand & Contract** (không drop cột trực tiếp gây downtime) → Deploy tự động lên Staging → Chạy **Playwright E2E + Lighthouse CI**.
-3. **On Release Tag (Production)**: Cổng duyệt thủ công (Manual Approval Gate) → Triển khai **Canary (10% → 50% → 100%)** hoặc **Blue-Green** → Theo dõi Error Rate & p95 tự động trong 10 phút → Tự động Rollback nếu vượt ngưỡng cảnh báo.
-
----
-
-### 6.2. Hạ tầng Pipeline Media & CDN (Đặc thù WebGL Thời trang)
-
-Để bảo toàn vẻ sang trọng sắc nét của ảnh thời trang WebGL mà vẫn tối ưu tốc độ tải trên mạng 4G Việt Nam:
-- **Kiến trúc 2 Bucket tách biệt**:
-  - `atelier-raw-uploads` (Private): tiếp nhận ảnh gốc `1200×1800px` & video thô từ Backoffice qua Presigned URL (không đi qua RAM ứng dụng).
-  - `atelier-cdn-assets` (Public qua Cloudflare CDN): lưu các biến thể đã tối ưu bởi **Sharp / FFmpeg Worker (BullMQ)**, gắn hash nội dung và header `Cache-Control: public, max-age=31536000, immutable`.
-- **Chi phí băng thông bằng 0 với Cloudflare R2**: Rất quan trọng cho website thời trang có `<ClothingRack3D />` (tải 10–20 texture front/back), `<OutfitStudio />` (tải nhiều lớp layer) và Hero Video (1.2–2 MB/phiên), giúp tránh hóa đơn egress S3 tăng đột biến khi chạy quảng cáo TikTok/Facebook.
-- **Biến thể đầu ra chuẩn hóa tự động**:
-  - Texture `<ClothingRack3D />`: WebP Lossy Q82–85 + Alpha + Edge Color Padding (`720×1080px` Desktop ~70–140 KB; `480×720px` Mobile).
-  - Layer `<OutfitStudio />`: WebP Alpha `720×1080px`, tự động kiểm định tỷ lệ `2:3` và bounding box khớp lưới Ghost Mannequin.
-  - Ảnh PDP/PLP: AVIF/WebP tự động theo `Accept` header (`w=480, 960, 1600`).
-  - Video Hero: FFmpeg tự động xuất song song `.webm` (VP9/AV1 < 1.2–1.5 MB), `.mp4` (H.264 `+faststart` < 2.0–2.5 MB) và poster WebP (< 45–80 KB).
-
----
-
-### 6.3. Kim tự tháp Kiểm thử (Testing Pyramid)
+### 5.2. Kiến Trúc 8 Tầng AI Security & Orchestration Harness
 
 ```mermaid
 flowchart TD
-    L5["5. Load & Resilience Testing (k6): Flash Sale 1000+ CCU · 0 Oversell · Chaos Webhook Retry"]
-    L4["4. E2E & Visual Regression (Playwright + Chromatic): Rack3D/Fallback · OutfitStudio · Checkout · RMA (1440px & 390px)"]
-    L3["3. Integration Testing (Testcontainers): PostgreSQL · Redis Lua Lock · Kafka Outbox · Meilisearch"]
-    L2["2. Contract Testing (Pact / OpenAPI): Fashion BFF ↔ 8 Microservices · Async Event Compatibility"]
-    L1["1. Unit Testing (Vitest / Jest - Coverage ≥ 75%): Combo Pricing · Size Recommender · Anchor Math · State Machines"]
-
-    L5 --> L4 --> L3 --> L2 --> L1
+    REQ["Admin Request (McpCopilotDrawer :3001 -> BFF :4000 -> MCP Copilot :4010)"] --> L5["Layer 5: AuthZ & Zero-Trust (Anti-Superuser + AsyncLocalStorage JWT Pass-Through + Cost Redaction)"]
+    L5 --> L6["Layer 6: Guardrails (Prompt Injection Sandbox + PII Masking + Untrusted-Turn Lock + HITL NHAP_AI)"]
+    L6 --> L7["Layer 7: 3-Tier Router & Redis Semantic Cache (TTL 300s + Tier-0 / Tier-1 / Tier-2 Loop <= 4 Steps)"]
+    L7 --> L2["Layer 2: Prompt Registry v1.1.0 (4 Role Scopes + Zod Structured Output)"]
+    L7 --> L3["Layer 3: Hybrid RAG (pgvector 768-dim + Lexical / Meilisearch + RRF k=60)"]
+    L7 --> L4["Layer 4: MCP Tool Registry (READ_ONLY vs MUTATING_DRAFT + Zod-to-JSON Schema)"]
+    L2 --> L1["Layer 1: Model Abstraction (Ollama qwen2.5 / nomic-embed-text + CircuitBreaker + Rule Fallback)"]
+    L3 --> L1
+    L4 -->|"Caller Bearer JWT + W3C traceparent"| BFF_CALL["BFF Downstream APIs (0 Direct Transactional DB Connections)"]
+    L1 --> L8["Layer 8: Telemetry, Automated Evals (pnpm eval:ai 43/43) & M5 SFT-DPO JSONL Export"]
 ```
 
-**Ba bộ kiểm thử đặc thù bắt buộc chạy trong CI/CD**:
-1. **Playwright WebGL & Fallback Test**: Chạy 2 profile trình duyệt — profile có GPU/SwiftShader (xác nhận `<ClothingRack3D />` render mượt, 0 lỗi `console.error`/WebGL) và profile tắt WebGL (xác nhận tự kích hoạt `<FlatRackFallback />` và vẫn đổi màu/chọn size/thêm giỏ bình thường).
-2. **Playwright Motion Cleanup & Route-Hopping Test**: Tự động chuyển vòng lặp `/` → `/san-pham/[slug]` → `/phoi-do` → `/thanh-toan` → `/` 20 lượt, xác nhận 0 pin-spacer mồ côi của GSAP, không kẹt cuộn Lenis và số `WebGLRenderingContext` không tăng.
-3. **Testcontainers Concurrency & Deadlock Test**: Bắn đồng thời 50 yêu cầu đặt cùng 1 SKU còn tồn `5` và 20 yêu cầu đặt song song các Set Outfit đảo thứ tự SKU → chứng minh **0 oversell** và **0 deadlock**.
+---
+
+### 5.3. Kiểm Toán Chi Tiết Từng Tầng (Tầng 1 Đến Tầng 8)
+
+| Tầng | Module Thật (`packages/ai-harness/src/*`) | Ký Hiệu & File Cốt Lõi | Cơ Chế Hoạt Động Thực Tế | Eval (`eval:ai`) | Mức Độ Hoàn Thiện & Điểm Còn Thiếu |
+|---|---|---|---|---:|---|
+| **Tầng 1** | `layer1-models` | `OllamaModelClient`, `OllamaEmbeddingClient`, `embedLocalDeterministic768`, `parseToolCallsFromContent`, `CircuitBreaker`, `VTONProviderClient` (`ollama-client.ts`, `circuit-breaker.ts`, `vton-client.ts`) | Tự chọn `qwen2.5:7b` hoặc hạ xuống `3b` khi host RAM `<= 16.5GB` / free `< 6GB`; tách tool-call từ text của model lượng tử hóa nhỏ; `CircuitBreaker` (`CLOSED→OPEN→HALF_OPEN`, 3 lỗi / 30s cooldown); fallback tất định `$0`. | `2/2 PASS` (`A8`, `A15`) | **Hoàn thiện đầy đủ.** *(Ghi chú: Try-On thực tế chạy Python `AutoVTONProvider` riêng thay vì `VTONProviderClient` TS).* |
+| **Tầng 2** | `layer2-prompts` | `PromptRegistry` (`v1.1.0`), `QWEN25_SECURITY_DIRECTIVES`, `validateStructuredOutput` (`prompt-registry.ts`, `structured-output.ts`) | 4 scope RBAC (`ADMIN_COPILOT`, `WAREHOUSE_COPILOT`, `CATALOG_COPILOT`, `CUSTOMER_STYLIST`); ném lỗi khi đăng ký nếu thiếu chỉ thị cô lập `<untrusted_customer_note>`; cấm bịa số liệu/giá vốn; kiểm tra đầu ra JSON bằng Zod v3. | `1/1 PASS` (`A12`) | **Hoàn thiện đầy đủ.** |
+| **Tầng 3** | `layer3-rag` | `HybridRagRetriever`, `reciprocalRankFusion(k=60)`, `PgVectorRagStore` (`vector(768)`), `CopilotRagService`, `MeilisearchSupplementalKeywordProvider` (`hybrid-rag.ts`, `pgvector-rag-store.ts`, `apps/mcp-copilot/src/rag-service.ts`) | DB cô lập `rag_vector_db` (`pgvector` + PGlite fallback), seed 12 tài liệu VN chuẩn; kết hợp Cosine similarity `nomic-embed-text` 768d + Lexical tiếng Việt không dấu + Meilisearch live (`atelier_products`, timeout 300ms) qua RRF `k=60`; trả `GROUNDED` hoặc `NO_GROUNDED_EVIDENCE`. | `3/3 PASS` (`A9`, `A13`, `A16`) | **Hoàn thiện đầy đủ (corpus tĩnh 12 docs + Meili live).** *Thiếu:* HNSW/IVFFlat index trên `rag_documents` và Admin UI re-index động. |
+| **Tầng 4** | `layer4-mcp-registry` | `McpToolRegistry`, `zodToJsonSchema`, `registerPhase3CustomerTools`, `registerAtelierMcpTools` (`tool-registry.ts`, `zod-to-json-schema.ts`, `tier0-customer-tools.ts`, `apps/mcp-copilot/src/tools.ts`) | Phân loại cứng `READ_ONLY` vs `MUTATING_DRAFT` (cấm ghi trực tiếp production); validate cả Input/Output bằng Zod; đăng ký 4 Admin tools + 4 Customer tools trên `McpToolRegistry` và `@modelcontextprotocol/sdk`. | `3/3 PASS` (`A10`, `A11`, `A14`) | **Đầy đủ cho 4 Admin Tools; Một phần cho 4 Customer Tools** (2/4 dùng `DEMO_CATALOG`, 2 Tier-0 dùng snapshot tĩnh, chưa nối Storefront; `McpServer` SDK chưa mở SSE/stdio transport ngoài). |
+| **Tầng 5** | `layer5-authz` | `assertNoSuperuserToken`, `JwtPassThroughContext` (`AsyncLocalStorage`), `authorizeToolCall`, `redactRestrictedFields`, `BffPassThroughClient` (`authz.ts`, `apps/mcp-copilot/src/bff-client.ts`) | Cấm tuyệt đối token superuser/service_role; chuyển tiếp nguyên bản `Authorization: Bearer <caller_jwt>` + W3C `traceparent` qua BFF; ma trận RBAC 6 role; cắt đệ quy 15+ khóa giá vốn (áp dụng kép ở BFF); **0 kết nối DB giao dịch trực tiếp** (`transactionalDbConnections === 0`). | `8/8 PASS` (`C1–C6`, `C10`, `C11`) | **Hoàn thiện đầy đủ.** |
+| **Tầng 6** | `layer6-guardrails` | `detectPromptInjection` (6 rules), `detectPromptInjectionInUntrustedData` (+3 rules RMA), `sanitizeCustomerNote`, `wrapUntrustedCustomerNotes`, `assertNoMutatingToolInUntrustedTurn`, `maskPii`, `enforceHumanInTheLoop`, `TryOnQuotaEnforcer` (`guardrails.ts`, `tryon-quota-enforcer.ts`) | Bọc ghi chú RMA `<= 300` ký tự trong `<untrusted_customer_note>` + ném HTTP 422 khóa mọi tool ghi trong lượt xử lý; che SĐT/email/địa chỉ VN nhưng giữ số đo cơ thể; `Object.freeze` khóa cứng `status: 'NHAP_AI'`, `autoAttachAsTryOnGarment: false`, `requiresHumanApproval: true` (duyệt qua endpoint 2FA RBAC riêng). | `15/15 PASS` (`B1–B13`, `C7`, `C9`) | **Hoàn thiện đầy đủ (rule/regex).** *Lưu ý:* Bộ quét Injection dùng regex tĩnh, chưa có mô hình ML Guardrail classifier riêng cho câu jailbreak ẩn dụ. |
+| **Tầng 7** | `layer7-cache-router` | `ThreeTierAiRouter`, `SemanticCacheKeyBuilder`, `ContentHashCache`, `RedisSemanticCache`, `RuleBasedMcpOrchestrator` (`three-tier-router.ts`, `semantic-cache-key.ts`, `redis-cache.ts`, `orchestrator.ts`) | Định tuyến 3 tầng: Tier-0 (0 token) → Tier-1 (fast/sentiment) → Tier-2 (Ollama Tool Calling ≤4 bước + Small-Model Completion Guard + Rule Fallback); Redis cache `copilot:cache:*` TTL 300s (khóa SHA-256 chuẩn hóa không dấu + fallback LRU RAM). | `8/8 PASS` (`A1–A7`, `A17`) | **Hoàn thiện đầy đủ.** *Lưu ý:* Semantic Cache dùng normalized-string SHA-256 chứ chưa dùng vector nearest-neighbor cache. |
+| **Tầng 8** | `layer8-telemetry-eval` + `evals/` + `scripts/export-ai-preference-dataset.mjs` | `AiTelemetryRecorder`, `CopilotOpsMetricsTracker`, `evals/run-eval.ts`, `export-ai-preference-dataset.mjs` | Theo dõi độ trễ, `tokens/s`, chi phí `$0`, W3C `traceparent` (`/v1/copilot/ops/metrics`); cổng `pnpm eval:ai` chạy trong Gate 3 `verify-all.mjs` & Stage 1 CI; M5 Export xuất `artifacts/ai-sft-preference-dataset.jsonl` (22 records, 0 PII leak). | `3/3 PASS` (`C8`, `C12`, `C13`) | **Đầy đủ (Telemetry/Eval); Một phần (Feedback/Training).** *Thiếu:* Lưu telemetry xuống DB (hiện in-memory `maxEntries=1000`), nút 👍/👎 trên `McpCopilotDrawer`, và pipeline fine-tune tiêu thụ JSONL. |
 
 ---
 
-### 6.4. Chiến lược Observability (Giám sát Toàn diện)
+### 5.4. Ma Trận Phạm Vi Áp Dụng AI Harness Trên Toàn Hệ Thống
 
-| Trụ cột | Công cụ đề xuất | Chỉ số & Dữ liệu trọng tâm |
-| :--- | :--- | :--- |
-| **Metrics (Đo lường)** | **Prometheus + Grafana** (hoặc Grafana Cloud cho team nhỏ) | **RED Metrics** từng service (`Request Rate`, `Error %`, `Duration p50/p95/p99`); **Business Metrics thời trang**: tỷ lệ thêm giỏ từ `<ClothingRack3D />` vs `<OutfitStudio />`, tỷ lệ hết hạn Reservation TTL 15 phút, tỷ lệ thanh toán thành công theo từng cổng (VNPay/MoMo/VietQR), và tỷ lệ yêu cầu Đổi Size (RMA) theo từng dòng sản phẩm. |
-| **Logs (Nhật ký)** | **Pino (Structured JSON) → Grafana Loki** | Gắn tự động `trace_id`, `order_id`, `service_name`, `env`. **Bắt buộc redact/mask PII** (SĐT, địa chỉ nhà, số đo cá nhân, mật khẩu, token thanh toán) trước khi ghi log. |
-| **Distributed Tracing** | **OpenTelemetry SDK → Grafana Tempo / Jaeger** | Lan truyền chuẩn W3C `traceparent` / `X-Correlation-ID` xuyên suốt từ Next.js → API Gateway/BFF → 8 Microservices → Kafka Message Headers → PostgreSQL Query để truy vết tức thì nút thắt của từng đơn hàng. |
-| **Frontend RUM & Crash** | **Sentry (Frontend + Backend)** | Theo dõi lỗi runtime JS, sự kiện `webglcontextlost`, giải mã stack trace qua Source Maps, và thu thập Core Web Vitals thực tế từ người dùng iOS/Android tại Việt Nam. |
+Quét import `@atelier/ai-harness` toàn repo xác nhận chỉ **3 workspace** phụ thuộc trực tiếp (`apps/mcp-copilot`, `apps/bff`, `services/catalog-lookbook`). Bảng dưới đây nêu rõ phạm vi thực tế trên từng module AI:
 
----
-
-### 6.5. Ma trận Rủi ro & Giải pháp Giảm thiểu (10 Rủi ro trọng yếu)
-
-| Mã | Rủi ro & Nguyên nhân gốc (Gắn trực tiếp với `ban_hoa`) | Tác động / Xác suất | Dấu hiệu nhận biết sớm | Giải pháp Phòng ngừa & Ứng phó (Mitigation & Fallback) |
-| :---: | :--- | :---: | :--- | :--- |
-| **R01** | **WebGL GPU Memory Leak & Giật lag trên Mobile**: `js/rack.js` dùng `PMREMGenerator`, 10+ texture độ phân giải cao, shader 12-tap Poisson blur và 118 hạt ánh sáng. Chuyển trang trong React không `dispose()` sẽ gây tràn GPU RAM và crash tab Safari iOS. | **Rất Cao** / **Cao** | FPS < 30 trên iPhone tầm trung; GPU RAM tăng dần sau mỗi lượt đổi route; cảnh báo `Too many active WebGL contexts`. | 1. Dùng `IntersectionObserver` bật/tắt `frameloop` khi cuộn qua `#rack`.<br>2. Thu hồi tường minh toàn bộ `Geometry`/`Material`/`Texture`/`PMREM` trong cleanup.<br>3. Giới hạn `dpr <= 1.5`, dùng texture `720×1080` Desktop / `480×720` Mobile.<br>4. Kích hoạt `<FlatRackFallback />` trên mobile GPU yếu hoặc khi xảy ra `webglcontextlost`. |
-| **R02** | **Ảnh quần áo tách nền sai tỷ lệ / lệch tâm hoặc ám viền đen**: Cả `js/rack.js` (`W = H * 2/3`, `SHADOW_FRAG` cắt mép `0.14`) và `js/build.js` phụ thuộc chặt vào ảnh cutout đồng nhất. Sai tỷ lệ sẽ khiến áo bay khỏi móc đồng, bóng đổ bị cắt cụt, hoặc váy trắng bị viền xám khi Poisson blur. | **Rất Cao** / **Cao** | Quần áo treo lệch móc, viền xám quanh mép vải sáng, áo/quần khớp lệch eo trong `<OutfitStudio />`. | 1. Khóa **Asset Specification Playbook** (`2:3`, Safe Margin >= 15%, Edge Color Padding, lưới Ghost Mannequin) từ Phase 0.<br>2. Tự động kiểm định tỷ lệ & alpha tại `Media & Asset Pipeline`.<br>3. Dùng **Visual Anchor Calibrator** trong `apps/admin` để căn tọa độ trực quan lưu vào DB. |
-| **R03** | **Oversell SKU hot khi Flash Sale hoặc Deadlock khi đặt nguyên bộ Outfit**: Nhiều khách mua cùng lúc chiếc váy Size S cuối cùng, hoặc đặt 2 Set Outfit chứa các SKU giao nhau theo thứ tự đảo ngược. | **Rất Cao** / **Trung bình** | Đơn xác nhận vượt tồn kho thực tế; xuất hiện lỗi DB deadlock trong log `Inventory Service`. | 1. Tách 3 trạng thái `available`/`reserved`/`committed` với ràng buộc `CHECK (available_qty >= 0)`.<br>2. Áp dụng **Redis Lua Script + PostgreSQL `SELECT ... FOR UPDATE`** luôn sắp xếp `sku_id` tăng dần.<br>3. Reservation TTL 15 phút + chạy k6 Flash Sale stress test trước mỗi chiến dịch. |
-| **R04** | **Lỗi giao dịch phân tán (Distributed Transaction Failure)**: Khách đã bị trừ tiền VNPay/MoMo nhưng `Order & RMA Service` timeout trước khi gọi `Inventory.Commit` hoặc Webhook gửi lặp nhiều lần. | **Rất Cao** / **Trung bình** | DLQ phát sinh message; tiền đã vào tài khoản nhưng đơn vẫn kẹt ở `AWAITING_PAYMENT` hoặc bị trừ kho 2 lần. | 1. Áp dụng **Saga Orchestration + Transactional Outbox Pattern** chống mất event giữa DB và Broker.<br>2. Bắt buộc `Idempotency-Key` và bảng `processed_webhooks` (`UNIQUE`).<br>3. Chạy job **Đối soát tự động (Reconciliation)** mỗi 15 phút với cổng thanh toán. |
-| **R05** | **SEO kém & Mất ảnh preview Zalo/Facebook nếu dùng SPA thuần**: Vite CSR trả HTML rỗng khiến bot tìm kiếm khó index hàng trăm trang sản phẩm và link chia sẻ mất ảnh/giá động. | **Cao** / **Trung bình** | Google Search Console báo trang rỗng/chậm index; link gửi qua Zalo/Messenger không hiển thị ảnh mẫu áo. | 1. Chọn **Next.js App Router (SSR + On-Demand ISR)** cho Trang chủ, PLP, PDP, Lookbook.<br>2. Tách hiệu ứng nặng thành `'use client'` islands.<br>3. Sinh tự động JSON-LD (`Product`, `Offer`, `AggregateRating`), Sitemap và Dynamic OG Image. |
-| **R06** | **Đội chi phí vận hành & "Distributed Monolith" khi tách Microservices quá sớm**: Dựng K8s + 9 cụm DB + Kafka cho team 2–3 người ngay ngày đầu khiến 60% nguồn lực đốt vào DevOps. | **Cao** / **Cao** | Thời gian release 1 tính năng nhỏ > 1 tuần; chi phí cloud phình to dù đơn hàng chưa nhiều; khó debug chéo service. | 1. Bắt đầu bằng **Modular Monolith** (team 2–3 dev, tách schema DDD + 5 nguyên tắc chuẩn Microservices) trên Managed Cloud (Vercel + Cloud Run + Cloudflare R2).<br>2. Áp dụng **Strangler Fig** tách dần `Media`, `Inventory`, `Payment`, `BFF` khi đội ngũ >= 4–6 kỹ sư hoặc lưu lượng đòi hỏi. |
-| **R07** | **Lỗi GSAP `ScrollTrigger` & `Lenis` khi điều hướng trong React / Next.js**: Chuyển trang không thu hồi `pin-spacer` của `#rack`/`#occasion`/`#seasons` hoặc quên `lenis.start()` khi đóng Drawer gây trắng trang hoặc kẹt cuộn. | **Cao** / **Cao** | Thanh cuộn bị đơ sau khi bấm Back; chiều cao trang sai lệch; hiệu ứng chạy nhân đôi trong React StrictMode. | 1. Bắt buộc bọc mọi animation trong **`useGSAP()` (`@gsap/react`)**.<br>2. Quản lý khóa cuộn bằng Lock Counter tập trung và tự động reset/start Lenis khi `usePathname()` đổi.<br>3. Chạy Playwright route-hopping test tự động ở mọi PR. |
-| **R08** | **Độ trễ mạng 4G & Asset nặng làm gãy trải nghiệm mở màn**: `ban_hoa` có video ~2 MB + 40+ ảnh và phải gắn safety-net 9 giây phòng treo màn `#intro`. Khách trên 4G yếu dễ thoát trang trước khi vào được Hero. | **Trung bình** / **Cao** | Bounce rate cao ở 3–5 giây đầu; LCP > 4s trên 4G; màn hình đứng lâu ở `#intro`. | 1. Rút thời lượng `<IntroCurtain />` **<= 1.8 giây**, chạy 1 lần/session ở `/`, có nút bỏ qua + safety timeout 5–8s.<br>2. Poster LCP `< 45–80 KB` tải ưu tiên `priority`, video Hero tải sau hydration.<br>3. Lazy-load texture 3D Rack & Outfit Studio theo vùng cuộn (`IntersectionObserver`). |
-| **R09** | **Tỷ lệ Đổi Size / Hoàn hàng cao đặc thù thời trang online (15–30%)**: Khách mua nhầm size, xử lý thủ công gây lệch tồn kho, chậm hoàn tiền hoặc mất size muốn đổi trong lúc chờ shop duyệt. | **Cao** / **Cao** | Tỷ lệ đổi/hoàn > 15%; khách phàn nàn hết size muốn đổi khi đang chờ xử lý qua tin nhắn. | 1. Triển khai sớm **Size Recommendation Engine + Verified Fit Reviews** (kèm chiều cao/cân nặng/size đã mặc) để giảm sai size ngay lúc chọn mua.<br>2. Tự động hóa **Luồng RMA Đổi Size 1 chạm**, khóa ngay `EXCHANGE_RESERVED` cho size mới ngay khi duyệt. |
-| **R10** | **Lỗi tương thích Safari / iOS**: `100vh` biến động theo thanh địa chỉ làm giật `ScrollTrigger`, iOS cũ kén codec WebM, giới hạn WebGL context và tụt FPS khi kết hợp `backdrop-filter: blur(18px)` với `clip-path`. | **Trung bình** / **Cao** | Khung `#rack`/`#occasion` bị cắt chân trên iPhone; video Hero đen màn hình trên Safari; `.rack__card` lag khi vuốt. | 1. Đổi sang `100svh`/`100dvh` kết hợp `ScrollTrigger.config({ ignoreMobileResize: true })`.<br>2. Luôn cung cấp `<source type="video/mp4">` H.264 sau `.webm`.<br>3. Giảm bán kính `backdrop-filter` trên mobile và kiểm thử bắt buộc trên iPhone thật (hoặc BrowserStack iOS) ở cuối Phase 2, 3 và 6. |
+| # | Module AI Trong Hệ Thống | Engine / Model Thực Tế | Áp Dụng 8-Layer AI Harness? | Chi Tiết Phạm Vi & Khoảng Trống |
+|---|---|---|---|---|
+| **1** | **Admin MCP Copilot** (`apps/mcp-copilot :4010`) | Ollama `qwen2.5:3b`/`7b` + `nomic-embed-text` + Rule Fallback | **CÓ — ĐẦY ĐỦ 8/8 TẦNG** | Trọng tâm triển khai đầy đủ nhất của `AiSecurityHarness`. |
+| **2** | **BFF Admin Cost Protection** (`apps/bff :4000`) | `redactRestrictedFields` | **MỘT PHẦN (Tầng 5)** | Tái sử dụng hàm cắt giá vốn Layer 5 bảo vệ kép mọi API quản trị. |
+| **3** | **Storefront RAG Query** (`services/catalog-lookbook :4002`) | `PgVectorRagStore` + `OllamaEmbeddingClient` | **MỘT PHẦN (Tầng 1 + Tầng 3)** | Truy vấn Hybrid RAG RRF `k=60`; không chạy qua LLM chat, Prompt Registry hay Guardrails. |
+| **4** | **Customer Stylist MCP Tools** (`packages/ai-harness` / `apps/mcp-copilot`) | Tier-0 Deterministic + `DEMO_CATALOG` | **CHỈ Ở BACKEND / EVAL** | Đã cài đặt trong Harness & pass eval, nhưng chưa nối Storefront UI & BFF. |
+| **5** | **AI Virtual Try-On & Lookbook** (`services/ai-tryon :4009`) | `AutoVTONProvider` (Fal → HF Gradio → `SmartPoseWarp` + YuNet/IS-Net) & Pillow | **KHÔNG (Độc lập bằng Python)** | Không đi qua `@atelier/ai-harness` TS, nhưng có tự cài đặt các cơ chế tương đương: Privacy Consent, Magic Bytes, Redis Lua quota + SHA-256 cache + auto-refund, Auto-Purge 15p, W3C `traceparent`. |
+| **6** | **Review NLP Sentiment** (`services/notify-review :4008`) | Gọi thẳng HTTP Ollama `qwen2.5:3b` + Lexicon Fallback | **KHÔNG (Độc lập — nên hợp nhất)** | `services/notify-review` không import `@atelier/ai-harness`, bỏ lỡ `CircuitBreaker`, `maskPii` và Layer 8 Telemetry dù hàm `analyzeVietnameseSentimentWithOllama()` đã có sẵn trong Layer 7. |
+| **7** | **Live Crowd Size Advisor** (`services/catalog-lookbook :4002`) | Thuật toán L1 + Crowd Fit Calibration (0 LLM) | **KHÔNG (Độc lập)** | Chạy độc lập trong `size-recommender.ts` (chia sẻ triết lý với Tier-0 tool `calculate_verified_size`). |
+| **8** | **Storefront 3D AR Pose Tracking** (`apps/storefront :3000`) | MediaPipe WASM `pose_landmarker_lite.task` + Three.js | **KHÔNG (Client-side 100%)** | Chạy hoàn toàn trên trình duyệt người dùng, không qua server. |
 
 ---
 
-### 6.6. Kế hoạch Hành động Ngay Tuần Đầu Tiên (Quick-Start Action Plan) & Decision Log
+### 5.5. Kết Quả Chạy Thực Tế `pnpm eval:ai` (`43/43`) & Bằng Chứng Chưa Huấn Luyện Trọng Số
 
-Để khởi động dự án ngay từ **Thứ Hai tuần đầu tiên** không có độ trễ giữa các bộ phận, các nhóm triển khai song song kế hoạch 5 ngày sau:
+#### a) Bảng Điểm Định Lượng Thực Nghiệm (`pnpm eval:ai` — chạy LIVE ngày `2026-11-24`)
 
-#### Dành cho Chủ dự án / Product Owner (Business & Brand)
-- [ ] **Ngày 1 — Chốt Kịch bản Triển khai**: Chọn **Bản Chuẩn (16–17 tuần, 4–6 kỹ sư)** hay **Fast-Track MVP (8–10 tuần, 2–3 kỹ sư)** dựa trên nguồn lực và mốc ra mắt BST đầu tiên.
-- [ ] **Ngày 1–2 — Chốt Danh mục Mùa Đầu**: Chọn sẵn **10–12 thiết kế Signature** lên `<ClothingRack3D />`, **6 Dịp mặc (Occasions)**, **15–20 món phối chéo được** cho `<OutfitStudio />` và chính sách ưu đãi Combo Set.
-- [ ] **Ngày 2–3 — Nộp Hồ sơ Pháp lý & Sandbox Đối tác**: Đăng ký sớm **VNPay / MoMo / VietQR (PayOS)**, **GHN / GHTK / Ahamove**, và **Zalo OA / Zalo ZNS** (thời gian duyệt 5–10 ngày làm việc — làm ngay Tuần 1 để không nghẽn Phase 5).
-- [ ] **Ngày 4–5 — Ký duyệt Chính sách Thời trang**: Chốt bảng Size chuẩn, quy trình Đổi Size 7–14 ngày (2 chiều nội thành & QC toàn quốc), biểu phí giao hàng/Freeship và dịch vụ gói quà.
+| Chỉ Số Đánh Giá | Ngưỡng Bắt Buộc | Kết Quả Thực Tế | Trạng Thái |
+|---|:---:|:---:|:---:|
+| **Tổng số test cases vượt qua** | `>= 36` cases (`100%`) | **`43 / 43 PASSED (0 FAILED)`** | **PASS** |
+| **Phân bổ theo Suite** | `100%` mỗi suite | **Suite A: `17/17` · Suite B: `13/13` · Suite C: `13/13`** | **PASS** |
+| **Tool Selection Accuracy** | `>= 95.0%` | **`100.0%`** | **PASS** |
+| **Hybrid RAG Citation Rate** | `>= 95.0%` | **`100.0%`** | **PASS** |
+| **Prompt Injection Block Rate** | `=== 100.0%` | **`100.0%`** | **PASS** |
+| **PII Redaction Rate** | `=== 100.0%` | **`100.0%`** | **PASS** |
+| **RBAC & Cost Redaction Rate** | `=== 100.0%` | **`100.0%`** | **PASS** |
+| **Overall Pass Rate** | `=== 100.0%` | **`100.0%`** | **PASS** |
+| **Tổng thời gian chạy (Warm wall-clock)** | — | **`3,936 ms` (~3.94s)** | **Ổn định** |
 
-#### Dành cho UI/UX Designer & Studio Sản xuất Hình ảnh
-- [ ] **Ngày 1–2 — Khóa Nhận diện & Design Tokens**: Kế thừa bảng màu & font từ `css/style.css` (`#1C1410` Cocoa, `#FBF7EF` Ivory, `#B08A4A` Gold, `Cormorant Garamond` + `Be Vietnam Pro` + `Dancing Script`) và thiết kế Monogram mới thay `T&X`.
-- [ ] **Ngày 2–3 — Chụp thử Bộ Asset Chuẩn Kỹ thuật**: Chụp & tách nền thử **3 mẫu áo/váy treo móc** (đủ `front`/`back`) và **3 món Ghost Mannequin** đạt chuẩn `1200×1800px` (`2:3`, Safe Margin >= 15%, Edge Color Padding) bàn giao cho đội FE trước Ngày 4.
-- [ ] **Ngày 4–5 — Wireframe & Storyboard Video Hero**: Chốt kịch bản quay video 12 giây (chừa vùng tương phản tối bên trái cho tiêu đề) và khung màn hình cốt lõi (Home, PLP, PDP, Outfit Studio, Quick Bag Drawer, Checkout).
+> **Lưu ý đồng bộ số liệu với tài liệu cũ:** Tài liệu [`docs/TONG_KET_KIEN_TRUC_VA_NGHIEM_THU.md`](docs/TONG_KET_KIEN_TRUC_VA_NGHIEM_THU.md) và snapshot [`artifacts/verify-all-metrics.json`](artifacts/verify-all-metrics.json) trước đây ghi mốc cũ **`38/38`** (Suite A: 13, B: 13, C: 12). Ở phiên bản hiện tại `@atelier/ai-harness@3.1.0`, bộ kiểm định đã mở rộng thêm 5 bài test (`A14`, `A15`, `A16`, `A17`, `C13`) đạt **`43/43 PASSED (100.0%)`**.
 
-#### Dành cho Tech Lead, Frontend & Backend Engineers
-- [ ] **Ngày 1 — Khởi tạo Monorepo & Quy chuẩn**: Dựng Git repo `Turborepo + pnpm` theo cây thư mục Mục 6.1, cài đặt ESLint, Prettier, Commitlint và Branch Protection.
-- [ ] **Ngày 2 — Dựng Hạ tầng Local & Cloud Staging**: Hoàn thiện `infra/docker-compose.yml` (PostgreSQL 16, Redis 7, Meilisearch, MinIO, Redpanda, Kong) và khởi tạo dự án Staging (Vercel + Cloud Run/ECS + Cloudflare R2).
-- [ ] **Ngày 3 — Trích xuất Design Tokens & Soạn OpenAPI Draft**:
-  - FE chuyển toàn bộ biến CSS, easing và 5 keyframes từ `d:\doancosothue\ban_hoa\css\style.css` sang `packages/ui-tokens`.
-  - BE khởi thảo OpenAPI v1 cho `Auth`, `Catalog`, `Media` và `Fashion BFF` (`/bff/v1/storefront/bootstrap`, `/bff/v1/rack-collection`).
-- [ ] **Ngày 4 — Technical Spike Kiểm chứng Rủi ro Số 1 (`<ClothingRack3D />` trên Next.js)**: Đưa 3 ảnh quần áo tách nền thật từ Studio vào prototype R3F + 3 GLSL shaders (bỏ lật ngược `Math.PI`), đo FPS thực tế trên Laptop & iPhone, và chốt công thức tọa độ `hangerAnchorY`.
-- [ ] **Ngày 5 — Họp Kickoff Review Tuần 1**: Demo trực tiếp prototype Giá treo quần áo 3D trên trình duyệt thật + ký duyệt Contract OpenAPI/AsyncAPI + chốt Backlog chi tiết cho Phase 1.
+#### b) Tách Bạch Minh Bạch: Live Ollama (`2/43`) vs Deterministic Unit Harness (`41/43`)
 
-#### Bảng Quyết định Cần Chốt Tại Buổi Họp Kickoff (Decision Log)
+Daemon Ollama cục bộ (`127.0.0.1:11434`) đang ONLINE với 2 model pre-trained phục vụ dự án: `qwen2.5:3b` (`3.1B params`, `Q4_K_M`, `1.93 GB`) và `nomic-embed-text:latest` (`137M params`, `768-dim`, `274 MB`):
+- **2 / 43 cases chạy LIVE trực tiếp trên Ollama local thật:**
+  - **`A16` (`OllamaEmbeddingClient`):** gọi `/api/embed` trên `nomic-embed-text` → vector `768` chiều chuẩn hóa L2, `$0`, độ trễ **`7,432 ms`** (cold load) / **`135 ms`** (warm).
+  - **`A17` (`analyzeVietnameseSentimentWithOllama`):** gọi `/api/chat` trên `qwen2.5:3b` → `label=POSITIVE`, `score=1`, tốc độ sinh token **`64.43 – 71.36 tokens/s`** (kèm kiểm định riêng nhánh lexicon fallback).
+- **41 / 43 cases còn lại chạy Deterministic / Offline Unit Harness:** Giúp `pnpm eval:ai` chạy nhanh (`< 4s`) và vận hành 100% trên GitHub Actions không có GPU. **Hàm ý kỹ thuật cần minh bạch:** Chỉ số `toolSelectionAccuracyPct = 100%` (`A1–A7`) đang kiểm định bộ phân loại Tier-0/1 xác định, chưa phải benchmark tool-calling xác suất mở trên LLM; và `hybridRagCitationRatePct = 100%` kiểm định thuật toán RRF `k=60` trên `InMemory*Provider` (còn live `PgVectorRagStore` + `nomic-embed-text` chạy ở runtime).
 
-| Hạng mục | Lựa chọn Khuyến nghị | Phương án Thay thế | Hạn chốt |
-| :--- | :--- | :--- | :---: |
-| **Framework Frontend** | **Next.js 15+ (App Router) + React 19 + TypeScript** | Vite + React Router (chỉ dùng nếu tách riêng Microsite không cần SEO) | Ngày 1 |
-| **Ngôn ngữ Backend** | **Node.js (NestJS + TypeScript)** đồng bộ hệ sinh thái type với Next.js/BFF | Go cho `Inventory Service` & Gateway (nếu kỳ vọng Flash Sale > 5.000 CCU ngay ngày đầu) | Ngày 1 |
-| **Kiến trúc Khởi đầu** | **9 Microservices từng phần** (4–6 dev) hoặc **Modular Monolith chuẩn DDD** (2–3 dev) | Full Kubernetes + 9 Microservices độc lập từ Ngày 1 (chỉ khi team >= 8–10 kỹ sư) | Ngày 1 |
-| **Công cụ Tìm kiếm** | **Meilisearch** (nhẹ, hỗ trợ tiếng Việt không dấu xuất sắc, chi phí thấp) | Elasticsearch / OpenSearch (khi danh mục > 500.000 SKU) | Ngày 3 |
-| **Lưu trữ Media & CDN** | **Cloudflare R2 + Cloudflare CDN** (0₫ phí egress cho ảnh/video WebGL) | AWS S3 + CloudFront | Ngày 2 |
+#### c) Bằng Chứng Dữ Liệu Seed & Trạng Thái Chưa Fine-Tune Trọng Số
+
+| Hạng Mục Kiểm Tra | Thực Tế Trong Kho Mã Nguồn & Môi Trường |
+|---|---|
+| **Script huấn luyện SFT / LoRA / QLoRA / DPO** | **0 file** (không có `train*.py`, `peft`, `unsloth`, `trl`, `axolotl`). |
+| **`Modelfile` hoặc model custom Atelier trên Ollama** | **0 file / không tồn tại** (chỉ dùng pre-trained gốc `qwen2.5:3b` & `nomic-embed-text:latest`). |
+| **Checkpoint / Adapter tự huấn luyện** | **0 file** (chỉ có model pre-trained bên thứ ba: YuNet ONNX & MediaPipe Pose). |
+| **Tập dữ liệu M5 xuất sẵn (`pnpm ai:export-sft`)** | **CÓ** — `artifacts/ai-sft-preference-dataset.jsonl`: **22 bản ghi** (`7 DPO_PREFERENCE` từ PO `NHAP_AI` → duyệt tay + `15 SFT_SIZE_CALIBRATION` từ Verified Fit Reviews ẩn danh bucket `5cm/5kg`), **0 rò rỉ PII**. |
+| **Dữ liệu seed phục vụ kiểm chứng AI** | 12 tài liệu RAG tiếng Việt (`rag_vector_db`), 4 nhóm SKU tín hiệu thử đồ (`tryon_demand_events`: `AT-AOBLLI-C1-M` 26 try-ons/16 add-to-cart, `AT-DADUTI-C1-M` 28/2...), và mẫu bẫy Prompt Injection trong ghi chú RMA (`seed-demo-data.mjs`). |
+
+---
+
+## Phần 6: Lộ Trình Hoàn Thiện Dự Án Chi Tiết (P0 Đến P3)
+
+### 6.1. Tổng Quan Tiến Trình 4 Giai Đoạn
+
+```mermaid
+flowchart LR
+    P0["P0: Sua loi ngay & Va bao mat noi bo (1-3 ngay)"] --> P1["P1: Chatbot Khach hang & Khep kin tinh nang loi (1-2 tuan)"]
+    P1 --> P2["P2: Admin CRUD day du & Tich hop Doi tac that (2-4 tuan)"]
+    P2 --> P3["P3: Production QA, DevOps & Vong lap Fine-tune AI (2-4+ tuan)"]
+```
+
+---
+
+### 6.2. Giai Đoạn P0 — Sửa Lỗi Ngay & Vá Bảo Mật Nội Bộ
+
+*Mục tiêu: Diệt sạch bug 404/401 thực tế, vá lỗ hổng bảo mật nội bộ và dọn sạch tàn dư legacy trước bất kỳ buổi demo hay nghiệm thu nào.*
+
+| Mã | Hạng Mục Cần Làm | File / Service Tác Động | Chi Tiết Kỹ Thuật | Tiêu Chí Nghiệm Thu (DoD) |
+|---|---|---|---|---|
+| **P0-1** | Sửa bug 404 danh sách sản phẩm trong AI Lookbook Studio | `apps/admin-portal/src/components/tabs/AiLookbookStudioTab.tsx:106` | Đổi `adminFetch('/api/v1/admin/catalog/products')` sang `'/api/v1/admin/products'` (khớp `admin-bff.controller.ts:410`). | Tab AI Lookbook tải đúng danh sách SPU/Variant & sinh/gắn được lookbook trên trình duyệt thật. |
+| **P0-2** | Sửa lỗi SSR 401 ở Admin & Partner Overview + xóa hardcode `b2bSummary` | `apps/admin-portal/src/lib/admin-overview.ts:22-31`, `apps/partner-portal/src/lib/partner-overview.ts:29-37`, `apps/bff/src/admin/admin-bff.controller.ts:151-201`, `apps/bff/src/partner/partner-bff.controller.ts:124-130` | Kiểm tra trạng thái BFF lúc SSR qua endpoint `/health` công khai (chỉ gọi `/overview` sau khi có JWT); thay số liệu cứng `0`/`100%`/`skeleton_ready` bằng truy vấn tổng hợp thật từ `inventory`/`order-rma`. | Header không còn hiện `"BFF Offline Fallback"` sai khi BFF sống; số liệu B2B/Admin phản ánh đúng DB. |
+| **P0-3** | Siết `x-internal-secret` trên toàn bộ endpoint `internal/*` | `services/auth-customer/src/controllers/iam.controller.ts:211`, `services/catalog-lookbook/src/catalog/catalog.controller.ts:738-800`, `services/inventory/src/controllers/inventory.controller.ts:214-265` | Bắt buộc guard kiểm tra `x-internal-secret` (timing-safe) trên mọi route `internal/*`; khóa cứng `internal/test-set-stock` và `internal/test-expire-reservation` khi `NODE_ENV=production`. | Gọi trực tiếp các route `internal/*` không có secret trả `401/403`; các luồng nội bộ hợp lệ vẫn PASS 100%. |
+| **P0-4** | Xác thực JWT cho Socket.io `/realtime` & siết `CsrfOriginGuard` | `apps/bff/src/realtime/realtime.gateway.ts:49-53, 152-253`, `apps/bff/src/security/guards.ts:130-141` | Verify Bearer JWT ở handshake Socket.io và kiểm tra quyền sở hữu `orderCode`/`sessionId` trước khi `join` phòng; siết `CsrfOriginGuard` bắt buộc có cả cookie lẫn header `X-CSRF-Token` khớp nhau. | Client ẩn danh không thể nghe lén `order:*`/`tryon:*`; request thiếu CSRF cookie bị từ chối `403`. |
+| **P0-5** | Ẩn tài khoản dev & dọn sạch toàn bộ tàn dư Legacy | `AdminLedgerWorkspace.tsx:49-56, 73-74`, `HomepageCampaignTab.tsx:30-31`, 7 file legacy trong `apps/storefront/src/`, bộ prototype hoa tươi ở root (`index.html`, `js/*`, `css/*`, `media/rose-desk.*`) | Chỉ hiển thị `QUICK_DEV_ACCOUNTS` khi `NEXT_PUBLIC_ENABLE_DEV_LOGIN=true`; thay `/media/rose-desk.*` bằng media thời trang; xóa 7 component không dùng và lưu trữ/xóa bộ prototype hoa tươi; cập nhật mốc `43/43` vào `docs/TONG_KET_KIEN_TRUC_VA_NGHIEM_THU.md`. | `grep -rn "rose-desk"` trả về 0 kết quả; build 3 portal thành công không lỗi import. |
+
+---
+
+### 6.3. Giai Đoạn P1 — Hoàn Thiện Chatbot Khách Hàng & Khép Kín Tính Năng Cốt Lõi
+
+*Mục tiêu: Ra mắt Customer Support Chatbot đầu-cuối trên Storefront, nối các module AI đang bị tách rời và hoàn thiện các tính năng người dùng cuối còn dang dở.*
+
+| Mã | Hạng Mục Cần Làm | File / Service Tác Động | Chi Tiết Kỹ Thuật | Tiêu Chí Nghiệm Thu (DoD) |
+|---|---|---|---|---|
+| **P1-1** | Xây dựng Customer Support Chatbot đầu-cuối trên Storefront | `apps/storefront` (`StorefrontShellOverlays.tsx`, `StorefrontChatDrawer.tsx`), `apps/bff/src/storefront/`, `apps/mcp-copilot/src/{server,orchestrator,tools}.ts` | Mở `POST /bff/v1/storefront/chat` (hỗ trợ cả guest lẫn `CUSTOMER`, rate-limit, `stripStorefrontSensitiveFields`); mở nhánh `portal === 'STOREFRONT'` dùng `CUSTOMER_STYLIST@v1.1.0` + `toOllamaTools('CUSTOMER', ...)`; nối 4 Customer tools đọc API live thay `DEMO_CATALOG`; tổng hợp câu trả lời tiếng Việt qua Ollama trên 12 docs RAG; gắn widget chat vào Storefront. | Khách hàng hỏi chính sách đổi trả, tính size, phối đồ, tra cứu sản phẩm còn hàng ngay trên `:3000`; 0 rò rỉ giá vốn/PO/dữ liệu nội bộ; đạt 100% test Injection & RBAC. |
+| **P1-2** | Hiển thị Review Sentiment NLP lên UI & hợp nhất vào AI Harness | `services/notify-review/src/reviews/sentiment.service.ts`, `apps/admin-portal` (`CatalogMatrixTab` / tab mới), `apps/storefront` (`ProductDetailClient.tsx`) | Thay `fetch('/api/chat')` trực tiếp trong `notify-review` bằng `analyzeVietnameseSentimentWithOllama()` của `@atelier/ai-harness` (hưởng sẵn `CircuitBreaker`, `maskPii`, Telemetry); hiển thị badge cảm xúc (`POSITIVE`/`NEUTRAL`/`NEGATIVE`) & tóm tắt lên Admin và tổng hợp cảm xúc trên PDP. | Đánh giá mới ghi telemetry Layer 8 và hiển thị nhãn/điểm cảm xúc trực quan trên UI. |
+| **P1-3** | Tích hợp chế độ Server AI Try-On (`:4009`) song song Gương 3D AR | `apps/storefront/src/features/virtual-tryon/VirtualTryOnModal.tsx` | Bổ sung tab **"Thử Ảnh AI Chuyên Sâu (Server 2-Bước)"** gọi đủ `/bff/v1/storefront/tryon/{upload-url,sessions,quota}`, lắng nghe Socket.io `tryon:progress`/`completed`, hiển thị badge `CACHE_HIT`, trừ quota và đếm ngược tự xóa ảnh `14:59` song song với Gương 3D AR on-device. | Người dùng dùng được cả 2 chế độ (AR 3D realtime & Server VTON 2D); phễu AI Funnel trên `AiOpsHealthTab` ghi nhận đầy đủ dữ liệu thật từ Storefront. |
+| **P1-4** | Hoàn thiện luồng Khách hàng Storefront còn thiếu | `OrderDetailClient.tsx:275`, `CustomerAccountClient.tsx:173-177`, `CheckoutPageClient.tsx:44`, `OrdersRmaTab.tsx:612`, `services/auth-customer` | Bổ sung upload ảnh bằng chứng RMA (`evidencePhotoUrls`) và ảnh đóng gói `packPhotoUrl` qua `media-pipeline`; tải `QUICK_VOUCHERS` động từ `/promotions`; tích hợp danh mục Tỉnh/Quận/Phường VN chuẩn; bổ sung API & UI Quên/Đặt lại/Đổi mật khẩu (qua Mailpit/SMTP). | RMA gửi kèm ảnh thật; địa chỉ có mã hành chính chính xác; khách đặt lại mật khẩu thành công qua email. |
+| **P1-5** | Lưu Telemetry AI bền vững & thêm phản hồi 👍/👎 trên Copilot | `McpCopilotDrawer.tsx`, `apps/mcp-copilot/src/ops-metrics.ts`, `packages/ai-harness/src/layer8-telemetry-eval/` | Thêm nút 👍/👎 + lý do ngắn trên mỗi phản hồi Copilot; lưu telemetry & feedback xuống bảng PostgreSQL (thay vì chỉ RAM `maxEntries=1000`); tích hợp nguồn feedback trực tiếp vào `pnpm ai:export-sft`; hiển thị đủ `SMART_POSE_WARP` & `HF_GRADIO_VTON` trên `AiOpsHealthTab`. | Restart `mcp-copilot` không mất số liệu ops; phản hồi 👍/👎 xuất hiện trong file `ai-sft-preference-dataset.jsonl`. |
+
+---
+
+### 6.4. Giai Đoạn P2 — Hoàn Thiện CRUD Admin & Tích Hợp Đối Tác Thật
+
+*Mục tiêu: Lấp đầy toàn bộ 7 phân hệ quản trị chuẩn E-commerce còn thiếu và thay thế 100% tích hợp đối tác mô phỏng bằng kết nối thực tế.*
+
+| Mã | Hạng Mục Cần Làm | File / Service Tác Động | Chi Tiết Kỹ Thuật | Tiêu Chí Nghiệm Thu (DoD) |
+|---|---|---|---|---|
+| **P2-1** | Xây dựng 4 màn hình Admin CRUD còn thiếu (Voucher, Payment Ledger, CMS, Catalog nâng cao) | `apps/admin-portal`, `apps/bff/src/admin/`, `services/payment-promo`, `services/catalog-lookbook` | (1) Tab **Voucher/Promotions CRUD** + duyệt kích hoạt nháp `CLEARANCE_CAMPAIGN_DRAFT`; (2) Tab **Payment & Refund Ledger** nối `POST /admin/payments/refunds` & xem webhook logs; (3) **Occasions & Seasons CMS** + biên tập media URL trong `HomepageCampaignTab`; (4) Nối form **Sửa SPU** (`PATCH /products/:id`), thêm Variant/SKU, xóa/lưu trữ SPU, CRUD Category & SizeChart, nhập lý do duyệt mẫu đối tác. | Quản trị viên vận hành trọn vòng đời sản phẩm, bộ sưu tập, khuyến mãi và đối soát thanh toán hoàn toàn trên Admin UI. |
+| **P2-2** | Hoàn thiện vận hành Kho, Thu mua, Đơn hàng, IAM, CRM & BI | `apps/admin-portal`, `apps/partner-portal`, `services/inventory`, `services/order-rma`, `services/auth-customer`, `services/notify-review` | (1) `InventoryLedgerTab`: kiểm kê điều chỉnh tồn (`ADJUSTMENT`), chuyển kho nội bộ, sửa `safetyThreshold`; (2) `ProcurementTab`: PO nhiều SKU, CRUD NCC, Hủy PO, `Mark Paid` công nợ; Partner thêm Từ chối PO & xuất đối soát CSV; (3) `OrdersRmaTab`: Hủy đơn, Từ chối RMA, in phiếu giao PDF; (4) `IamAuditTab`: nối `PUT /roles/:id/permissions`, Tạo/Xóa User, Reset 2FA, phân trang Audit Logs; (5) CRM Khách hàng, Review Moderation & Dashboard Doanh thu/Biên lợi nhuận + Export CSV/Excel. | Không còn bảng nghiệp vụ nào bị khóa Read-Only bất đắc dĩ; đầy đủ luồng hủy/từ chối/thanh toán công nợ và xuất báo cáo. |
+| **P2-3** | Tích hợp Cổng Thanh toán, Giao vận & Zalo ZNS thật | `services/payment-promo/src/payments/`, `services/order-rma/src/services/order-rma.service.ts`, `services/notify-review/src/notifications/notification.service.ts`, `CheckoutPageClient.tsx` | (1) Thay SVG SHA-256 bằng **VietQR chuẩn ISO/IEC 18004** (hoặc PayOS API); tích hợp phiên thanh toán redirect + IPN webhook + Refund API thật cho **VNPay / MoMo** (sandbox → production); (2) Nối API tính cước, tạo vận đơn & nhận webhook trạng thái của **GHN / GHTK / AhaMove**; (3) Gọi HTTP API thật tới **Zalo OA / ZNS** có retry & DLQ. | App ngân hàng quét được mã VietQR thật; VNPay/MoMo redirect & IPN cập nhật `PAID`; vận đơn & ZNS ghi nhận phản hồi thật từ đối tác. |
+| **P2-4** | Bền vững hóa Worker AI Try-On, Lookbook AI thật & Vision Garment Check | `services/ai-tryon/app/workers/consumer.py`, `lookbook_studio.py`, `apps/bff/src/admin/admin-phase5.controller.ts:752-825`, `apps/bff/src/realtime/realtime.gateway.ts` | (1) Chuyển `ai-tryon` từ `asyncio.Queue` RAM sang RabbitMQ consumer bền vững (`aio-pika`) đúng topology 3 tầng retry + `atelier.tryon.dlq`; (2) Bật mô hình VTON/Diffusion thật cho Lookbook Studio (hỗ trợ thêm HF/local GPU hoặc `FAL_KEY` tùy môi trường); (3) Thay stub `qualityScore: 94` của `validate-garment` bằng kiểm định thực tế độ phân giải/alpha/tỷ lệ/sắc nét; (4) Gắn `@socket.io/redis-adapter` cho BFF. | Restart `ai-tryon` không mất job; `validate-garment` chấm điểm thật theo ảnh; BFF chạy được ≥ 2 instance đồng bộ realtime. |
+
+---
+
+### 6.5. Giai Đoạn P3 — Chất Lượng Production, Kiểm Thử Tự Động & Vòng Lặp Fine-Tune AI
+
+*Mục tiêu: Đạt chuẩn kỹ thuật triển khai thực tế (Production Readiness), tự động hóa QA/CD và khép kín vòng lặp cải tiến trọng số mô hình AI.*
+
+| Mã | Hạng Mục Cần Làm | File / Service Tác Động | Chi Tiết Kỹ Thuật | Tiêu Chí Nghiệm Thu (DoD) |
+|---|---|---|---|---|
+| **P3-1** | Xây dựng Unit Tests, ESLint & Playwright E2E cho Admin / Partner | Toàn bộ 21 workspace (`apps/*`, `services/*`, `packages/*`, `scripts/verify-*.mjs`) | Thiết lập **Vitest/Jest** (`*.spec.ts`) cho các logic trọng yếu (Anti-Oversell, Saga phân bổ chiết khấu, RBAC/Redaction, Size Recommender, AI Harness), **Pytest** (`test_*.py`) cho `services/ai-tryon`; cấu hình ESLint + Prettier thống nhất; bổ sung bộ **Playwright E2E** cho 9 tab Admin (`:3001`) và 4 tab Partner (`:3002`). | Độ phủ unit test phần lõi ≥ 70%; `pnpm lint` chạy ESLint thật 0 lỗi; Playwright E2E bao phủ 3/3 portal. |
+| **P3-2** | Đóng gói Container, CI/CD Thực Thi Thật & Observability Tập Trung | `Dockerfile` cho 13 app/service, `infra/docker-compose.prod.yml`, `.github/workflows/ci-cd.yml:122-160`, `packages/observability/` | Viết multi-stage `Dockerfile` cho 3 Next.js app + 10 microservice; thay Stage 3 checklist tĩnh trong `ci-cd.yml` bằng build/push image, chạy `verify-all` trên staging và canary deploy có rollback; tích hợp OpenTelemetry Collector + Prometheus + Grafana + Tempo + Secret Manager. | Toàn bộ stack dựng bằng 1 lệnh container; CI/CD tự động chặn merge khi hỏng test/eval và triển khai thật; có dashboard metrics/trace tập trung. |
+| **P3-3** | Nâng cấp RAG Quy Mô Lớn & Benchmark Live LLM (`eval:ai:live`) | `packages/ai-harness/src/layer3-rag/`, `packages/ai-harness/evals/`, `apps/admin-portal` | Thêm **HNSW index** (`vector_cosine_ops`) trên `rag_vector_db.rag_documents`; xây dựng màn hình Admin quản trị & re-index corpus RAG động; bổ sung lệnh **`pnpm eval:ai:live`** (tách khỏi PR gate `< 4s`) để đo độ chính xác tool-calling xác suất thực tế trên `qwen2.5:3b` & `qwen2.5:7b` với 30+ hội thoại mở. | Truy vấn RAG duy trì `< 50ms` khi mở rộng > 10.000 tài liệu; có báo cáo benchmark live LLM định kỳ. |
+| **P3-4** | Vòng Lặp Fine-Tune Offline (QLoRA / DPO) & Custom Ollama `Modelfile` | `scripts/export-ai-preference-dataset.mjs`, `artifacts/ai-sft-preference-dataset.jsonl`, thư mục `ml/finetune/` (mới) | Khi tập dữ liệu thực tế đạt ngưỡng quy mô (≥ 1.000–3.000 mẫu DPO/SFT đã kiểm duyệt 0 PII từ duyệt PO `NHAP_AI`, Verified Fit Reviews và feedback 👍/👎 Copilot), chạy pipeline QLoRA/DPO offline (Unsloth/PEFT/TRL) trên `qwen2.5`, đóng gói GGUF + `Modelfile` (`ollama create atelier-copilot:v1`) và đối chiếu A/B trên `pnpm eval:ai:live` trước khi đưa vào vận hành. | Model `atelier-copilot:v1` vượt trội pre-trained gốc về tỷ lệ gọi tool chính xác và chất lượng tư vấn tiếng Việt trên bộ benchmark ẩn, vẫn giữ `100%` Injection Block & `0` PII leak. |

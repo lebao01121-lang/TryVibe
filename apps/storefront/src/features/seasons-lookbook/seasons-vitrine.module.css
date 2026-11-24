@@ -155,10 +155,24 @@
 }
 
 .timelineCurrentTag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(176, 138, 74, 0.16);
+  color: #6E4E19;
+  font-weight: 600;
   font-size: 9px;
-  font-weight: 400;
+  letter-spacing: 0.06em;
+  line-height: 1.35;
+  margin-left: 5px;
+  vertical-align: middle;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+.timelineTabActive .timelineCurrentTag {
+  background: rgba(235, 207, 143, 0.18);
   color: #EBCF8F;
-  margin-left: 4px;
 }
 
 .timelineProgressTrack {
@@ -415,6 +429,15 @@
 .macroImgActive {
   opacity: 1;
   z-index: 2;
+}
+
+.macroFallbackTint {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  mix-blend-mode: color;
+  opacity: 0.34;
 }
 
 .macroColorBadge {
@@ -1048,13 +1071,20 @@
   font-family: var(--serif, Georgia, serif);
   font-size: 17px;
   font-weight: 500;
-  line-height: 1.18;
+  line-height: 1.35;
+  min-height: 2.7em;
   color: #1C1410;
   text-decoration: none;
   display: -webkit-box;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  white-space: normal;
+  text-wrap: balance;
+}
+
+.accessoryCard .productTitle {
+  min-height: auto;
 }
 
 .productTitle:hover {

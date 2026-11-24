@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import {
   TryOnMode,
@@ -9,7 +10,6 @@ import {
   type StorefrontBootstrapDto,
 } from '@atelier/contracts';
 import { QuickBagDrawer } from '@/features/drawer-bag/QuickBagDrawer';
-import { VirtualTryOnModal } from '@/features/virtual-tryon/VirtualTryOnModal';
 import { apiFetch } from '@/lib/api-client';
 import {
   FALLBACK_PRODUCTS,
@@ -23,6 +23,17 @@ import {
   refreshCartCount,
   type OpenTryOnOptions,
 } from '@/lib/storefront-actions';
+
+const VirtualTryOnModal = dynamic(
+  () =>
+    import('@/features/virtual-tryon/VirtualTryOnModal').then(
+      (m) => m.VirtualTryOnModal,
+    ),
+  {
+    ssr: false,
+    loading: () => null,
+  },
+);
 
 const FALLBACK_PACKAGING_OPTIONS: PackagingOptionDto[] = PACKAGING_TIERS.map(
   (pkg, index) => ({
@@ -156,17 +167,19 @@ export function StorefrontShellOverlays() {
         onCartChange={handleCartChange}
       />
 
-      <VirtualTryOnModal
-        open={tryOnOpen}
-        onClose={() => setTryOnOpen(false)}
-        initialMode={tryOnOpts.mode ?? TryOnMode.SINGLE}
-        initialUpper={tryOnOpts.upper ?? null}
-        initialLower={tryOnOpts.lower ?? null}
-        initialOnePiece={tryOnOpts.onePiece ?? null}
-        initialOuterwear={tryOnOpts.outerwear ?? null}
-        products={products}
-        onAddedToBag={handleAddedFromTryOn}
-      />
+      {tryOnOpen ? (
+        <VirtualTryOnModal
+          open={tryOnOpen}
+          onClose={() => setTryOnOpen(false)}
+          initialMode={tryOnOpts.mode ?? TryOnMode.SINGLE}
+          initialUpper={tryOnOpts.upper ?? null}
+          initialLower={tryOnOpts.lower ?? null}
+          initialOnePiece={tryOnOpts.onePiece ?? null}
+          initialOuterwear={tryOnOpts.outerwear ?? null}
+          products={products}
+          onAddedToBag={handleAddedFromTryOn}
+        />
+      ) : null}
     </>
   );
 }

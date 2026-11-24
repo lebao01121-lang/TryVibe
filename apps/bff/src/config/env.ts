@@ -109,10 +109,10 @@ export function parsePort(raw: string | undefined, fallback: number): number {
 }
 
 export function parseOrigins(raw: string | undefined, defaults: readonly string[]): string[] {
-  const originSet = new Set<string>(defaults);
+  const originSet = new Set<string>(defaults.map((item) => item.trim().replace(/\/+$/, '')));
   if (raw) {
     for (const item of raw.split(',')) {
-      const trimmed = item.trim();
+      const trimmed = item.trim().replace(/\/+$/, '');
       if (trimmed.length > 0) {
         originSet.add(trimmed);
       }

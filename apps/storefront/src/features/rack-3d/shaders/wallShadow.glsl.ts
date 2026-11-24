@@ -30,19 +30,22 @@ export const WALL_SHADOW_FRAGMENT_SHADER = /* glsl */ `
   );
 
   float softAlpha(sampler2D mapTex, vec2 uv, float rad) {
+    float result = 0.0;
     if (rad < 0.0005) {
-      return texture2D(mapTex, uv).a;
+      result = texture2D(mapTex, uv).a;
+    } else {
+      float lodBias = log2(max(1.0, rad * 900.0)) - 0.6;
+      float acc = texture2D(mapTex, uv, lodBias).a * 1.5;
+      float w = 1.5;
+      vec2 spread = vec2(rad, rad / 1.5);
+      for (int k = 0; k < 12; k++) {
+        vec2 tapUv = clamp(uv + PD[k] * spread, vec2(0.001), vec2(0.999));
+        acc += texture2D(mapTex, tapUv, lodBias).a;
+        w += 1.0;
+      }
+      result = acc / w;
     }
-    float lodBias = log2(max(1.0, rad * 900.0)) - 0.6;
-    float acc = texture2D(mapTex, uv, lodBias).a * 1.5;
-    float w = 1.5;
-    vec2 spread = vec2(rad, rad / 1.5);
-    for (int k = 0; k < 12; k++) {
-      vec2 tapUv = clamp(uv + PD[k] * spread, vec2(0.001), vec2(0.999));
-      acc += texture2D(mapTex, tapUv, lodBias).a;
-      w += 1.0;
-    }
-    return acc / w;
+    return result;
   }
 
   void main() {

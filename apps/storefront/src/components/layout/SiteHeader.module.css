@@ -1,0 +1,254 @@
+/* ============================================================================
+ * SiteHeader — Atelier Diagonal Gold Slash Scroll-Spy & GPU Journey Progress
+ * Zero blur filters on SVG/links for 60 FPS GPU stability on low-power devices.
+ * ============================================================================ */
+
+.navLinks {
+  --nav-knockout-bg: #1C1410;
+  --nav-active-ink: #FBF7EF;
+  --nav-step-color: #EBCF8F;
+  align-items: center;
+  gap: clamp(16px, 1.85vw, 28px);
+}
+
+.navLinksLight {
+  --nav-knockout-bg: #FBF7EF;
+  --nav-active-ink: #1C1410;
+  --nav-step-color: #9A7232;
+}
+
+/* Crisp obsidian surface on scrolled dark sections (Hero #top stays transparent) */
+:global(.nav).navScrolledDark {
+  background: rgba(28, 20, 16, 0.94);
+  border-bottom-color: rgba(235, 207, 143, 0.08);
+}
+
+:global(.nav).navScrolledDark::before {
+  opacity: 0;
+}
+
+.journeyLink {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 4px;
+  white-space: nowrap;
+  text-decoration: none;
+  color: inherit;
+  opacity: 1;
+  outline-offset: 4px;
+}
+
+.journeyLabel {
+  position: relative;
+  z-index: 2;
+  display: inline-block;
+  line-height: 1.25;
+  text-shadow:
+    0 0 5px var(--nav-knockout-bg),
+    0 0 3px var(--nav-knockout-bg),
+    0 0 2px var(--nav-knockout-bg);
+  transition:
+    opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.35s ease,
+    text-shadow 0.45s ease;
+}
+
+/* 3-State Typography Hierarchy */
+.journeyLink[data-nav-state='upcoming'] .journeyLabel {
+  opacity: 0.56;
+  font-weight: 400;
+}
+
+.journeyLink[data-nav-state='upcoming']:hover .journeyLabel,
+.journeyLink[data-nav-state='upcoming']:focus-visible .journeyLabel {
+  opacity: 0.88;
+}
+
+.journeyLink[data-nav-state='passed'] .journeyLabel {
+  opacity: 0.74;
+  font-weight: 400;
+}
+
+.journeyLink[data-nav-state='passed']:hover .journeyLabel,
+.journeyLink[data-nav-state='passed']:focus-visible .journeyLabel {
+  opacity: 0.96;
+}
+
+.journeyLink[data-nav-state='active'] .journeyLabel {
+  opacity: 1;
+  font-weight: 500;
+  color: var(--nav-active-ink);
+}
+
+/* Delicate Step Indicator (01/06 .. 06/06) */
+.stepBadge {
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  z-index: 3;
+  transform: translate(-50%, 4px);
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--nav-step-color);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  text-shadow: none;
+  transition:
+    opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.45s ease,
+    visibility 0.35s ease;
+}
+
+.journeyLink[data-nav-state='active'] .stepBadge {
+  opacity: 0.88;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+/* Diagonal Gold Slash SVG Layer (behind text) */
+.slashSvg {
+  position: absolute;
+  inset: -3px -8px;
+  width: calc(100% + 16px);
+  height: calc(100% + 6px);
+  z-index: 1;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.slashLine {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  stroke-width: 1.2px;
+  opacity: 0;
+  transition:
+    stroke-dashoffset 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.32s ease,
+    stroke-width 0.3s ease;
+}
+
+.journeyLink[data-nav-state='upcoming']:hover .slashLine,
+.journeyLink[data-nav-state='upcoming']:focus-visible .slashLine {
+  stroke-dashoffset: 0;
+  opacity: 0.3;
+  stroke-width: 1px;
+}
+
+.journeyLink[data-nav-state='active'] .slashLine {
+  stroke-dashoffset: 0;
+  opacity: 1;
+  stroke-width: 1.5px;
+}
+
+.journeyLink[data-nav-state='passed'] .slashLine {
+  stroke-dashoffset: 0;
+  opacity: 0.46;
+  stroke-width: 1px;
+}
+
+.journeyLink[data-nav-state='passed']:hover .slashLine,
+.journeyLink[data-nav-state='passed']:focus-visible .slashLine {
+  opacity: 0.72;
+}
+
+/* Luminous Needle-Tip Dot (active state only, zero blur) */
+.slashTip {
+  opacity: 0;
+  visibility: hidden;
+  transform-origin: 114px 5px;
+  transform: scale(0.35);
+  transition:
+    opacity 0.25s ease 0.18s,
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1) 0.15s,
+    visibility 0.25s ease 0.18s;
+}
+
+.journeyLink[data-nav-state='active'] .slashTip {
+  opacity: 1;
+  visibility: visible;
+  transform: scale(1);
+}
+
+.journeyLink[data-nav-state='passed'] .slashTip,
+.journeyLink[data-nav-state='upcoming'] .slashTip {
+  transition-delay: 0s;
+}
+
+/* Subtle Architectural Bottom Hairline Track (visible once journey starts) */
+.journeyTrack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  pointer-events: none;
+  z-index: 3;
+  background: rgba(235, 207, 143, 0.14);
+  opacity: 0;
+  transition:
+    opacity 0.4s ease,
+    background-color 0.45s ease;
+}
+
+.journeyTrackVisible {
+  opacity: 1;
+}
+
+.journeyTrackLight {
+  background: rgba(43, 32, 25, 0.08);
+}
+
+/* GPU-Accelerated Bottom Journey Progress Line */
+.journeyProgress {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 100%;
+  height: 1.5px;
+  transform-origin: left center;
+  transform: scaleX(0);
+  will-change: transform;
+  pointer-events: none;
+  z-index: 4;
+  background: linear-gradient(
+    90deg,
+    rgba(176, 138, 74, 0.25),
+    #B08A4A 65%,
+    #EBCF8F 100%
+  );
+  transition:
+    transform 0.14s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.45s ease;
+}
+
+.journeyProgressLight {
+  background: linear-gradient(
+    90deg,
+    rgba(140, 103, 43, 0.28),
+    #8C672B 60%,
+    #B08A4A 100%
+  );
+}
+
+/* Reduced Motion Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .journeyLabel,
+  .stepBadge,
+  .slashLine,
+  .slashTip,
+  .journeyTrack,
+  .journeyProgress {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+}

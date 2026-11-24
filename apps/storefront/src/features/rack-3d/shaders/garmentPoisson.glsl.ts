@@ -42,27 +42,30 @@ export const GARMENT_FRAGMENT_SHADER = /* glsl */ `
 
   // Premultiplied-alpha aware 12-tap Poisson Disk optical DOF blur preventing dark halos
   vec4 soft(sampler2D mapTex, vec2 uv, float rad) {
+    vec4 result = vec4(0.0);
     if (rad < 0.0005) {
-      return texture2D(mapTex, uv);
-    }
-    float lodBias = log2(max(1.0, rad * 900.0)) - 0.6;
-    vec4 center = texture2D(mapTex, uv, lodBias);
-    vec3 rgbAcc = center.rgb * center.a * 1.5;
-    float aAcc = center.a * 1.5;
-    float wAcc = 1.5;
+      result = texture2D(mapTex, uv);
+    } else {
+      float lodBias = log2(max(1.0, rad * 900.0)) - 0.6;
+      vec4 center = texture2D(mapTex, uv, lodBias);
+      vec3 rgbAcc = center.rgb * center.a * 1.5;
+      float aAcc = center.a * 1.5;
+      float wAcc = 1.5;
 
-    vec2 spread = vec2(rad, rad / 1.5);
-    for (int k = 0; k < 12; k++) {
-      vec2 tapUv = clamp(uv + PD[k] * spread, vec2(0.001), vec2(0.999));
-      vec4 tap = texture2D(mapTex, tapUv, lodBias);
-      rgbAcc += tap.rgb * tap.a;
-      aAcc += tap.a;
-      wAcc += 1.0;
-    }
+      vec2 spread = vec2(rad, rad / 1.5);
+      for (int k = 0; k < 12; k++) {
+        vec2 tapUv = clamp(uv + PD[k] * spread, vec2(0.001), vec2(0.999));
+        vec4 tap = texture2D(mapTex, tapUv, lodBias);
+        rgbAcc += tap.rgb * tap.a;
+        aAcc += tap.a;
+        wAcc += 1.0;
+      }
 
-    float outAlpha = aAcc / wAcc;
-    vec3 outRgb = aAcc > 0.0005 ? (rgbAcc / aAcc) : vec3(0.0);
-    return vec4(outRgb, outAlpha);
+      float outAlpha = aAcc / wAcc;
+      vec3 outRgb = aAcc > 0.0005 ? (rgbAcc / aAcc) : vec3(0.0);
+      result = vec4(outRgb, outAlpha);
+    }
+    return result;
   }
 
   void main() {
@@ -76,7 +79,10 @@ export const GARMENT_FRAGMENT_SHADER = /* glsl */ `
 
     float mixAmt = clamp(uMix, 0.0, 1.0);
     vec4 sampleA = soft(uMapA, sampleUv, uBlur);
-    vec4 sampleB = mixAmt > 0.001 ? soft(uMapB, sampleUv, uBlur) : sampleA;
+    vec4 sampleB = sampleA;
+    if (mixAmt > 0.001) {
+      sampleB = soft(uMapB, sampleUv, uBlur);
+    }
 
     float alpha = mix(sampleA.a, sampleB.a, mixAmt);
     float finalAlpha = alpha * clamp(uAlpha, 0.0, 1.0);

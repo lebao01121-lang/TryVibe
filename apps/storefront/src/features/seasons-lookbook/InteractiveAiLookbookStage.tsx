@@ -52,7 +52,121 @@ export interface SeasonWearableSlotView {
   garmentRegionMask: string;
   maskBbox?: { x: number; y: number; w: number; h: number };
   materialOpticalProfile: MaterialOpticalProfile;
+  fallbackImageUrl?: string;
   variants: SeasonWearableVariantView[];
+}
+
+export const SEASONS_VITRINE_BASE = '/images/seasons-vitrine';
+const LEGACY_LOOKBOOK_SEGMENT = ['seasons', 'lookbook'].join('-');
+const LEGACY_LOOKBOOK_PREFIX = `/${LEGACY_LOOKBOOK_SEGMENT}/`;
+export const FALLBACK_DEFAULT_LOOKBOOK_URL = `${SEASONS_VITRINE_BASE}/lookbooks/xuan-tam-xuan-base.webp`;
+
+const LEGACY_VI_COLOR_KEY_MAP: Record<string, string> = {
+  'kem-nga': 'ivory',
+  'den-tuyen': 'jet-black',
+  'do-ruou-vang': 'wine-red',
+  'xanh-reu': 'sage-green',
+  'nau-cacao': 'espresso',
+};
+
+export function getSeasonLookbookFallbackUrl(seasonSlug: string): string {
+  const safeSlug = (seasonSlug || 'xuan-tam-xuan').trim().toLowerCase();
+  return `${SEASONS_VITRINE_BASE}/lookbooks/${safeSlug}-base.webp`;
+}
+
+export function getSeasonMaskFallbackUrl(
+  seasonSlug: string,
+  slotKey: string,
+): string {
+  const safeSlug = (seasonSlug || 'xuan-tam-xuan').trim().toLowerCase();
+  const safeSlot = (slotKey || 'top').trim().toLowerCase();
+  return `${SEASONS_VITRINE_BASE}/masks/${safeSlug}-mask-${safeSlot}.png`;
+}
+
+export function getVariantDefaultFallbackUrl(productSlug: string): string {
+  const safeSlug = (
+    productSlug || 'ao-so-mi-lua-to-tam-tam-xuan'
+  )
+    .trim()
+    .toLowerCase();
+  return `${SEASONS_VITRINE_BASE}/variants/${safeSlug}-default.webp`;
+}
+
+const VERIFIED_MACRO_COLORS_BY_SHEEN: Record<string, ReadonlySet<string>> = {
+  silk: new Set(['ivory', 'jet-black', 'wine-red', 'sage-green', 'champagne']),
+  linen: new Set(['ivory', 'sage-green', 'espresso', 'sand', 'jet-black']),
+  tweed: new Set(['ivory', 'espresso', 'jet-black', 'charcoal', 'wine-red']),
+  leather: new Set(['champagne', 'jet-black', 'wine-red', 'espresso']),
+};
+
+export function getMacroFallbackUrl(sheen?: string, colorKey?: string): string {
+  const normalizedSheen =
+    sheen === 'linen' || sheen === 'tweed' || sheen === 'leather' || sheen === 'silk'
+      ? sheen
+      : 'silk';
+  const rawColor = (colorKey || '').trim().toLowerCase();
+  const mappedColor = LEGACY_VI_COLOR_KEY_MAP[rawColor] ?? rawColor;
+  const defaultColorBySheen: Record<string, string> = {
+    silk: 'ivory',
+    linen: 'sand',
+    tweed: 'ivory',
+    leather: 'espresso',
+  };
+  const validColors = VERIFIED_MACRO_COLORS_BY_SHEEN[normalizedSheen];
+  const finalColor =
+    mappedColor && validColors?.has(mappedColor)
+      ? mappedColor
+      : defaultColorBySheen[normalizedSheen] || 'ivory';
+  return `${SEASONS_VITRINE_BASE}/macros/${normalizedSheen}-${finalColor}.webp`;
+}
+
+export function getOccasionMacroFallbackUrl(sheen?: string): string {
+  if (sheen === 'linen') return '/occasion-macro/organic-linen.webp';
+  if (sheen === 'tweed') return '/occasion-macro/artisan-tweed.webp';
+  if (sheen === 'leather') return '/occasion-macro/silk-satin-champagne.webp';
+  return '/occasion-macro/silk-pearl-cuff.webp';
+}
+
+export function resolveSeasonsVitrineUrl(
+  rawUrl: string | null | undefined,
+  fallbackUrl: string,
+): string {
+  const trimmed = typeof rawUrl === 'string' ? rawUrl.trim() : '';
+  if (!trimmed) return fallbackUrl;
+
+  if (!trimmed.startsWith(LEGACY_LOOKBOOK_PREFIX)) {
+    return trimmed;
+  }
+
+  const rel = trimmed.slice(LEGACY_LOOKBOOK_PREFIX.length);
+
+  if (rel.startsWith('macros/')) {
+    let filename = rel.slice('macros/'.length);
+    for (const [viKey, enKey] of Object.entries(LEGACY_VI_COLOR_KEY_MAP)) {
+      filename = filename.replace(`-${viKey}.webp`, `-${enKey}.webp`);
+    }
+    return `${SEASONS_VITRINE_BASE}/macros/${filename}`;
+  }
+
+  if (rel.startsWith('variants/')) {
+    let filename = rel.slice('variants/'.length);
+    for (const [viKey, enKey] of Object.entries(LEGACY_VI_COLOR_KEY_MAP)) {
+      filename = filename.replace(`-${viKey}.webp`, `-${enKey}.webp`);
+    }
+    return `${SEASONS_VITRINE_BASE}/variants/${filename}`;
+  }
+
+  const baseMatch = /^([^/]+)\/base\.webp$/i.exec(rel);
+  if (baseMatch?.[1]) {
+    return `${SEASONS_VITRINE_BASE}/lookbooks/${baseMatch[1]}-base.webp`;
+  }
+
+  const maskMatch = /^([^/]+)\/mask-([^/]+)\.png$/i.exec(rel);
+  if (maskMatch?.[1] && maskMatch[2]) {
+    return `${SEASONS_VITRINE_BASE}/masks/${maskMatch[1]}-mask-${maskMatch[2]}.png`;
+  }
+
+  return fallbackUrl;
 }
 
 export interface SeasonChapterView {
@@ -172,10 +286,53 @@ export function InteractiveAiLookbookStage({
   const stageContainerRef = useRef<HTMLDivElement | null>(null);
   const curtainLayerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fallbackImgRef = useRef<HTMLImageElement | null>(null);
   const prevSeasonSlugRef = useRef<string | null>(null);
 
   const { cameraActive } = useMotionState();
   const reducedMotion = usePrefersReducedMotion();
+
+  const localBaseFallbackUrl = getSeasonLookbookFallbackUrl(season.slug);
+  const resolvedBaseUrl = resolveSeasonsVitrineUrl(
+    season.baseEditorialImageUrl,
+    localBaseFallbackUrl,
+  );
+
+  const baseImgCandidates = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [resolvedBaseUrl, localBaseFallbackUrl, FALLBACK_DEFAULT_LOOKBOOK_URL].filter(
+            (u) => u.length > 0,
+          ),
+        ),
+      ),
+    [localBaseFallbackUrl, resolvedBaseUrl],
+  );
+
+  const [baseImgAttemptIdx, setBaseImgAttemptIdx] = useState<number>(0);
+
+  useEffect(() => {
+    setBaseImgAttemptIdx(0);
+  }, [resolvedBaseUrl, season.slug]);
+
+  const activeFallbackImgSrc =
+    baseImgCandidates[
+      Math.min(baseImgAttemptIdx, Math.max(0, baseImgCandidates.length - 1))
+    ] ?? FALLBACK_DEFAULT_LOOKBOOK_URL;
+
+  const advanceFallbackImg = useCallback(() => {
+    setBaseImgAttemptIdx((prev) =>
+      prev + 1 < baseImgCandidates.length ? prev + 1 : prev,
+    );
+  }, [baseImgCandidates.length]);
+
+  useEffect(() => {
+    const img = fallbackImgRef.current;
+    if (img && img.complete && img.naturalWidth === 0) {
+      advanceFallbackImg();
+    }
+  }, [activeFallbackImgSrc, advanceFallbackImg]);
 
   const [hydratedScene, setHydratedScene] = useState<HydratedSeasonScene | null>(
     () => cache.getCached(season.slug),
@@ -189,29 +346,43 @@ export function InteractiveAiLookbookStage({
   useEffect(() => {
     let cancelled = false;
     const cached = cache.getCached(season.slug);
-    if (cached && cached.baseUrl === season.baseEditorialImageUrl) {
+    if (
+      cached &&
+      (cached.baseUrl === resolvedBaseUrl || cached.baseUrl === localBaseFallbackUrl)
+    ) {
       setHydratedScene(cached);
       return;
     }
 
     const maskInputs = season.wearableSlots.map((slot) => ({
       slotKey: slot.slotKey,
-      garmentRegionMask: slot.garmentRegionMask,
+      garmentRegionMask: resolveSeasonsVitrineUrl(
+        slot.garmentRegionMask,
+        getSeasonMaskFallbackUrl(season.slug, slot.slotKey),
+      ),
       materialOpticalProfile: slot.materialOpticalProfile,
     }));
 
-    void cache
-      .hydrateSeason(season.slug, season.baseEditorialImageUrl, maskInputs)
-      .then((scene) => {
-        if (!cancelled && scene) {
-          setHydratedScene(scene);
-        }
-      });
+    const hydrateWithLocalFallback = async () => {
+      let scene = await cache.hydrateSeason(season.slug, resolvedBaseUrl, maskInputs);
+      if (!scene && resolvedBaseUrl !== localBaseFallbackUrl) {
+        scene = await cache.hydrateSeason(
+          season.slug,
+          localBaseFallbackUrl,
+          maskInputs,
+        );
+      }
+      if (!cancelled && scene) {
+        setHydratedScene(scene);
+      }
+    };
+
+    void hydrateWithLocalFallback();
 
     return () => {
       cancelled = true;
     };
-  }, [cache, season.baseEditorialImageUrl, season.slug, season.wearableSlots]);
+  }, [cache, localBaseFallbackUrl, resolvedBaseUrl, season.slug, season.wearableSlots]);
 
   // Build cumulative photometric slot recolor requests (TOP + BOTTOM + ACCESSORY simultaneously)
   const slotRequests = useMemo<PhotometricRecolorSlotRequest[]>(() => {
@@ -268,11 +439,17 @@ export function InteractiveAiLookbookStage({
 
   // Safely preload distinct server-cached AI restyle image before crossfading (guarantees 0 brokenImgs)
   useEffect(() => {
-    if (!serverSceneUrl || !hasAnyCustomColor) {
+    const resolvedServerUrl = serverSceneUrl
+      ? resolveSeasonsVitrineUrl(serverSceneUrl, '')
+      : '';
+    if (!resolvedServerUrl || !hasAnyCustomColor) {
       setVerifiedServerOverlayUrl(null);
       return;
     }
-    if (serverSceneUrl === season.baseEditorialImageUrl) {
+    if (
+      resolvedServerUrl === resolvedBaseUrl ||
+      resolvedServerUrl === localBaseFallbackUrl
+    ) {
       setVerifiedServerOverlayUrl(null);
       return;
     }
@@ -280,12 +457,15 @@ export function InteractiveAiLookbookStage({
     let cancelled = false;
     const preloader = new Image();
     preloader.decoding = 'async';
-    if (serverSceneUrl.startsWith('http://') || serverSceneUrl.startsWith('https://')) {
+    if (
+      resolvedServerUrl.startsWith('http://') ||
+      resolvedServerUrl.startsWith('https://')
+    ) {
       preloader.crossOrigin = 'anonymous';
     }
     preloader.onload = () => {
       if (!cancelled && preloader.naturalWidth > 0) {
-        setVerifiedServerOverlayUrl(serverSceneUrl);
+        setVerifiedServerOverlayUrl(resolvedServerUrl);
       }
     };
     preloader.onerror = () => {
@@ -293,12 +473,12 @@ export function InteractiveAiLookbookStage({
         setVerifiedServerOverlayUrl(null);
       }
     };
-    preloader.src = serverSceneUrl;
+    preloader.src = resolvedServerUrl;
 
     return () => {
       cancelled = true;
     };
-  }, [hasAnyCustomColor, season.baseEditorialImageUrl, serverSceneUrl]);
+  }, [hasAnyCustomColor, localBaseFallbackUrl, resolvedBaseUrl, serverSceneUrl]);
 
   // Trigger 0.48s AiOpticalScanBeam on color selection (auto-paused when cameraActive === true)
   useEffect(() => {
@@ -444,11 +624,13 @@ export function InteractiveAiLookbookStage({
         {/* Instant editorial base fallback visible only until canvas finishes pixel hydration */}
         {!sceneReady ? (
           <img
-            src={season.baseEditorialImageUrl}
+            ref={fallbackImgRef}
+            src={activeFallbackImgSrc}
             alt={`${season.name} — ${season.materialHeadline}`}
             className={styles.aiFallbackImg}
             loading="eager"
             decoding="async"
+            onError={advanceFallbackImg}
           />
         ) : null}
 

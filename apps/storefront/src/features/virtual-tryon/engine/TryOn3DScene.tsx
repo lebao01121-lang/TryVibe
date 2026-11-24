@@ -325,27 +325,33 @@ function applyGarmentsToPose(
     let depthScale = clamp(shoulderWorldW / 0.44, 0.65, 1.45);
 
     if (slot === 'ONE_PIECE') {
-      targetH = torsoWorldH * 2.02;
+      targetH = torsoWorldH * 1.92;
       targetW = clamp(
         Math.max(shoulderWorldW * 1.54, targetH * aspect * 0.78),
         shoulderWorldW * 1.42,
-        shoulderWorldW * 2.45,
+        shoulderWorldW * 2.4,
       );
-      anchorX = shoulderX * 0.6 + hipX * 0.4;
-      anchorY = shoulderY + torsoWorldH * 0.1 - targetH * 0.46;
+      anchorX = shoulderX * 0.65 + hipX * 0.35;
+      // Align shoulder/collar seam cleanly onto subject's shoulder line
+      anchorY = shoulderY + torsoWorldH * 0.14 - targetH * 0.42;
       zPos = 0.024;
     } else if (slot === 'TOP') {
-      targetH = torsoWorldH * 1.2;
+      targetH = clamp(
+        torsoWorldH * 1.08,
+        shoulderWorldW * 1.15,
+        torsoWorldH * 1.24,
+      );
       targetW = clamp(
-        Math.max(shoulderWorldW * 1.56, targetH * aspect * 0.9),
-        shoulderWorldW * 1.44,
+        Math.max(shoulderWorldW * 1.58, targetH * aspect * 0.92),
+        shoulderWorldW * 1.46,
         shoulderWorldW * 2.35,
       );
       anchorX = shoulderX * 0.78 + hipX * 0.22;
-      anchorY = shoulderY + torsoWorldH * 0.11 - targetH * 0.44;
+      // Sit neckline/shoulder ridge squarely across real shoulders
+      anchorY = shoulderY + torsoWorldH * 0.14 - targetH * 0.39;
       zPos = 0.028;
     } else if (slot === 'BOTTOM') {
-      targetH = torsoWorldH * 1.46;
+      targetH = torsoWorldH * 1.44;
       targetW = clamp(
         Math.max(shoulderWorldW * 1.24, targetH * aspect * 0.88),
         shoulderWorldW * 1.12,
@@ -357,15 +363,19 @@ function applyGarmentsToPose(
       anchorY = waistY + torsoWorldH * 0.08 - targetH * 0.47;
       zPos = 0.008;
     } else {
-      // OUTERWEAR sits cleanly in front of inner TOP / ONE_PIECE
-      targetH = torsoWorldH * 1.38;
-      targetW = clamp(
-        Math.max(shoulderWorldW * 1.72, targetH * aspect * 0.94),
-        shoulderWorldW * 1.58,
-        shoulderWorldW * 2.6,
+      // OUTERWEAR sits cleanly on subject's shoulder line and in front of inner TOP / ONE_PIECE
+      targetH = clamp(
+        torsoWorldH * 1.16,
+        shoulderWorldW * 1.22,
+        torsoWorldH * 1.32,
       );
-      anchorX = shoulderX * 0.75 + hipX * 0.25;
-      anchorY = shoulderY + torsoWorldH * 0.13 - targetH * 0.44;
+      targetW = clamp(
+        Math.max(shoulderWorldW * 1.72, targetH * aspect * 0.96),
+        shoulderWorldW * 1.6,
+        shoulderWorldW * 2.55,
+      );
+      anchorX = shoulderX * 0.78 + hipX * 0.22;
+      anchorY = shoulderY + torsoWorldH * 0.15 - targetH * 0.38;
       zPos = hasInnerLayer ? 0.064 : 0.032;
       depthScale *= hasInnerLayer ? 1.16 : 1.05;
     }
@@ -1229,8 +1239,15 @@ export const TryOn3DScene = forwardRef<TryOn3DSceneHandle, TryOn3DSceneProps>(
       }
 
       let cancelled = false;
-      // Instant ergonomic pre-rig from hint so garments appear in < 50ms before WASM finishes
-      photoPoseRef.current = buildFallbackPoseFrame(photoPoseHint, false);
+      const containerInit = containerRef.current;
+      // Instant cover-projected ergonomic pre-rig from hint so garments align before WASM finishes
+      photoPoseRef.current = buildFallbackPoseFrame(photoPoseHint, false, {
+        srcWidth: 768,
+        srcHeight: 1024,
+        dstWidth: containerInit?.clientWidth || 420,
+        dstHeight: containerInit?.clientHeight || 560,
+        mirrored: false,
+      });
 
       const img = new Image();
       if (!photoUrl.startsWith('data:') && !photoUrl.startsWith('blob:')) {
@@ -1242,6 +1259,13 @@ export const TryOn3DScene = forwardRef<TryOn3DSceneHandle, TryOn3DSceneProps>(
         const container = containerRef.current;
         const dstW = container?.clientWidth || 420;
         const dstH = container?.clientHeight || 560;
+        photoPoseRef.current = buildFallbackPoseFrame(photoPoseHint, false, {
+          srcWidth: img.naturalWidth || 768,
+          srcHeight: img.naturalHeight || 1024,
+          dstWidth: dstW,
+          dstHeight: dstH,
+          mirrored: false,
+        });
         void detectPhotoPoseSafe(img, dstW, dstH, photoPoseHint).then((pose) => {
           if (!cancelled) {
             photoPoseRef.current = pose;
@@ -1250,7 +1274,14 @@ export const TryOn3DScene = forwardRef<TryOn3DSceneHandle, TryOn3DSceneProps>(
       };
       img.onerror = () => {
         if (!cancelled) {
-          photoPoseRef.current = buildFallbackPoseFrame(photoPoseHint, false);
+          const container = containerRef.current;
+          photoPoseRef.current = buildFallbackPoseFrame(photoPoseHint, false, {
+            srcWidth: 768,
+            srcHeight: 1024,
+            dstWidth: container?.clientWidth || 420,
+            dstHeight: container?.clientHeight || 560,
+            mirrored: false,
+          });
         }
       };
       img.src = photoUrl;

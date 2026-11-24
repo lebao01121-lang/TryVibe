@@ -383,57 +383,61 @@ export function OutfitStudio({
     let cancelled = false;
 
     const loadShared = async () => {
-      const res = await apiFetch<SavedOutfitDto>(
-        `/bff/v1/storefront/outfits/share/${encodeURIComponent(initialShareCode)}`,
-        {
-          headers: getGuestHeader(),
-          skipAuthRefresh: true,
-        },
-      );
-      if (cancelled || !res.ok || !res.data) return;
+      try {
+        const res = await apiFetch<SavedOutfitDto>(
+          `/bff/v1/storefront/outfits/share/${encodeURIComponent(initialShareCode)}`,
+          {
+            headers: getGuestHeader(),
+            skipAuthRefresh: true,
+          },
+        );
+        if (cancelled || !res.ok || !res.data) return;
 
-      let restored: OutfitSlotsMap = {};
-      for (const slotItem of res.data.slots) {
-        const prod = productById.get(slotItem.productId);
-        const selection: OutfitSlotSelection = prod
-          ? resolveSelectionFromProduct(prod, {
-              slot: slotItem.slot,
-              variantIndex: Math.max(
-                0,
-                prod.variants.findIndex((v) => v.id === slotItem.variantId),
-              ),
-              preferredSkuId: slotItem.skuId,
-            })
-          : {
-              slot: slotItem.slot,
-              productId: slotItem.productId,
-              variantId: slotItem.variantId,
-              skuId: slotItem.skuId,
-              slug: slotItem.slug ?? '',
-              productName: slotItem.productName ?? 'Thiết kế Tầm Xuân',
-              colorName: slotItem.colorName ?? 'Tiêu chuẩn',
-              colorHex: slotItem.colorHex ?? '#EBD9B4',
-              sizeCode: slotItem.sizeCode ?? 'M',
-              imageUrl: slotItem.imageUrl ?? null,
-              backImageUrl: null,
-              unitPriceVnd: slotItem.unitPriceVnd ?? 0,
-              qty: slotItem.qty ?? 1,
-            };
-        restored = applyOutfitSlotSelection(restored, selection);
-      }
+        let restored: OutfitSlotsMap = {};
+        for (const slotItem of res.data.slots) {
+          const prod = productById.get(slotItem.productId);
+          const selection: OutfitSlotSelection = prod
+            ? resolveSelectionFromProduct(prod, {
+                slot: slotItem.slot,
+                variantIndex: Math.max(
+                  0,
+                  prod.variants.findIndex((v) => v.id === slotItem.variantId),
+                ),
+                preferredSkuId: slotItem.skuId,
+              })
+            : {
+                slot: slotItem.slot,
+                productId: slotItem.productId,
+                variantId: slotItem.variantId,
+                skuId: slotItem.skuId,
+                slug: slotItem.slug ?? '',
+                productName: slotItem.productName ?? 'Thiết kế Tầm Xuân',
+                colorName: slotItem.colorName ?? 'Tiêu chuẩn',
+                colorHex: slotItem.colorHex ?? '#EBD9B4',
+                sizeCode: slotItem.sizeCode ?? 'M',
+                imageUrl: slotItem.imageUrl ?? null,
+                backImageUrl: null,
+                unitPriceVnd: slotItem.unitPriceVnd ?? 0,
+                qty: slotItem.qty ?? 1,
+              };
+          restored = applyOutfitSlotSelection(restored, selection);
+        }
 
-      setSlots(restored);
-      setActivePresetId(null);
-      if (res.data.packagingOptionId) {
-        setSelectedPkgId(res.data.packagingOptionId);
+        setSlots(restored);
+        setActivePresetId(null);
+        if (res.data.packagingOptionId) {
+          setSelectedPkgId(res.data.packagingOptionId);
+        }
+        if (res.data.giftNote) {
+          setGiftNote(res.data.giftNote);
+        }
+        setRestoredTitle(res.data.title);
+        setStatusFeedback(
+          `Đã khôi phục bộ phối “${res.data.title}” (#${res.data.shareCode}).`,
+        );
+      } catch {
+        // Graceful offline fallback if BFF is temporarily unavailable
       }
-      if (res.data.giftNote) {
-        setGiftNote(res.data.giftNote);
-      }
-      setRestoredTitle(res.data.title);
-      setStatusFeedback(
-        `Đã khôi phục bộ phối “${res.data.title}” (#${res.data.shareCode}).`,
-      );
     };
 
     void loadShared();
@@ -461,17 +465,21 @@ export function OutfitStudio({
     let cancelled = false;
 
     const loadStock = async () => {
-      const res = await apiFetch<BatchAvailabilityResponse>(
-        '/bff/v1/storefront/inventory/batch-availability',
-        {
-          method: 'POST',
-          headers: getGuestHeader(),
-          skipAuthRefresh: true,
-          body: JSON.stringify({ skuIds: Array.from(skuIds) }),
-        },
-      );
-      if (cancelled || !res.ok || !res.data) return;
-      setAvailabilityMap((prev) => ({ ...prev, ...res.data!.items }));
+      try {
+        const res = await apiFetch<BatchAvailabilityResponse>(
+          '/bff/v1/storefront/inventory/batch-availability',
+          {
+            method: 'POST',
+            headers: getGuestHeader(),
+            skipAuthRefresh: true,
+            body: JSON.stringify({ skuIds: Array.from(skuIds) }),
+          },
+        );
+        if (cancelled || !res.ok || !res.data?.items) return;
+        setAvailabilityMap((prev) => ({ ...prev, ...res.data!.items }));
+      } catch {
+        // Graceful offline fallback: retain catalog SKU stock status without unhandled rejection
+      }
     };
 
     void loadStock();
@@ -484,45 +492,60 @@ export function OutfitStudio({
   useEffect(() => {
     if (orderedSelections.length === 0) {
       setPreviewData(null);
+      setIsPreviewLoading(false);
       return;
     }
 
     let cancelled = false;
     setIsPreviewLoading(true);
 
-    const timer = window.setTimeout(async () => {
-      const res = await apiFetch<OutfitStudioPreviewResponse>(
-        '/bff/v1/storefront/outfit-studio/preview',
-        {
-          method: 'POST',
-          headers: getGuestHeader(),
-          skipAuthRefresh: true,
-          body: JSON.stringify({
-            items: orderedSelections.map((item) => ({
-              slot: item.slot,
-              productId: item.productId,
-              variantId: item.variantId,
-              skuId: item.skuId,
-              slug: item.slug,
-              productName: item.productName,
-              colorName: item.colorName,
-              colorHex: item.colorHex,
-              sizeCode: item.sizeCode,
-              imageUrl: item.imageUrl,
-              unitPriceVnd: item.unitPriceVnd,
-              qty: item.qty,
-            })),
-            packagingOptionId: activePackaging?.id ?? null,
-            giftNote: giftNote.trim() || null,
-          }),
-        },
-      );
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await apiFetch<OutfitStudioPreviewResponse>(
+            '/bff/v1/storefront/outfit-studio/preview',
+            {
+              method: 'POST',
+              headers: getGuestHeader(),
+              skipAuthRefresh: true,
+              body: JSON.stringify({
+                items: orderedSelections.map((item) => ({
+                  slot: item.slot,
+                  productId: item.productId,
+                  variantId: item.variantId,
+                  skuId: item.skuId,
+                  slug: item.slug,
+                  productName: item.productName,
+                  colorName: item.colorName,
+                  colorHex: item.colorHex,
+                  sizeCode: item.sizeCode,
+                  imageUrl: item.imageUrl,
+                  unitPriceVnd: item.unitPriceVnd,
+                  qty: item.qty,
+                })),
+                packagingOptionId: activePackaging?.id ?? null,
+                giftNote: giftNote.trim() || null,
+              }),
+            },
+          );
 
-      if (cancelled) return;
-      setIsPreviewLoading(false);
-      if (res.ok && res.data) {
-        setPreviewData(res.data);
-      }
+          if (cancelled) return;
+          if (res.ok && res.data) {
+            setPreviewData(res.data);
+          } else {
+            setPreviewData(null);
+          }
+        } catch {
+          // Graceful offline fallback to localTotals without unhandled rejection
+          if (!cancelled) {
+            setPreviewData(null);
+          }
+        } finally {
+          if (!cancelled) {
+            setIsPreviewLoading(false);
+          }
+        }
+      })();
     }, 180);
 
     return () => {

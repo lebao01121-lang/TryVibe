@@ -35,12 +35,12 @@ const sessionListeners = new Set<() => void>();
 let activeRefreshPromise: Promise<string | null> | null = null;
 
 export function getBffBaseUrl(): string {
-  if (typeof window === 'undefined' && process.env.BFF_INTERNAL_URL) {
-    return process.env.BFF_INTERNAL_URL.replace(/\/$/, '');
+  if (typeof window !== 'undefined') {
+    return '';
   }
-  return (
-    process.env.NEXT_PUBLIC_BFF_URL?.replace(/\/$/, '') ||
-    'http://127.0.0.1:4000'
+  return (process.env.BFF_INTERNAL_URL || 'http://127.0.0.1:4000').replace(
+    /\/+$/,
+    '',
   );
 }
 
@@ -49,7 +49,7 @@ function resolveApiRequestUrl(path: string): string {
     return path;
   }
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  if (typeof window !== 'undefined' && normalizedPath.startsWith('/bff/')) {
+  if (typeof window !== 'undefined') {
     return normalizedPath;
   }
   return `${getBffBaseUrl()}${normalizedPath}`;

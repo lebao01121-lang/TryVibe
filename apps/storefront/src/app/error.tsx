@@ -3,6 +3,20 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 
+const CHUNK_RELOAD_STORAGE_KEY = 'atelier_chunk_reload_ts';
+const CHUNK_RELOAD_TTL_MS = 15_000;
+
+function isChunkLoadError(
+  error: (Error & { digest?: string }) | null | undefined,
+): boolean {
+  if (!error) return false;
+  if (error.name === 'ChunkLoadError') return true;
+  const message = typeof error.message === 'string' ? error.message : '';
+  return /Loading chunk [\w-]+ failed|Failed to fetch dynamically imported module|Importing a module script failed/i.test(
+    message,
+  );
+}
+
 export interface StorefrontErrorProps {
   error: Error & { digest?: string };
   reset: () => void;
@@ -12,11 +26,37 @@ export default function StorefrontError({
   error,
   reset,
 }: StorefrontErrorProps) {
+  const chunkError = isChunkLoadError(error);
+
   useEffect(() => {
     if (process.env.NODE_ENV !== 'production') {
       console.error('[StorefrontError]', error);
     }
-  }, [error]);
+
+    if (!chunkError || typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const now = Date.now();
+      const rawLast = window.sessionStorage.getItem(CHUNK_RELOAD_STORAGE_KEY);
+      const lastTs = rawLast ? Number.parseInt(rawLast, 10) : 0;
+      if (!Number.isFinite(lastTs) || now - lastTs > CHUNK_RELOAD_TTL_MS) {
+        window.sessionStorage.setItem(CHUNK_RELOAD_STORAGE_KEY, String(now));
+        window.location.reload();
+      }
+    } catch {
+      // Ignore storage errors in restricted browsing contexts
+    }
+  }, [chunkError, error]);
+
+  const handleRetry = () => {
+    if (chunkError && typeof window !== 'undefined') {
+      window.location.reload();
+      return;
+    }
+    reset();
+  };
 
   return (
     <section
@@ -61,7 +101,7 @@ export default function StorefrontError({
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3.5">
           <button
             type="button"
-            onClick={reset}
+            onClick={handleRetry}
             className="rounded-full bg-[#1C1410] px-7 py-3 text-xs font-medium tracking-[0.2em] uppercase text-[#EBCF8F] transition-colors hover:bg-[#2A1E17]"
           >
             Thử tải lại

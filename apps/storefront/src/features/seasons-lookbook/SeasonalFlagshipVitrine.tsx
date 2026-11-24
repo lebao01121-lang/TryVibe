@@ -34,7 +34,13 @@ import {
   type TryOnGarmentRef,
 } from '@/lib/storefront-actions';
 import {
+  getMacroFallbackUrl,
+  getOccasionMacroFallbackUrl,
+  getSeasonLookbookFallbackUrl,
+  getSeasonMaskFallbackUrl,
+  getVariantDefaultFallbackUrl,
   InteractiveAiLookbookStage,
+  resolveSeasonsVitrineUrl,
   type ScanBeamTrigger,
   type SeasonChapterView,
   type SeasonWearableSlotView,
@@ -81,12 +87,12 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
     order: 1,
     months: 'T1–T2',
     name: 'Xuân Lụa Bảo Lộc',
-    shortName: 'XUÂN LỤA BẢO LỘC',
+    shortName: 'XUÂN LỤA',
     materialHeadline: 'Lụa Tơ Tằm Bảo Lộc 22 Momme',
     note: 'Tơ tằm dệt nổi ánh ngọc và phom cổ đổ mềm rủ thanh thoát.',
     isCurrent: true,
     totalDesigns: 12,
-    baseEditorialImageUrl: '/seasons-lookbook/xuan-tam-xuan/base.webp',
+    baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/xuan-tam-xuan-base.webp',
     wearableSlots: [
       {
         slotKey: 'TOP',
@@ -94,66 +100,66 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
         productSlug: 'ao-so-mi-lua-to-tam-tam-xuan',
         productName: 'Áo Sơ Mi Lụa Tơ Tằm Tầm Xuân',
         basePriceVnd: 1_850_000,
-        pinPosition: { xPercent: 60, yPercent: 39 },
-        garmentRegionMask: '/seasons-lookbook/xuan-tam-xuan/mask-top.png',
-        maskBbox: { x: 0.24, y: 0.25, w: 0.52, h: 0.31 },
+        pinPosition: { xPercent: 48, yPercent: 34 },
+        garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-top.png',
+        maskBbox: { x: 0.28, y: 0.22, w: 0.44, h: 0.28 },
         materialOpticalProfile: {
           sheen: 'silk',
-          specularIntensity: 0.72,
-          shadowDepth: 0.78,
+          specularIntensity: 0.45,
+          shadowDepth: 0.34,
         },
         variants: [
           {
-            variantId: 'var-s01-top-kem-nga',
-            skuDefaultId: 'sku-s01-top-kem-nga-m',
-            colorKey: 'kem-nga',
+            variantId: 'var-s01-top-ivory',
+            skuDefaultId: 'sku-s01-top-ivory-m',
+            colorKey: 'ivory',
             colorName: 'Kem Ngà',
             colorHex: '#F4EFE6',
             inStockSizes: ['XS', 'S', 'M', 'L', 'XL'],
             studioCutoutUrl:
-              '/seasons-lookbook/variants/ao-so-mi-lua-to-tam-tam-xuan-kem-nga.webp',
-            macroSwatchUrl: '/seasons-lookbook/macros/silk-kem-nga.webp',
+              '/images/seasons-vitrine/variants/ao-so-mi-lua-to-tam-tam-xuan-ivory.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/silk-ivory.webp',
             fabricSpecText:
               'Lụa Tơ Tằm Bảo Lộc · Kem Ngà 22 Momme · Thoáng khí 100%',
           },
           {
-            variantId: 'var-s01-top-den-tuyen',
-            skuDefaultId: 'sku-s01-top-den-tuyen-m',
-            colorKey: 'den-tuyen',
+            variantId: 'var-s01-top-jet-black',
+            skuDefaultId: 'sku-s01-top-jet-black-m',
+            colorKey: 'jet-black',
             colorName: 'Đen Tuyền',
             colorHex: '#171615',
             inStockSizes: ['XS', 'S', 'M', 'L', 'XL'],
             studioCutoutUrl:
-              '/seasons-lookbook/variants/ao-so-mi-lua-to-tam-tam-xuan-den-tuyen.webp',
-            macroSwatchUrl: '/seasons-lookbook/macros/silk-jet-black.webp',
+              '/images/seasons-vitrine/variants/ao-so-mi-lua-to-tam-tam-xuan-jet-black.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/silk-jet-black.webp',
             fabricSpecText:
-              'Lụa Tơ Tằm Bảo Lộc · Đen Tuyền 22 Momme · Thoáng khí 100%',
+              'Lụa Tơ Tằm Bảo Lộc · Đen Tuyền 22 Momme · Ánh gương dịu',
           },
           {
-            variantId: 'var-s01-top-do-ruou-vang',
-            skuDefaultId: 'sku-s01-top-do-ruou-vang-m',
-            colorKey: 'do-ruou-vang',
+            variantId: 'var-s01-top-wine-red',
+            skuDefaultId: 'sku-s01-top-wine-red-m',
+            colorKey: 'wine-red',
             colorName: 'Đỏ Rượu Vang',
             colorHex: '#5E1924',
             inStockSizes: ['XS', 'S', 'M', 'L'],
             studioCutoutUrl:
-              '/seasons-lookbook/variants/ao-so-mi-lua-to-tam-tam-xuan-do-ruou-vang.webp',
-            macroSwatchUrl: '/seasons-lookbook/macros/silk-do-ruou-vang.webp',
+              '/images/seasons-vitrine/variants/ao-so-mi-lua-to-tam-tam-xuan-wine-red.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/silk-wine-red.webp',
             fabricSpecText:
-              'Lụa Tơ Tằm Bảo Lộc · Đỏ Rượu Vang 22 Momme · Ánh satin tự nhiên',
+              'Lụa Tơ Tằm Bảo Lộc · Đỏ Rượu Vang 22 Momme · Sắc sâu sang trọng',
           },
           {
-            variantId: 'var-s01-top-xanh-reu',
-            skuDefaultId: 'sku-s01-top-xanh-reu-m',
-            colorKey: 'xanh-reu',
+            variantId: 'var-s01-top-sage-green',
+            skuDefaultId: 'sku-s01-top-sage-green-m',
+            colorKey: 'sage-green',
             colorName: 'Xanh Rêu',
             colorHex: '#4A5546',
             inStockSizes: ['S', 'M', 'L', 'XL'],
             studioCutoutUrl:
-              '/seasons-lookbook/variants/ao-so-mi-lua-to-tam-tam-xuan-xanh-reu.webp',
-            macroSwatchUrl: '/seasons-lookbook/macros/silk-xanh-reu.webp',
+              '/images/seasons-vitrine/variants/ao-so-mi-lua-to-tam-tam-xuan-sage-green.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/silk-sage-green.webp',
             fabricSpecText:
-              'Lụa Tơ Tằm Bảo Lộc · Xanh Rêu 22 Momme · Dệt mịn thủ công',
+              'Lụa Tơ Tằm Bảo Lộc · Xanh Rêu 22 Momme · Mát dịu tự nhiên',
           },
         ],
       },
@@ -163,53 +169,66 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
         productSlug: 'chan-vay-xep-ly-midi-cap-cao',
         productName: 'Chân Váy Xếp Ly Midi Cạp Cao',
         basePriceVnd: 2_150_000,
-        pinPosition: { xPercent: 58, yPercent: 64 },
-        garmentRegionMask: '/seasons-lookbook/xuan-tam-xuan/mask-bottom.png',
-        maskBbox: { x: 0.18, y: 0.51, w: 0.62, h: 0.44 },
+        pinPosition: { xPercent: 52, yPercent: 64 },
+        garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-bottom.png',
+        maskBbox: { x: 0.24, y: 0.48, w: 0.52, h: 0.4 },
         materialOpticalProfile: {
           sheen: 'silk',
-          specularIntensity: 0.62,
-          shadowDepth: 0.72,
+          specularIntensity: 0.36,
+          shadowDepth: 0.38,
         },
         variants: [
           {
-            variantId: 'var-s01-bot-kem-nga',
-            skuDefaultId: 'sku-s01-bot-kem-nga-m',
-            colorKey: 'kem-nga',
-            colorName: 'Kem Ngà',
-            colorHex: '#F4EFE6',
+            variantId: 'var-s01-bot-ivory',
+            skuDefaultId: 'sku-s01-bot-ivory-m',
+            colorKey: 'ivory',
+            colorName: 'Kem Sữa',
+            colorHex: '#EDE3D1',
             inStockSizes: ['XS', 'S', 'M', 'L', 'XL'],
             studioCutoutUrl:
-              '/seasons-lookbook/variants/chan-vay-xep-ly-midi-cap-cao-kem-nga.webp',
-            macroSwatchUrl: '/seasons-lookbook/macros/silk-kem-nga.webp',
+              '/images/seasons-vitrine/variants/chan-vay-xep-ly-midi-cap-cao-ivory.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/pleated-silk-ivory.webp',
             fabricSpecText:
-              'Lụa Crepe Xếp Ly · Kem Ngà 22 Momme · Giữ nếp tự nhiên',
+              'Lụa Xếp Ly Tencel · Kem Sữa · Sóng ly giữ phom bền bỉ',
           },
           {
-            variantId: 'var-s01-bot-den-tuyen',
-            skuDefaultId: 'sku-s01-bot-den-tuyen-m',
-            colorKey: 'den-tuyen',
-            colorName: 'Đen Tuyền',
-            colorHex: '#171615',
+            variantId: 'var-s01-bot-espresso',
+            skuDefaultId: 'sku-s01-bot-espresso-m',
+            colorKey: 'espresso',
+            colorName: 'Nâu Cacao',
+            colorHex: '#3D2B22',
             inStockSizes: ['XS', 'S', 'M', 'L'],
             studioCutoutUrl:
-              '/seasons-lookbook/variants/chan-vay-xep-ly-midi-cap-cao-den-tuyen.webp',
-            macroSwatchUrl: '/seasons-lookbook/macros/silk-jet-black.webp',
+              '/images/seasons-vitrine/variants/chan-vay-xep-ly-midi-cap-cao-espresso.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/pleated-silk-espresso.webp',
             fabricSpecText:
-              'Lụa Crepe Xếp Ly · Đen Tuyền 22 Momme · Độ rủ thanh thoát',
+              'Lụa Xếp Ly Tencel · Nâu Cacao · Chiều sâu Quiet Luxury',
           },
           {
-            variantId: 'var-s01-bot-do-ruou-vang',
-            skuDefaultId: 'sku-s01-bot-do-ruou-vang-m',
-            colorKey: 'do-ruou-vang',
+            variantId: 'var-s01-bot-wine-red',
+            skuDefaultId: 'sku-s01-bot-wine-red-m',
+            colorKey: 'wine-red',
             colorName: 'Đỏ Rượu Vang',
             colorHex: '#5E1924',
             inStockSizes: ['S', 'M', 'L'],
             studioCutoutUrl:
-              '/seasons-lookbook/variants/chan-vay-xep-ly-midi-cap-cao-do-ruou-vang.webp',
-            macroSwatchUrl: '/seasons-lookbook/macros/silk-do-ruou-vang.webp',
+              '/images/seasons-vitrine/variants/chan-vay-xep-ly-midi-cap-cao-wine-red.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/pleated-silk-wine-red.webp',
             fabricSpecText:
-              'Lụa Crepe Xếp Ly · Đỏ Rượu Vang · Cạp cao tôn eo',
+              'Lụa Xếp Ly Tencel · Đỏ Rượu Vang · Tôn chuyển động nhẹ nhàng',
+          },
+          {
+            variantId: 'var-s01-bot-sage-green',
+            skuDefaultId: 'sku-s01-bot-sage-green-m',
+            colorKey: 'sage-green',
+            colorName: 'Xanh Khói',
+            colorHex: '#4A5546',
+            inStockSizes: ['S', 'M', 'L'],
+            studioCutoutUrl:
+              '/images/seasons-vitrine/variants/chan-vay-xep-ly-midi-cap-cao-sage-green.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/pleated-silk-sage-green.webp',
+            fabricSpecText:
+              'Lụa Xếp Ly Tencel · Xanh Khói · Thanh lịch tinh giản',
           },
         ],
       },
@@ -219,53 +238,53 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
         productSlug: 'vi-cam-tay-clutch-champagne',
         productName: 'Ví Cầm Tay Clutch Champagne',
         basePriceVnd: 1_290_000,
-        pinPosition: { xPercent: 52, yPercent: 74 },
-        garmentRegionMask: '/seasons-lookbook/xuan-tam-xuan/mask-accessory.png',
-        maskBbox: { x: 0.44, y: 0.56, w: 0.24, h: 0.22 },
+        pinPosition: { xPercent: 68, yPercent: 54 },
+        garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-accessory.png',
+        maskBbox: { x: 0.56, y: 0.46, w: 0.22, h: 0.16 },
         materialOpticalProfile: {
           sheen: 'leather',
-          specularIntensity: 0.68,
-          shadowDepth: 0.65,
+          specularIntensity: 0.52,
+          shadowDepth: 0.34,
         },
         variants: [
           {
             variantId: 'var-s01-acc-champagne',
             skuDefaultId: 'sku-s01-acc-champagne-f',
             colorKey: 'champagne',
-            colorName: 'Champagne',
+            colorName: 'Champagne Ánh Kim',
             colorHex: '#DFC9A6',
             inStockSizes: ['S', 'M', 'L'],
             studioCutoutUrl:
-              '/seasons-lookbook/variants/vi-cam-tay-clutch-champagne-champagne.webp',
-            macroSwatchUrl: '/seasons-lookbook/macros/silk-champagne.webp',
+              '/images/seasons-vitrine/variants/vi-cam-tay-clutch-champagne-champagne.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/leather-champagne.webp',
             fabricSpecText:
-              'Lụa Satin Ép Da · Sắc Champagne · Khâu viền thủ công',
+              'Lụa Satin Khung Đồng · Champagne Ánh Kim · Chế tác thủ công',
           },
           {
-            variantId: 'var-s01-acc-den-tuyen',
-            skuDefaultId: 'sku-s01-acc-den-tuyen-f',
-            colorKey: 'den-tuyen',
+            variantId: 'var-s01-acc-jet-black',
+            skuDefaultId: 'sku-s01-acc-jet-black-f',
+            colorKey: 'jet-black',
             colorName: 'Đen Tuyền',
             colorHex: '#171615',
             inStockSizes: ['S', 'M', 'L'],
             studioCutoutUrl:
-              '/seasons-lookbook/variants/vi-cam-tay-clutch-champagne-den-tuyen.webp',
-            macroSwatchUrl: '/seasons-lookbook/macros/silk-jet-black.webp',
+              '/images/seasons-vitrine/variants/vi-cam-tay-clutch-champagne-jet-black.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/leather-jet-black.webp',
             fabricSpecText:
-              'Lụa Satin Ép Da · Đen Tuyền Ánh Ngọc · Phom cầm tay tinh gọn',
+              'Lụa Satin Khung Đồng · Đen Tuyền · Khóa đồng thau mài mờ',
           },
           {
-            variantId: 'var-s01-acc-nau-cacao',
-            skuDefaultId: 'sku-s01-acc-nau-cacao-f',
-            colorKey: 'nau-cacao',
-            colorName: 'Nâu Cacao',
-            colorHex: '#3D2B22',
+            variantId: 'var-s01-acc-wine-red',
+            skuDefaultId: 'sku-s01-acc-wine-red-f',
+            colorKey: 'wine-red',
+            colorName: 'Đỏ Rượu Vang',
+            colorHex: '#5E1924',
             inStockSizes: ['S', 'M', 'L'],
             studioCutoutUrl:
-              '/seasons-lookbook/variants/vi-cam-tay-clutch-champagne-nau-cacao.webp',
-            macroSwatchUrl: '/seasons-lookbook/macros/silk-nau-cacao.webp',
+              '/images/seasons-vitrine/variants/vi-cam-tay-clutch-champagne-wine-red.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/leather-wine-red.webp',
             fabricSpecText:
-              'Lụa Satin Ép Da · Nâu Cacao Trầm · Khóa ẩn đồng mạ vàng',
+              'Lụa Satin Khung Đồng · Đỏ Rượu Vang · Điểm nhấn dạ tiệc',
           },
         ],
       },
@@ -281,7 +300,7 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
     note: 'Sợi linen hữu cơ dệt thưa màu cát ngà, dịu mát dưới nắng hạ.',
     isCurrent: false,
     totalDesigns: 10,
-    baseEditorialImageUrl: '/seasons-lookbook/ha-pho-co/base.webp',
+    baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/ha-pho-co-base.webp',
     wearableSlots: [],
   },
   {
@@ -294,7 +313,7 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
     note: 'Đầm bias-cut bay nhẹ ôm chuyển động cùng gió biển ban mai.',
     isCurrent: false,
     totalDesigns: 9,
-    baseEditorialImageUrl: '/seasons-lookbook/resort-ban-mai/base.webp',
+    baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/resort-ban-mai-base.webp',
     wearableSlots: [],
   },
   {
@@ -307,7 +326,7 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
     note: 'Blazer may đo mềm vai phối quần tây xếp ly đôi chuẩn tỷ lệ.',
     isCurrent: false,
     totalDesigns: 11,
-    baseEditorialImageUrl: '/seasons-lookbook/thu-hoang-hon/base.webp',
+    baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/thu-hoang-hon-base.webp',
     wearableSlots: [],
   },
   {
@@ -320,7 +339,7 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
     note: 'Dạ tweed dệt tay kết hợp len cashmere giữ ấm thanh mảnh.',
     isCurrent: false,
     totalDesigns: 10,
-    baseEditorialImageUrl: '/seasons-lookbook/dong-cashmere/base.webp',
+    baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/dong-cashmere-base.webp',
     wearableSlots: [],
   },
   {
@@ -333,7 +352,7 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
     note: 'Sắc ngọc trai, cacao trầm và ánh champagne cho đêm dạ tiệc.',
     isCurrent: false,
     totalDesigns: 14,
-    baseEditorialImageUrl: '/seasons-lookbook/atelier-di-san/base.webp',
+    baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/atelier-di-san-base.webp',
     wearableSlots: [],
   },
 ];
@@ -382,6 +401,31 @@ function normalizeMonthsCompact(rawMonths: string, fallbackMonths: string): stri
   return fallbackMonths || trimmed;
 }
 
+function extractHeroProductFallbackImage(
+  product: ProductSpuDto | undefined,
+): string | undefined {
+  if (!product) return undefined;
+  const extended = product as ProductSpuDto & {
+    frontWebpUrl?: string | null;
+    imageUrl?: string | null;
+  };
+  const primaryVariant = product.variants[0];
+  const candidates = [
+    extended.frontWebpUrl,
+    extended.imageUrl,
+    primaryVariant?.rackFrontUrl,
+    primaryVariant?.lookbookMainUrl,
+    primaryVariant?.tryonFlatPreviewUrl,
+    product.tryonFlatAssetUrl,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return undefined;
+}
+
 function normalizeSeasonChapters(
   seasons: SeasonalCollectionDto[],
 ): SeasonChapterView[] {
@@ -411,6 +455,7 @@ function normalizeSeasonChapters(
     const orderLabel = String(order).padStart(2, '0');
     const lookbook = raw.interactiveLookbook ?? null;
     const heroProducts = raw.heroProducts ?? [];
+    const localSeasonLookbookUrl = getSeasonLookbookFallbackUrl(raw.slug);
 
     const rawSlots: Array<SeasonWearableSlot | SeasonWearableSlotView> =
       lookbook?.wearableSlots && lookbook.wearableSlots.length > 0
@@ -418,6 +463,12 @@ function normalizeSeasonChapters(
         : preset?.wearableSlots ?? [];
 
     const wearableSlots: SeasonWearableSlotView[] = rawSlots.map((slot) => {
+      const firstHero = heroProducts.find((p) => p.slug === slot.productSlug);
+      const heroFallbackImageUrl = extractHeroProductFallbackImage(firstHero);
+      const defaultVariantFallbackUrl = getVariantDefaultFallbackUrl(
+        slot.productSlug,
+      );
+
       const normalizedVariants: SeasonWearableVariantView[] = slot.variants.map(
         (v: SeasonWearableVariant | SeasonWearableVariantView) => {
           const skuInfo = buildSkuMapForVariant(
@@ -445,6 +496,18 @@ function normalizeSeasonChapters(
                 ? Object.keys(mergedSkuBySize)
                 : ['XS', 'S', 'M', 'L', 'XL'];
 
+          const resolvedStudioUrl = resolveSeasonsVitrineUrl(
+            v.studioCutoutUrl,
+            heroFallbackImageUrl || defaultVariantFallbackUrl,
+          );
+          const resolvedMacroUrl = resolveSeasonsVitrineUrl(
+            v.macroSwatchUrl,
+            getMacroFallbackUrl(slot.materialOpticalProfile?.sheen, v.colorKey),
+          );
+          const resolvedPrebaked = v.prebakedSceneUrl
+            ? resolveSeasonsVitrineUrl(v.prebakedSceneUrl, '') || null
+            : null;
+
           return {
             variantId:
               v.variantId ||
@@ -460,15 +523,14 @@ function normalizeSeasonChapters(
             colorHex: v.colorHex,
             inStockSizes,
             skuBySize: mergedSkuBySize,
-            studioCutoutUrl: v.studioCutoutUrl,
-            macroSwatchUrl: v.macroSwatchUrl,
+            studioCutoutUrl: resolvedStudioUrl,
+            macroSwatchUrl: resolvedMacroUrl,
             fabricSpecText: v.fabricSpecText,
-            prebakedSceneUrl: v.prebakedSceneUrl ?? null,
+            prebakedSceneUrl: resolvedPrebaked,
           };
         },
       );
 
-      const firstHero = heroProducts.find((p) => p.slug === slot.productSlug);
       return {
         slotKey: slot.slotKey,
         productId: slot.productId || firstHero?.id || `prod-${slot.productSlug}`,
@@ -476,9 +538,13 @@ function normalizeSeasonChapters(
         productName: slot.productName || firstHero?.name || slot.productSlug,
         basePriceVnd: slot.basePriceVnd || firstHero?.minPriceVnd || 1_850_000,
         pinPosition: slot.pinPosition,
-        garmentRegionMask: slot.garmentRegionMask,
+        garmentRegionMask: resolveSeasonsVitrineUrl(
+          slot.garmentRegionMask,
+          getSeasonMaskFallbackUrl(raw.slug, slot.slotKey),
+        ),
         maskBbox: slot.maskBbox,
         materialOpticalProfile: slot.materialOpticalProfile,
+        fallbackImageUrl: heroFallbackImageUrl,
         variants: normalizedVariants,
       };
     });
@@ -486,6 +552,16 @@ function normalizeSeasonChapters(
     const isCurrent = Boolean(
       raw.isCurrentSeason ?? raw.isCurrent ?? raw.isNow ?? preset?.isCurrent,
     );
+
+    const normalizedRestyleCacheMap: Record<string, string> = {};
+    if (lookbook?.restyleCacheMap) {
+      for (const [k, url] of Object.entries(lookbook.restyleCacheMap)) {
+        const resolved = resolveSeasonsVitrineUrl(url, '');
+        if (resolved) {
+          normalizedRestyleCacheMap[k] = resolved;
+        }
+      }
+    }
 
     return {
       id: raw.id,
@@ -512,13 +588,14 @@ function normalizeSeasonChapters(
         raw.productCount ||
         preset?.totalDesigns ||
         12,
-      baseEditorialImageUrl:
+      baseEditorialImageUrl: resolveSeasonsVitrineUrl(
         lookbook?.baseEditorialImageUrl ||
-        preset?.baseEditorialImageUrl ||
-        raw.coverAssetUrl ||
-        '/seasons-lookbook/xuan-tam-xuan/base.webp',
+          preset?.baseEditorialImageUrl ||
+          raw.coverAssetUrl,
+        localSeasonLookbookUrl,
+      ),
       wearableSlots,
-      restyleCacheMap: lookbook?.restyleCacheMap ?? {},
+      restyleCacheMap: normalizedRestyleCacheMap,
     };
   });
 }
@@ -600,6 +677,83 @@ function buildTryOnOptionsForSeasonSet(
   return { mode: TryOnMode.SINGLE };
 }
 
+interface VitrineSafeImageProps {
+  src: string;
+  fallbackUrls: string[];
+  alt: string;
+  className?: string;
+  ariaHidden?: boolean;
+  loading?: 'eager' | 'lazy';
+  decoding?: 'async' | 'sync' | 'auto';
+  onFallbackActiveChange?: (isFallback: boolean) => void;
+}
+
+function VitrineSafeImage({
+  src,
+  fallbackUrls,
+  alt,
+  className,
+  ariaHidden,
+  loading,
+  decoding = 'async',
+  onFallbackActiveChange,
+}: VitrineSafeImageProps) {
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const candidates = useMemo(() => {
+    const dedup: string[] = [];
+    for (const candidate of [src, ...fallbackUrls]) {
+      const trimmed = candidate.trim();
+      if (trimmed && !dedup.includes(trimmed)) {
+        dedup.push(trimmed);
+      }
+    }
+    return dedup;
+  }, [src, fallbackUrls]);
+
+  const candidatesKey = candidates.join('|');
+  const [attemptIdx, setAttemptIdx] = useState(0);
+
+  useEffect(() => {
+    setAttemptIdx(0);
+  }, [candidatesKey]);
+
+  const activeSrc =
+    candidates[Math.min(attemptIdx, Math.max(0, candidates.length - 1))] ?? '';
+  const isUsingFallback = attemptIdx > 0;
+
+  useEffect(() => {
+    onFallbackActiveChange?.(isUsingFallback);
+  }, [isUsingFallback, onFallbackActiveChange]);
+
+  const advanceCandidate = useCallback(() => {
+    setAttemptIdx((prev) =>
+      prev + 1 < candidates.length ? prev + 1 : prev,
+    );
+  }, [candidates.length]);
+
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth === 0) {
+      advanceCandidate();
+    }
+  }, [activeSrc, advanceCandidate]);
+
+  if (!activeSrc) return null;
+
+  return (
+    <img
+      ref={imgRef}
+      src={activeSrc}
+      alt={ariaHidden ? '' : alt}
+      aria-hidden={ariaHidden}
+      className={className}
+      loading={loading}
+      decoding={decoding}
+      onError={advanceCandidate}
+    />
+  );
+}
+
 export function SeasonalFlagshipVitrine({
   seasons,
 }: SeasonalFlagshipVitrineProps) {
@@ -667,6 +821,7 @@ export function SeasonalFlagshipVitrine({
     currentUrl: string;
     prevUrl: string | null;
   }>({ currentUrl: '', prevUrl: null });
+  const [macroUsingFallback, setMacroUsingFallback] = useState<boolean>(false);
 
   const safeIdx =
     chapters.length > 0
@@ -814,8 +969,10 @@ export function SeasonalFlagshipVitrine({
     if (!activeSeason || activeSeason.wearableSlots.length === 0) {
       return {
         imageUrl: activeSeason?.baseEditorialImageUrl ?? '',
+        colorKey: '',
         colorName: '',
         colorHex: '#F4EFE6',
+        sheen: 'silk',
         specText: activeSeason?.materialHeadline ?? '',
       };
     }
@@ -835,11 +992,17 @@ export function SeasonalFlagshipVitrine({
       targetSlot.variants.find((v) => v.colorKey === targetColorKey) ??
       targetSlot.variants[0];
 
+    const sheen = targetSlot.materialOpticalProfile?.sheen ?? 'silk';
+    const colorKey = targetVariant?.colorKey ?? '';
+
     return {
       imageUrl:
-        targetVariant?.macroSwatchUrl || activeSeason.baseEditorialImageUrl,
+        targetVariant?.macroSwatchUrl ||
+        getMacroFallbackUrl(sheen, colorKey),
+      colorKey,
       colorName: targetVariant?.colorName ?? '',
       colorHex: targetVariant?.colorHex ?? '#F4EFE6',
+      sheen,
       specText:
         targetVariant?.fabricSpecText ||
         `${activeSeason.materialHeadline}${targetVariant ? ` · ${targetVariant.colorName}` : ''}`,
@@ -988,16 +1151,26 @@ export function SeasonalFlagshipVitrine({
       ).then((res) => {
         if (reqSeq !== restyleSeqRef.current) return;
         if (res.ok && res.data?.status === 'COMPLETED' && res.data.sceneImageUrl) {
-          clientRestyleCacheRef.current.set(cacheLookupKey, {
-            url: res.data.sceneImageUrl,
-            cacheHit: res.data.cacheHit,
-          });
-          setServerRestyleState({
-            comboKey,
-            sceneImageUrl: res.data.sceneImageUrl,
-            cacheHit: res.data.cacheHit,
-            loading: false,
-          });
+          const resolvedSceneUrl = resolveSeasonsVitrineUrl(
+            res.data.sceneImageUrl,
+            '',
+          );
+          if (resolvedSceneUrl) {
+            clientRestyleCacheRef.current.set(cacheLookupKey, {
+              url: resolvedSceneUrl,
+              cacheHit: res.data.cacheHit,
+            });
+            setServerRestyleState({
+              comboKey,
+              sceneImageUrl: resolvedSceneUrl,
+              cacheHit: res.data.cacheHit,
+              loading: false,
+            });
+          } else {
+            setServerRestyleState((prev) =>
+              prev.comboKey === comboKey ? { ...prev, loading: false } : prev,
+            );
+          }
         } else {
           setServerRestyleState((prev) =>
             prev.comboKey === comboKey ? { ...prev, loading: false } : prev,
@@ -1208,26 +1381,36 @@ export function SeasonalFlagshipVitrine({
                         alt=""
                         aria-hidden="true"
                         className={`${styles.macroImg} ${styles.macroImgPrev}`}
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
+                        onError={() => {
+                          setMacroTransition((prev) => ({
+                            ...prev,
+                            prevUrl: null,
+                          }));
                         }}
                       />
                     ) : null}
-                    <img
+                    <VitrineSafeImage
                       key={activeMacroData.imageUrl}
                       src={activeMacroData.imageUrl}
+                      fallbackUrls={[
+                        getMacroFallbackUrl(
+                          activeMacroData.sheen,
+                          activeMacroData.colorKey,
+                        ),
+                        getOccasionMacroFallbackUrl(activeMacroData.sheen),
+                        getSeasonLookbookFallbackUrl(activeSeason.slug),
+                      ]}
                       alt={`Cận cảnh sợi vải ${activeMacroData.specText}`}
                       className={`${styles.macroImg} ${styles.macroImgActive}`}
-                      onError={(e) => {
-                        if (
-                          e.currentTarget.src !==
-                          activeSeason.baseEditorialImageUrl
-                        ) {
-                          e.currentTarget.src =
-                            activeSeason.baseEditorialImageUrl;
-                        }
-                      }}
+                      onFallbackActiveChange={setMacroUsingFallback}
                     />
+                    {macroUsingFallback && activeMacroData.colorHex ? (
+                      <span
+                        className={styles.macroFallbackTint}
+                        style={{ backgroundColor: activeMacroData.colorHex }}
+                        aria-hidden="true"
+                      />
+                    ) : null}
                     {activeMacroData.colorName ? (
                       <span className={styles.macroColorBadge}>
                         <span
@@ -1336,19 +1519,21 @@ export function SeasonalFlagshipVitrine({
                         onMouseLeave={() => setHoveredSlotKey(null)}
                       >
                         <div className={styles.productThumbBox}>
-                          <img
-                            src={activeVariant.studioCutoutUrl}
+                          <VitrineSafeImage
+                            src={
+                              activeVariant.studioCutoutUrl ||
+                              slot.fallbackImageUrl ||
+                              getVariantDefaultFallbackUrl(slot.productSlug)
+                            }
+                            fallbackUrls={[
+                              getVariantDefaultFallbackUrl(slot.productSlug),
+                              ...(slot.fallbackImageUrl
+                                ? [slot.fallbackImageUrl]
+                                : []),
+                              getSeasonLookbookFallbackUrl(activeSeason.slug),
+                            ]}
                             alt={`${slot.productName} — ${activeVariant.colorName}`}
                             className={styles.productThumbImg}
-                            onError={(e) => {
-                              if (
-                                e.currentTarget.src !==
-                                activeSeason.baseEditorialImageUrl
-                              ) {
-                                e.currentTarget.src =
-                                  activeSeason.baseEditorialImageUrl;
-                              }
-                            }}
                           />
                           <button
                             type="button"
@@ -1512,19 +1697,25 @@ export function SeasonalFlagshipVitrine({
                           onMouseLeave={() => setHoveredSlotKey(null)}
                         >
                           <div className={styles.accessoryThumbBox}>
-                            <img
-                              src={activeVariant.studioCutoutUrl}
+                            <VitrineSafeImage
+                              src={
+                                activeVariant.studioCutoutUrl ||
+                                highlightSlot.fallbackImageUrl ||
+                                getVariantDefaultFallbackUrl(
+                                  highlightSlot.productSlug,
+                                )
+                              }
+                              fallbackUrls={[
+                                getVariantDefaultFallbackUrl(
+                                  highlightSlot.productSlug,
+                                ),
+                                ...(highlightSlot.fallbackImageUrl
+                                  ? [highlightSlot.fallbackImageUrl]
+                                  : []),
+                                getSeasonLookbookFallbackUrl(activeSeason.slug),
+                              ]}
                               alt={`${highlightSlot.productName} — ${activeVariant.colorName}`}
                               className={styles.accessoryThumbImg}
-                              onError={(e) => {
-                                if (
-                                  e.currentTarget.src !==
-                                  activeSeason.baseEditorialImageUrl
-                                ) {
-                                  e.currentTarget.src =
-                                    activeSeason.baseEditorialImageUrl;
-                                }
-                              }}
                             />
                           </div>
 

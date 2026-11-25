@@ -230,7 +230,7 @@ async function createViaHttpApi(modelName, modelfileText, baseUrl) {
 async function runVietnameseSmokeTest(modelName, baseUrl) {
   const startedAt = performance.now();
   const prompt =
-    'Tóm tắt ngắn gọn trong 2 câu bằng tiếng Việt nguyên tắc NHAP_AI và chính sách quyền riêng tư 15 phút của Phòng Thử Đồ AI tại Tầm Xuân Fashion Atelier.';
+    'Tóm tắt ngắn gọn trong 2 câu bằng tiếng Việt nguyên tắc NHAP_AI và chính sách quyền riêng tư 15 phút của Phòng Thử Đồ AI tại TryVibe Fashion Atelier.';
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 60_000);

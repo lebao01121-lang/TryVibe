@@ -21,16 +21,17 @@ export const dynamic = 'force-dynamic';
 export async function generateMetadata(): Promise<Metadata> {
   const siteUrl = getSiteBaseUrl();
   return {
-    title: 'Tầm Xuân · Fashion Atelier — Thời Trang May Đo Thủ Công',
+    title: 'TryVibe · Fashion Atelier — Thời Trang May Đo Thủ Công',
     description:
       'Nhà mốt thời trang Editorial Quiet Luxury tại Hà Nội: giá treo 3D WebGL, chọn trang phục theo dịp, phối đồ Mix & Match Studio và phòng thử đồ AI riêng tư.',
     alternates: {
       canonical: `${siteUrl}/`,
     },
     openGraph: {
-      title: 'Tầm Xuân · Fashion Atelier — Thời Trang May Đo Thủ Công',
+      title: 'TryVibe · Fashion Atelier — Thời Trang May Đo Thủ Công',
       description:
         'Khám phá giá treo 3D WebGL, bộ sưu tập lụa tơ tằm Bảo Lộc và phòng thử đồ AI riêng tư 15 phút tự hủy.',
+      siteName: 'TryVibe Fashion Atelier',
       type: 'website',
       url: `${siteUrl}/`,
       locale: 'vi_VN',

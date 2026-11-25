@@ -98,7 +98,7 @@ function createPaymentConfig(overrides?: {
     vietqr: {
       bankBin: '970422',
       accountNo: '088820269999',
-      accountName: 'TAM XUAN ATELIER',
+      accountName: 'TRYVIBE ATELIER',
     },
     payos: {
       clientId: overrides?.payosLive ? 'payos-client' : '',
@@ -136,7 +136,7 @@ describe('VietQR EMVCo NAPAS 247, CRC16-CCITT & ISO/IEC 18004 QR Artifacts', () 
     const payload = buildVietQrPayload('TX-2026QR01', 1_850_000, {
       bankBin: '970422',
       accountNo: '088820269999',
-      accountName: 'Tầm Xuân Atelier',
+      accountName: 'TryVibe Atelier',
     });
 
     expect(payload.startsWith('000201010212')).toBe(true);
@@ -145,7 +145,7 @@ describe('VietQR EMVCo NAPAS 247, CRC16-CCITT & ISO/IEC 18004 QR Artifacts', () 
     expect(payload).toContain('5303704'); // VND ISO 4217 currency code
     expect(payload).toContain('54071850000'); // Exact integer amount
     expect(payload).toContain('5802VN');
-    expect(payload).toContain('TAM XUAN ATELIER');
+    expect(payload).toContain('TRYVIBE ATELIER');
     expect(verifyVietQrEmvCoCrc16(payload)).toBe(true);
 
     // Tamper detection: changing a single digit in amount OR CRC fails validation
@@ -256,7 +256,7 @@ describe('VNPay v2.1.0, MoMo v2 & PayOS Signature Adapters', () => {
       extraData: '',
       ipnUrl: cfg.momo.ipnUrl,
       orderId: 'TX-MOMO-01',
-      orderInfo: 'Tam Xuan',
+      orderInfo: 'TryVibe',
       partnerCode: cfg.momo.partnerCode,
       redirectUrl: cfg.momo.redirectUrl,
       requestId: 'req-1',
@@ -273,7 +273,7 @@ describe('VNPay v2.1.0, MoMo v2 & PayOS Signature Adapters', () => {
       orderId: 'TX-MOMO-01',
       requestId: 'req-1',
       amount: 1_200_000,
-      orderInfo: 'Tam Xuan',
+      orderInfo: 'TryVibe',
       orderType: 'momo_wallet',
       transId: 90012345,
       resultCode: 0,
@@ -283,7 +283,7 @@ describe('VNPay v2.1.0, MoMo v2 & PayOS Signature Adapters', () => {
       extraData: '',
     };
     const signature = signMomoIpnPayload(ipnPayload, cfg.momo.secretKey, cfg.momo.accessKey);
-    expect(buildMomoIpnRawSignature({ accessKey: cfg.momo.accessKey, amount: 1200000, extraData: '', message: 'Successful.', orderId: 'TX-MOMO-01', orderInfo: 'Tam Xuan', orderType: 'momo_wallet', partnerCode: cfg.momo.partnerCode, payType: 'qr', requestId: 'req-1', responseTime: 1764000000000, resultCode: 0, transId: 90012345 })).toContain('transId=90012345');
+    expect(buildMomoIpnRawSignature({ accessKey: cfg.momo.accessKey, amount: 1200000, extraData: '', message: 'Successful.', orderId: 'TX-MOMO-01', orderInfo: 'TryVibe', orderType: 'momo_wallet', partnerCode: cfg.momo.partnerCode, payType: 'qr', requestId: 'req-1', responseTime: 1764000000000, resultCode: 0, transId: 90012345 })).toContain('transId=90012345');
 
     expect(verifyMomoIpnSignature({ ...ipnPayload, signature }, cfg.momo.secretKey, cfg.momo.accessKey)).toBe(true);
     // Tampered amount or missing fields MUST fail
@@ -307,7 +307,7 @@ describe('VNPay v2.1.0, MoMo v2 & PayOS Signature Adapters', () => {
     expect(numericCode).toBeGreaterThanOrEqual(100_000);
 
     const createSig = buildPayOsCreateSignature(
-      { amount: 1_000_000, cancelUrl: 'http://a/cancel', description: 'TAMXUAN', orderCode: numericCode, returnUrl: 'http://a/ret' },
+      { amount: 1_000_000, cancelUrl: 'http://a/cancel', description: 'TRYVIBE', orderCode: numericCode, returnUrl: 'http://a/ret' },
       cfg.payos.checksumKey,
     );
     expect(createSig).toMatch(/^[0-9a-f]{64}$/);
@@ -315,7 +315,7 @@ describe('VNPay v2.1.0, MoMo v2 & PayOS Signature Adapters', () => {
     const data = {
       orderCode: numericCode,
       amount: 1_000_000,
-      description: 'TAMXUAN TX-PAYOS-01',
+      description: 'TRYVIBE TX-PAYOS-01',
       reference: 'FT123456',
       code: '00',
       emptyField: null,
@@ -323,7 +323,7 @@ describe('VNPay v2.1.0, MoMo v2 & PayOS Signature Adapters', () => {
       items: [{ z: 9, a: 1 }],
     };
     const serialized = buildPayOsWebhookDataString(data);
-    expect(serialized.startsWith('amount=1000000&code=00&description=TAMXUAN TX-PAYOS-01&emptyField=&items=[{"a":1,"z":9}]&meta={"a":1,"b":2}')).toBe(true);
+    expect(serialized.startsWith('amount=1000000&code=00&description=TRYVIBE TX-PAYOS-01&emptyField=&items=[{"a":1,"z":9}]&meta={"a":1,"b":2}')).toBe(true);
 
     const sig = signPayOsWebhookData(data, cfg.payos.checksumKey);
     const body = { code: '00', success: true, data, signature: sig };
@@ -364,7 +364,7 @@ describe('VNPay v2.1.0, MoMo v2 & PayOS Signature Adapters', () => {
             paymentLinkId: 'pl_live_001',
             bin: '970422',
             accountNumber: '088820269999',
-            accountName: 'TAM XUAN ATELIER',
+            accountName: 'TRYVIBE ATELIER',
           },
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -1005,7 +1005,7 @@ describe('PaymentsService — Intents, Webhooks/IPNs & netRefundableVnd REFUND_E
     const payosData = {
       orderCode: 'TX-PAYOS-WH',
       amount: 880_000,
-      description: 'TAMXUAN TX-PAYOS-WH',
+      description: 'TRYVIBE TX-PAYOS-WH',
       reference: 'FT-PAYOS-99',
       code: '00',
     };

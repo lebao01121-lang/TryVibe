@@ -291,9 +291,9 @@ function buildPrintableInvoiceHtml(order: OrderDTO): string {
   <div class="sheet">
     <div class="header">
       <div class="brand">
-        <h1>TẦM XUÂN FASHION ATELIER</h1>
+        <h1>TRYVIBE FASHION ATELIER</h1>
         <p>Flagship Hà Nội: 28 Tràng Tiền, Hoàn Kiếm · Showroom TP.HCM: 112 Đồng Khởi, Q.1</p>
-        <p>Hotline: 1900 6868 · support@tamxuanatelier.vn</p>
+        <p>Hotline: 1900 6868 · support@tryvibeatelier.vn</p>
       </div>
       <div class="doc-title">
         <h2>PHIẾU GIAO HÀNG KIÊM HÓA ĐƠN</h2>
@@ -1811,18 +1811,18 @@ export function OrdersRmaTab({ onRefreshOverview }: OrdersRmaTabProps) {
             <div className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-[#1C1410] pb-4">
               <div className="flex items-start gap-3">
                 <div className="font-editorial flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#1C1410] text-xl font-bold text-[#EBCF8F]">
-                  TX
+                  TV
                 </div>
                 <div>
                   <h3 className="font-editorial text-2xl font-semibold tracking-wider text-[#1C1410]">
-                    TẦM XUÂN FASHION ATELIER
+                    TRYVIBE FASHION ATELIER
                   </h3>
                   <p className="text-[11px] text-[#5C4B41]">
                     Flagship Hà Nội: 28 Tràng Tiền, Hoàn Kiếm · Showroom TP.HCM:
                     112 Đồng Khởi, Q.1
                   </p>
                   <p className="font-mono text-[10.5px] text-[#7A6A5B]">
-                    Hotline: 1900 6868 · support@tamxuanatelier.vn
+                    Hotline: 1900 6868 · support@tryvibeatelier.vn
                   </p>
                 </div>
               </div>
@@ -2049,7 +2049,7 @@ export function OrdersRmaTab({ onRefreshOverview }: OrdersRmaTabProps) {
                   Người lập phiếu / Đóng gói
                 </p>
                 <p className="text-[10.5px] text-[#7A6A5B]">
-                  Tầm Xuân Fashion Atelier
+                  TryVibe Fashion Atelier
                 </p>
                 <div className="h-14" />
                 <p className="text-[10.5px] text-[#7A6A5B]">

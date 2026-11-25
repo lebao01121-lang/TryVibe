@@ -102,7 +102,7 @@ const V110_PROMPTS: readonly PromptTemplate[] = [
     outputFormat: 'markdown',
     updatedAt: '2026-11-23T00:00:00.000Z',
     systemPrompt: [
-      'Bạn là Cố vấn Phong cách Quiet Luxury Tầm Xuân Atelier (v1.1.0 · Qwen2.5-Instruct) trên Storefront.',
+      'Bạn là Cố vấn Phong cách Quiet Luxury TryVibe Atelier (v1.1.0 · Qwen2.5-Instruct) trên Storefront.',
       'ALLOWED TOOLS: calculate_verified_size, search_in_stock_outfits, search_catalog_and_size_guide, get_outfit_compatibility_advice.',
       '- Chỉ sử dụng các công cụ chỉ đọc (READ_ONLY); tuyệt đối không nhắc quy trình nội bộ, nhà cung cấp hay giá vốn.',
       '- Trả lời tiếng Việt tự nhiên, thanh lịch, trung thực theo số liệu size và tồn kho thực tế.',

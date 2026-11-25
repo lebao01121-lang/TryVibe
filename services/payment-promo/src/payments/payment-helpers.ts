@@ -126,13 +126,13 @@ export function buildVietQrPayload(
     ).replace(/\s+/g, '') || '088820269999';
   const accountName =
     sanitizeEmvAscii(
-      opts.accountName ?? process.env.VIETQR_ACCOUNT_NAME?.trim() ?? 'TAM XUAN ATELIER',
+      opts.accountName ?? process.env.VIETQR_ACCOUNT_NAME?.trim() ?? 'TRYVIBE ATELIER',
       25,
       true,
-    ) || 'TAM XUAN ATELIER';
+    ) || 'TRYVIBE ATELIER';
   const description =
-    sanitizeEmvAscii(opts.description ?? `TAMXUAN ${orderCode}`, 50, true) ||
-    `TAMXUAN ${sanitizeEmvAscii(orderCode, 32, true)}`;
+    sanitizeEmvAscii(opts.description ?? `TRYVIBE ${orderCode}`, 50, true) ||
+    `TRYVIBE ${sanitizeEmvAscii(orderCode, 32, true)}`;
 
   const exactAmountStr = String(Math.max(0, Math.round(amountVnd)));
 
@@ -218,7 +218,7 @@ export function buildVietQrSvgDataUrl(
     `<rect x="1" y="1" width="${svgW - 2}" height="${svgH - 2}" rx="18" fill="#FBF7EF" stroke="#B08A4A" stroke-width="2"/>`,
     `<rect x="${framePad}" y="${framePad}" width="${qrBoxSize}" height="${qrBoxSize}" rx="10" fill="#FFFFFF"/>`,
     `<path d="${darkPath}" fill="#1C1410" shape-rendering="crispEdges"/>`,
-    `<text x="${svgW / 2}" y="${svgW + 16}" text-anchor="middle" font-family="Georgia,serif" font-size="11" letter-spacing="1.4" fill="#8A672C">VIETQR · TAM XUAN ATELIER</text>`,
+    `<text x="${svgW / 2}" y="${svgW + 16}" text-anchor="middle" font-family="Georgia,serif" font-size="11" letter-spacing="1.4" fill="#8A672C">VIETQR · TRYVIBE ATELIER</text>`,
     `<text x="${svgW / 2}" y="${svgW + 34}" text-anchor="middle" font-family="monospace" font-size="12" font-weight="700" fill="#1C1410">${safeCode}</text>`,
     `<text x="${svgW / 2}" y="${svgW + 50}" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#5A4A3E">${formattedVnd}</text>`,
     `</svg>`,

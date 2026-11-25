@@ -3,7 +3,7 @@ export default function StorefrontLoading() {
     <div
       className="min-h-[100svh] bg-[#FBF7EF] text-[#2B2019]"
       aria-busy="true"
-      aria-label="Đang tải không gian Tầm Xuân Fashion Atelier"
+      aria-label="Đang tải không gian TryVibe Fashion Atelier"
     >
       {/* Hero viewport reservation (100svh -> zero CLS) */}
       <div className="relative flex h-[100svh] min-h-[640px] flex-col justify-end overflow-hidden bg-[#1C1410] px-6 pb-20 sm:px-14">

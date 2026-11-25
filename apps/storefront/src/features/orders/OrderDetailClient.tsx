@@ -867,7 +867,7 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center font-editorial text-xs text-[#8A672C]">
-                        T&amp;X
+                        T&amp;V
                       </div>
                     )}
                   </div>

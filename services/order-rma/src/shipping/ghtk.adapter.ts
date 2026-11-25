@@ -229,7 +229,7 @@ export class GhtkAdapter implements IShippingProviderAdapter {
         hamlet: 'Khác',
         is_freeship: request.codAmountVnd > 0 ? '0' : '1',
         pick_money: Math.max(0, Math.round(request.codAmountVnd)),
-        note: request.note || `Đơn hàng Tầm Xuân Atelier ${request.orderCode}`,
+        note: request.note || `Đơn hàng TryVibe Atelier ${request.orderCode}`,
         value: Math.max(0, Math.round(request.orderValueVnd)),
         transport: 'road',
       },

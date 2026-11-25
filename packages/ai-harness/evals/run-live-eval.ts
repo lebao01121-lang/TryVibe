@@ -455,7 +455,7 @@ function buildLiveEvalToolRegistry(): McpToolRegistry {
           },
           {
             productId: 'prod_ao_so_mi_lua_02',
-            productName: 'Áo Sơ Mi Lụa Tơ Tằm Tầm Xuân',
+            productName: 'Áo Sơ Mi Lụa Tơ Tằm TryVibe',
             skuCode: 'AT-AOSMLU-C1-S',
             size: 'S',
             tryOnSessions: 31,
@@ -573,7 +573,7 @@ function buildLiveEvalToolRegistry(): McpToolRegistry {
           {
             productId: 'prod_ao_so_mi_lua_02',
             slug: 'ao-so-mi-lua-to-tam-tam-xuan',
-            name: 'Áo Sơ Mi Lụa Tơ Tằm Tầm Xuân',
+            name: 'Áo Sơ Mi Lụa Tơ Tằm TryVibe',
             fabric: '100% Lụa tơ tằm Bảo Lộc 19 momme',
             priceVnd: 1_850_000,
             availableSizes: ['XS', 'S', 'M', 'L'],
@@ -615,7 +615,7 @@ function buildLiveEvalToolRegistry(): McpToolRegistry {
         suggestedPairings: [
           {
             productId: 'prod_ao_so_mi_lua_02',
-            name: 'Áo Sơ Mi Lụa Tơ Tằm Tầm Xuân',
+            name: 'Áo Sơ Mi Lụa Tơ Tằm TryVibe',
             slotCategory: 'TOP' as const,
             reason: 'Thêm lớp áo lụa bên trong đạt Combo 3 món giảm 10%.',
           },

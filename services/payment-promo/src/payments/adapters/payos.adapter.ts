@@ -194,7 +194,7 @@ export class PayOsAdapter {
 
     const amount = Math.max(0, Math.round(input.amountVnd));
     const payosOrderCode = derivePayOsNumericOrderCode(input.orderCode);
-    const description = `TAMXUAN ${input.orderCode}`.slice(0, 25);
+    const description = `TRYVIBE ${input.orderCode}`.slice(0, 25);
     const cancelUrl =
       input.cancelUrl ||
       `${input.returnUrl}${input.returnUrl.includes('?') ? '&' : '?'}cancel=true&orderCode=${encodeURIComponent(input.orderCode)}`;

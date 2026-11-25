@@ -1299,7 +1299,7 @@ export class AuthService {
     ttlMinutes: number;
   }): Promise<void> {
     const { to, fullName, otpCode, resetLink, ttlMinutes } = params;
-    const subject = `[Tầm Xuân · Fashion Atelier] Mã khôi phục mật khẩu: ${otpCode}`;
+    const subject = `[TryVibe · Fashion Atelier] Mã khôi phục mật khẩu: ${otpCode}`;
     const text = [
       `Xin chào ${fullName},`,
       '',
@@ -1312,12 +1312,12 @@ export class AuthService {
       'Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này.',
       '',
       'Trân trọng,',
-      'Tầm Xuân · Fashion Atelier Security Team',
+      'TryVibe · Fashion Atelier Security Team',
     ].join('\n');
 
     const html = [
       '<div style="font-family:Inter,Arial,sans-serif;max-width:540px;margin:0 auto;padding:28px;border:1px solid #d6c5a7;border-radius:12px;background:#fbf7ef;color:#1c1410">',
-      '<p style="letter-spacing:0.18em;font-size:11px;text-transform:uppercase;color:#8a672c;margin:0 0 10px">Tầm Xuân · Fashion Atelier · Khôi phục mật khẩu</p>',
+      '<p style="letter-spacing:0.18em;font-size:11px;text-transform:uppercase;color:#8a672c;margin:0 0 10px">TryVibe · Fashion Atelier · Khôi phục mật khẩu</p>',
       `<h2 style="font-size:22px;font-weight:600;margin:0 0 12px;color:#1c1410">Xin chào ${escapeHtml(fullName)},</h2>`,
       '<p style="font-size:14px;line-height:1.65;margin:0 0 16px;color:#3d2f27">Sử dụng mã OTP 6 chữ số dưới đây tại trang <strong>/quen-mat-khau</strong> để đặt lại mật khẩu tài khoản của bạn:</p>',
       `<div style="font-size:34px;font-weight:700;letter-spacing:0.28em;text-align:center;padding:18px 20px;background:#ffffff;border:1px solid #b08a4a;border-radius:10px;color:#1c1410;margin:0 0 18px">${escapeHtml(otpCode)}</div>`,

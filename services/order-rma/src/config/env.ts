@@ -235,7 +235,7 @@ export function loadOrderRmaConfig(): OrderRmaConfig {
         process.env.SHIPPING_ORIGIN_ADDRESS?.trim() ||
         '18 Phố Phan Đình Phùng, Phường Quán Thánh, Quận Ba Đình, Hà Nội',
       originPhone: process.env.SHIPPING_ORIGIN_PHONE?.trim() || '02438882026',
-      originName: process.env.SHIPPING_ORIGIN_NAME?.trim() || 'Tầm Xuân Fashion Atelier',
+      originName: process.env.SHIPPING_ORIGIN_NAME?.trim() || 'TryVibe Fashion Atelier',
       ghn: {
         token: process.env.GHN_TOKEN?.trim() || null,
         shopId: process.env.GHN_SHOP_ID?.trim() || null,

@@ -82,7 +82,7 @@ function createWelcomeMessage(): StylistChatMessage {
     id: 'stylist-welcome',
     role: 'assistant',
     content:
-      'Xin chào quý khách đến với Tầm Xuân Atelier. Tôi là Cố vấn Thời trang riêng — sẵn sàng tư vấn số đo chuẩn phom, gợi ý phối đồ còn hàng đúng size, giải đáp chính sách đổi size 7–14 ngày và cơ chế bảo mật ảnh thử đồ tự xóa sau 15 phút.',
+      'Xin chào quý khách đến với TryVibe Atelier. Tôi là Cố vấn Thời trang riêng — sẵn sàng tư vấn số đo chuẩn phom, gợi ý phối đồ còn hàng đúng size, giải đáp chính sách đổi size 7–14 ngày và cơ chế bảo mật ảnh thử đồ tự xóa sau 15 phút.',
     createdAt: new Date().toISOString(),
   };
 }
@@ -621,7 +621,7 @@ export function StorefrontChatDrawer({
         <button
           type="button"
           data-testid="storefront-chat-trigger"
-          aria-label="Mở Cố vấn Stylist AI Tầm Xuân"
+          aria-label="Mở Cố vấn Stylist AI TryVibe"
           aria-expanded={open}
           onClick={() => onOpenChange(true)}
           className="fixed right-5 bottom-5 z-[1040] inline-flex cursor-pointer items-center gap-2.5 rounded-full border border-[#B08A4A]/65 bg-[#1C1410] px-4 py-3 text-xs font-medium tracking-[0.12em] text-[#FBF7EF] shadow-[0_18px_42px_-12px_rgba(28,20,16,0.55)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#EBCF8F] hover:shadow-[0_22px_50px_-12px_rgba(176,138,74,0.48)] sm:right-6 sm:bottom-6"
@@ -657,7 +657,7 @@ export function StorefrontChatDrawer({
           <aside
             role="dialog"
             aria-modal="true"
-            aria-label="Cố vấn Thời trang AI Tầm Xuân Atelier"
+            aria-label="Cố vấn Thời trang AI TryVibe Atelier"
             data-testid="storefront-chat-drawer"
             data-lenis-prevent=""
             className="relative z-10 flex h-[100dvh] w-full max-w-[440px] flex-col border-l border-[#B08A4A]/35 bg-[#FBF7EF] text-[#2B2019] shadow-[0_24px_80px_rgba(28,20,16,0.38)]"
@@ -666,7 +666,7 @@ export function StorefrontChatDrawer({
             <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[#B08A4A]/30 bg-[#1C1410] px-5 py-4 text-[#FBF7EF]">
               <div className="min-w-0">
                 <p className="text-[10px] font-medium tracking-[0.22em] uppercase text-[#EBCF8F]">
-                  TẦM XUÂN · STYLIST ATELIER
+                  TRYVIBE · STYLIST ATELIER
                 </p>
                 <h2 className="font-editorial mt-0.5 truncate text-2xl font-light text-[#FBF7EF]">
                   Cố vấn Thời trang Riêng
@@ -747,7 +747,7 @@ export function StorefrontChatDrawer({
                     >
                       {!isUser ? (
                         <div className="mb-1 flex items-center justify-between gap-2 text-[10px] tracking-[0.14em] uppercase text-[#8A672C]">
-                          <span>✦ Stylist Tầm Xuân</span>
+                          <span>✦ Stylist TryVibe</span>
                           {msg.blockedInjection ? (
                             <span className="rounded-full border border-[#B08A4A]/45 bg-[#F4EBDA] px-2 py-0.5 text-[9px] font-semibold text-[#1C1410]">
                               Bảo vệ dữ liệu

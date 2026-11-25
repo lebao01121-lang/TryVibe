@@ -125,7 +125,7 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
                 color: '#EBCF8F',
               }}
             >
-              T&amp;X
+              T&amp;V
             </div>
 
             <p
@@ -139,7 +139,7 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
                 margin: 0,
               }}
             >
-              Tầm Xuân · Fashion Atelier
+              TryVibe · Fashion Atelier
             </p>
 
             <h1

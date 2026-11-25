@@ -236,7 +236,7 @@ export function loadPaymentPromoConfig(): PaymentPromoConfig {
     vietqr: {
       bankBin: process.env.VIETQR_BANK_BIN?.trim() || '970422',
       accountNo: process.env.VIETQR_ACCOUNT_NO?.trim() || '088820269999',
-      accountName: process.env.VIETQR_ACCOUNT_NAME?.trim() || 'TAM XUAN ATELIER',
+      accountName: process.env.VIETQR_ACCOUNT_NAME?.trim() || 'TRYVIBE ATELIER',
     },
     payos: {
       clientId: payosClientId,

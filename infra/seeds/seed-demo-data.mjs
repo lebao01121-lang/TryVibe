@@ -495,7 +495,7 @@ async function main() {
       report.ok = false;
     }
 
-    console.log('\n=== Tầm Xuân Fashion Atelier · Master Demo Seed Report ===');
+    console.log('\n=== TryVibe Fashion Atelier · Master Demo Seed Report ===');
     console.log(JSON.stringify(report, null, 2));
 
     if (!report.ok) {

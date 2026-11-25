@@ -7,7 +7,7 @@ export function CustomerFooter() {
       <div className="mx-auto grid max-w-7xl gap-10 px-6 py-14 md:grid-cols-3 lg:px-10">
         <div>
           <p className="font-editorial text-2xl text-[#EBCF8F]">
-            Tầm Xuân Fashion Atelier
+            TryVibe Fashion Atelier
           </p>
           <p className="mt-3 text-sm leading-relaxed text-[#FBF7EF]/75">
             Xưởng may đo thủ công tại Hà Nội. Tuyển chọn lụa tơ tằm Bảo Lộc,
@@ -62,7 +62,7 @@ export function CustomerFooter() {
       <div className="border-t border-[#B08A4A]/15 px-6 py-5">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-center text-xs tracking-widest text-[#FBF7EF]/55 sm:flex-row sm:text-left lg:px-4">
           <span>
-            © 2026 Tầm Xuân Fashion Atelier · Bản quyền trải nghiệm khách hàng
+            © 2026 TryVibe Fashion Atelier · Bản quyền trải nghiệm khách hàng
           </span>
           <PerformanceTierToggle />
         </div>

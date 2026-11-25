@@ -49,7 +49,7 @@ export function StudioGiftCard({
 
           <div className="relative z-10 flex items-center justify-between border-b border-[#B08A4A]/20 pb-1.5">
             <span className="text-[9px] font-medium tracking-[0.22em] uppercase text-[#8A672C]">
-              GIFT CARD · TẦM XUÂN ATELIER
+              GIFT CARD · TRYVIBE ATELIER
             </span>
             <span className="font-mono text-[9.5px] text-[#7A6A5B]">
               {value.length}/{maxLength}
@@ -79,7 +79,7 @@ export function StudioGiftCard({
               Viết tay mực nâu cacao
             </span>
             <span className="font-editorial text-[11px] italic text-[#8A672C]">
-              — Tầm Xuân
+              — TryVibe
             </span>
           </div>
         </div>

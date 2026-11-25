@@ -21,7 +21,7 @@ export const PROMOTION_SEEDS: readonly PromotionSeedEntry[] = [
   {
     id: '71000000-0000-4000-8000-000000000001',
     code: 'ATELIER10',
-    name: 'Ưu đãi Tầm Xuân 10% + Tặng 2 lượt Thử đồ AI',
+    name: 'Ưu đãi TryVibe 10% + Tặng 2 lượt Thử đồ AI',
     description: 'Giảm 10% (tối đa 500.000₫) cho đơn từ 1.000.000₫, tặng thêm 2 lượt Virtual Try-On.',
     promoType: 'PERCENT',
     discountValue: 10,
@@ -136,6 +136,12 @@ export async function seedPromotionsIdempotently(db: AtelierDbClient): Promise<n
     );
     if (res.rows.length > 0) {
       inserted += 1;
+    } else if (promo.code === 'ATELIER10') {
+      const legacyToken = 'T\u1EA7m Xu\u00E2n';
+      await db.query(
+        `UPDATE promotions SET name = $2 WHERE code = $1 AND name ILIKE $3`,
+        [promo.code, promo.name, `%${legacyToken}%`],
+      );
     }
   }
   return inserted;

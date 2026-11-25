@@ -2353,7 +2353,7 @@ export class RuleBasedMcpOrchestrator {
       const refusalPayload = redactStorefrontPayload<ExtendedCopilotChatResponse>({
         traceId,
         reply:
-          'Xin lỗi quý khách, cố vấn thời trang Tầm Xuân Atelier trên Storefront chỉ hỗ trợ tư vấn sản phẩm bán lẻ, chọn kích cỡ, phối đồ và chính sách khách hàng. Hệ thống bảo mật không cung cấp dữ liệu nội bộ và không thực hiện tác vụ quản trị.',
+          'Xin lỗi quý khách, cố vấn thời trang TryVibe Atelier trên Storefront chỉ hỗ trợ tư vấn sản phẩm bán lẻ, chọn kích cỡ, phối đồ và chính sách khách hàng. Hệ thống bảo mật không cung cấp dữ liệu nội bộ và không thực hiện tác vụ quản trị.',
         citations: [],
         recommendedProducts: [],
         toolCalls: [],
@@ -2911,7 +2911,7 @@ export class RuleBasedMcpOrchestrator {
         if (wantsOrderLookup && !executedState.ordersChecked) {
           if (isGuest) {
             deterministicNotes.push(
-              'Quý khách vui lòng đăng nhập tài khoản thành viên Tầm Xuân Atelier để tra cứu đơn hàng cá nhân và trạng thái đổi size RMA.',
+              'Quý khách vui lòng đăng nhập tài khoản thành viên TryVibe Atelier để tra cứu đơn hàng cá nhân và trạng thái đổi size RMA.',
             );
           } else {
             await runStorefrontTool(CUSTOMER_ORDERS_RMA_TOOL_NAME, {
@@ -2973,21 +2973,21 @@ export class RuleBasedMcpOrchestrator {
             .slice(0, 2)
             .map((c) => `• **${c.title}**: ${c.snippet}`);
           deterministicNotes.push(
-            `Theo quy chuẩn dịch vụ Tầm Xuân Atelier:\n${policyLines.join('\n')}`,
+            `Theo quy chuẩn dịch vụ TryVibe Atelier:\n${policyLines.join('\n')}`,
           );
         }
 
         if (deterministicNotes.length === 0) {
           if (citations.length > 0) {
             deterministicNotes.push(
-              `Thông tin từ Tầm Xuân Atelier:\n${citations
+              `Thông tin từ TryVibe Atelier:\n${citations
                 .slice(0, 2)
                 .map((c) => `• **${c.title}**: ${c.snippet}`)
                 .join('\n')}`,
             );
           } else {
             deterministicNotes.push(
-              'Tôi là Cố vấn Thời trang Tầm Xuân Atelier — sẵn sàng hỗ trợ quý khách chọn kích cỡ theo chiều cao/cân nặng, gợi ý phối đồ còn hàng đúng size, hoặc giải đáp chính sách đổi size 7–14 ngày và bảo mật ảnh thử đồ 15 phút.',
+              'Tôi là Cố vấn Thời trang TryVibe Atelier — sẵn sàng hỗ trợ quý khách chọn kích cỡ theo chiều cao/cân nặng, gợi ý phối đồ còn hàng đúng size, hoặc giải đáp chính sách đổi size 7–14 ngày và bảo mật ảnh thử đồ 15 phút.',
             );
           }
         }
@@ -3015,7 +3015,7 @@ export class RuleBasedMcpOrchestrator {
             citations.length > 0
               ? `Trích dẫn chính sách Atelier:\n${citations.slice(0, 3).map((c) => `- ${c.title}: ${c.snippet}`).join('\n')}`
               : '',
-            'Hãy viết câu trả lời tiếng Việt thanh lịch, ngắn gọn (3–5 câu) theo phong cách Quiet Luxury của Tầm Xuân Atelier.',
+            'Hãy viết câu trả lời tiếng Việt thanh lịch, ngắn gọn (3–5 câu) theo phong cách Quiet Luxury của TryVibe Atelier.',
           ]
             .filter(Boolean)
             .join('\n\n');

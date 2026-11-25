@@ -11,7 +11,7 @@ export async function generateMetadata({
 }: OrderDetailPageProps): Promise<Metadata> {
   const { code } = await params;
   return {
-    title: `Đơn hàng #${code} · Tầm Xuân Fashion Atelier`,
+    title: `Đơn hàng #${code} · TryVibe Fashion Atelier`,
     description:
       'Theo dõi hành trình đơn hàng thời trang, xem ảnh chụp hộp quà trước khi niêm phong, đổi size 1 chạm và gửi đánh giá độ vừa xác thực.',
   };

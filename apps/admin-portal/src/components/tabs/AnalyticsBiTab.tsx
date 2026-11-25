@@ -233,7 +233,7 @@ export function AnalyticsBiTab({
     );
 
     downloadUtf8BomCsv(
-      `tam-xuan-bi-doanh-thu-${range}-${dateStamp}.csv`,
+      `tryvibe-bi-doanh-thu-${range}-${dateStamp}.csv`,
       headers,
       rows,
     );
@@ -275,7 +275,7 @@ export function AnalyticsBiTab({
     );
 
     downloadUtf8BomCsv(
-      `tam-xuan-bi-top-sku-${range}-${dateStamp}.csv`,
+      `tryvibe-bi-top-sku-${range}-${dateStamp}.csv`,
       headers,
       rows,
     );

@@ -166,7 +166,7 @@ export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
               {Portal.PARTNER_PORTAL} · Port 3002 · B2B Supplier Portal
             </p>
             <h1 className="font-editorial text-2xl font-normal tracking-wide text-[#FBF7EF]">
-              Cổng Đối Tác Nhà Cung Cấp · Tầm Xuân Atelier
+              Cổng Đối Tác Nhà Cung Cấp · TryVibe Atelier
             </h1>
           </div>
 

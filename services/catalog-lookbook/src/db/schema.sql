@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS products (
   slug TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   subtitle TEXT NULL,
-  brand_name TEXT NOT NULL DEFAULT 'Tầm Xuân Atelier',
+  brand_name TEXT NOT NULL DEFAULT 'TryVibe Atelier',
   description TEXT NOT NULL,
   fabric_composition TEXT NOT NULL,
   fit_type TEXT NOT NULL DEFAULT 'REGULAR',
@@ -165,7 +165,7 @@ ALTER TABLE packaging_options ADD COLUMN IF NOT EXISTS back_image_url TEXT NULL;
 CREATE TABLE IF NOT EXISTS homepage_campaigns (
   id UUID PRIMARY KEY,
   slug TEXT NOT NULL UNIQUE,
-  eyebrow TEXT NOT NULL DEFAULT 'TẦM XUÂN · FASHION ATELIER',
+  eyebrow TEXT NOT NULL DEFAULT 'TRYVIBE · FASHION ATELIER',
   hero_title TEXT NOT NULL,
   hero_subtitle TEXT NOT NULL,
   atelier_manifesto TEXT NOT NULL,

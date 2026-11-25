@@ -156,7 +156,7 @@ function renderAtelierEmailShell(params: {
     '</div>',
     '<div style="padding:18px 28px;background:#F4EBDA;border-top:1px solid #E3D5BD;font-size:12px;color:#665547;line-height:1.5;">',
     `<p style="margin:0;">${escapeHtml(params.footerNote)}</p>`,
-    '<p style="margin:6px 0 0;color:#8D6E3B;">Tầm Xuân · Fashion Atelier · Phố Phan Đình Phùng, Ba Đình, Hà Nội</p>',
+    '<p style="margin:6px 0 0;color:#8D6E3B;">TryVibe · Fashion Atelier · Phố Phan Đình Phùng, Ba Đình, Hà Nội</p>',
     '</div>',
     '</div>',
     '</body></html>',
@@ -505,7 +505,7 @@ export class NotificationService {
     traceparent?: string,
   ): Promise<NotificationDispatchResult> {
     const eventId = input.eventId?.trim() || `zns-direct:${randomUUID()}`;
-    const subject = input.subject?.trim() || `Tầm Xuân Atelier · ZNS ${input.templateCode}`;
+    const subject = input.subject?.trim() || `TryVibe Atelier · ZNS ${input.templateCode}`;
 
     const znsOutcome = await this.dispatchZnsAndLog({
       eventId,
@@ -544,7 +544,7 @@ export class NotificationService {
     traceparent?: string,
   ): Promise<NotificationDispatchResult> {
     const eventId = input.eventId?.trim() || `rma-rejected:${input.rmaCode}`;
-    const subject = `Tầm Xuân Atelier · Cập nhật yêu cầu đổi trả ${input.rmaCode}`;
+    const subject = `TryVibe Atelier · Cập nhật yêu cầu đổi trả ${input.rmaCode}`;
     const greetingName = input.customerName?.trim() || 'Quý khách';
 
     const bodyHtml = [
@@ -553,23 +553,23 @@ export class NotificationService {
       `<p style="margin:6px 0 0;font-size:13px;color:#5A493B;">Đơn hàng gốc: <strong style="color:#1C1410;">${escapeHtml(input.orderCode)}</strong></p>`,
       `<p style="margin:8px 0 0;font-size:13px;color:#8B2E2E;">Lý do từ chối: <strong>${escapeHtml(input.reason)}</strong></p>`,
       '</div>',
-      '<p style="margin:0;font-size:13px;color:#5A493B;line-height:1.6;">Nếu bạn cần hỗ trợ thêm hoặc muốn khiếu nại thẩm định, vui lòng phản hồi trực tiếp email này hoặc liên hệ bộ phận Chăm sóc Khách hàng Tầm Xuân Atelier.</p>',
+      '<p style="margin:0;font-size:13px;color:#5A493B;line-height:1.6;">Nếu bạn cần hỗ trợ thêm hoặc muốn khiếu nại thẩm định, vui lòng phản hồi trực tiếp email này hoặc liên hệ bộ phận Chăm sóc Khách hàng TryVibe Atelier.</p>',
     ].join('');
 
     const html = renderAtelierEmailShell({
-      eyebrow: 'Tầm Xuân Fashion Atelier · RMA Update',
+      eyebrow: 'TryVibe Fashion Atelier · RMA Update',
       title: `Thông báo yêu cầu RMA ${input.rmaCode}`,
       lead: `Xin chào ${greetingName}, chúng tôi đã hoàn tất xem xét yêu cầu đổi trả của bạn.`,
       bodyHtml,
       footerNote:
-        'Tầm Xuân Atelier luôn đồng hành hỗ trợ kiểm định minh bạch cho mọi thiết kế.',
+        'TryVibe Atelier luôn đồng hành hỗ trợ kiểm định minh bạch cho mọi thiết kế.',
     });
 
     const text = [
       `Xin chào ${greetingName},`,
       `Yêu cầu đổi trả ${input.rmaCode} (đơn hàng ${input.orderCode}) chưa đủ điều kiện phê duyệt.`,
       `Lý do: ${input.reason}`,
-      'Trân trọng, Tầm Xuân Fashion Atelier.',
+      'Trân trọng, TryVibe Fashion Atelier.',
     ].join('\n');
 
     return this.sendSmtpAndLog({
@@ -605,13 +605,13 @@ export class NotificationService {
     traceparent?: string,
   ): Promise<NotificationDispatchResult> {
     const eventId = input.eventId?.trim() || `order-confirmed:${input.orderCode}`;
-    const subject = `Tầm Xuân Atelier · Xác nhận đơn hàng ${input.orderCode}`;
+    const subject = `TryVibe Atelier · Xác nhận đơn hàng ${input.orderCode}`;
     const greetingName = input.customerName?.trim() || 'Quý khách';
     const items = input.items ?? [];
 
     const itemsRowsHtml = items
       .map((item) => {
-        const title = item.productName || item.skuCode || 'Thiết kế Tầm Xuân Atelier';
+        const title = item.productName || item.skuCode || 'Thiết kế TryVibe Atelier';
         const variantBits = [item.colorName, item.sizeCode ? `Size ${item.sizeCode}` : null]
           .filter(Boolean)
           .join(' · ');
@@ -641,13 +641,13 @@ export class NotificationService {
       items.length > 0
         ? `<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">${itemsRowsHtml}</table>`
         : '',
-      '<p style="margin:0;font-size:13px;color:#5A493B;line-height:1.6;">Xưởng may Tầm Xuân đang kiểm chuẩn đường kim mũi chỉ và sẽ gửi ảnh chụp hộp trang phục trước khi niêm phong bàn giao đơn vị vận chuyển.</p>',
+      '<p style="margin:0;font-size:13px;color:#5A493B;line-height:1.6;">Xưởng may TryVibe đang kiểm chuẩn đường kim mũi chỉ và sẽ gửi ảnh chụp hộp trang phục trước khi niêm phong bàn giao đơn vị vận chuyển.</p>',
     ].join('');
 
     const html = renderAtelierEmailShell({
-      eyebrow: 'Tầm Xuân Fashion Atelier · Order Confirmed',
+      eyebrow: 'TryVibe Fashion Atelier · Order Confirmed',
       title: `Xác nhận đơn hàng ${input.orderCode}`,
-      lead: `Xin chào ${greetingName}, Tầm Xuân Atelier đã tiếp nhận và xác nhận thanh toán cho đơn hàng của bạn.`,
+      lead: `Xin chào ${greetingName}, TryVibe Atelier đã tiếp nhận và xác nhận thanh toán cho đơn hàng của bạn.`,
       bodyHtml,
       footerNote:
         'Quyền lợi đổi size miễn phí 7 ngày (14 ngày cho hạng GOLD/DIAMOND) · Quà tặng +5 lượt Ướm thử AI đã được cộng vào tài khoản của bạn.',
@@ -655,14 +655,14 @@ export class NotificationService {
 
     const textLines = [
       `Xin chào ${greetingName},`,
-      `Tầm Xuân Atelier xác nhận đơn hàng ${input.orderCode}.`,
+      `TryVibe Atelier xác nhận đơn hàng ${input.orderCode}.`,
       `Tổng thanh toán: ${formatVnd(input.grandTotalVnd)}`,
       ...(input.trackingCode ? [`Mã vận đơn: ${input.trackingCode}`] : []),
       ...items.map(
         (item) =>
           `- ${item.productName || item.skuCode || 'Sản phẩm'} (${item.sizeCode || '-'}) x${item.qty ?? 1}`,
       ),
-      'Trân trọng, Tầm Xuân Fashion Atelier.',
+      'Trân trọng, TryVibe Fashion Atelier.',
     ];
 
     return this.sendSmtpAndLog({
@@ -697,7 +697,7 @@ export class NotificationService {
     traceparent?: string,
   ): Promise<NotificationDispatchResult> {
     const eventId = input.eventId?.trim() || `order-packed:${input.orderCode}`;
-    const subject = `Tầm Xuân Atelier · Ảnh chụp hộp trang phục đơn ${input.orderCode} trước khi giao`;
+    const subject = `TryVibe Atelier · Ảnh chụp hộp trang phục đơn ${input.orderCode} trước khi giao`;
     const greetingName = input.customerName?.trim() || 'Quý khách';
 
     const bodyHtml = [
@@ -715,9 +715,9 @@ export class NotificationService {
     ].join('');
 
     const html = renderAtelierEmailShell({
-      eyebrow: 'Tầm Xuân Fashion Atelier · Pack Photo Proof',
+      eyebrow: 'TryVibe Fashion Atelier · Pack Photo Proof',
       title: `Hộp trang phục đơn ${input.orderCode} đã sẵn sàng`,
-      lead: `Xin chào ${greetingName}, xưởng may Tầm Xuân gửi bạn ảnh chụp thực tế hộp trang phục trước khi niêm phong giao đi.`,
+      lead: `Xin chào ${greetingName}, xưởng may TryVibe gửi bạn ảnh chụp thực tế hộp trang phục trước khi niêm phong giao đi.`,
       bodyHtml,
       footerNote:
         'Bạn có thể theo dõi hành trình đơn hàng trực tiếp tại trang Chi tiết Đơn hàng trên Storefront.',
@@ -725,10 +725,10 @@ export class NotificationService {
 
     const text = [
       `Xin chào ${greetingName},`,
-      `Đơn hàng ${input.orderCode} đã được đóng gói hoàn thiện tại xưởng Tầm Xuân.`,
+      `Đơn hàng ${input.orderCode} đã được đóng gói hoàn thiện tại xưởng TryVibe.`,
       ...(input.trackingCode ? [`Mã vận đơn: ${input.trackingCode}`] : []),
       `Ảnh chụp hộp trang phục trước khi giao: ${input.packPhotoUrl}`,
-      'Trân trọng, Tầm Xuân Fashion Atelier.',
+      'Trân trọng, TryVibe Fashion Atelier.',
     ].join('\n');
 
     return this.sendSmtpAndLog({
@@ -762,7 +762,7 @@ export class NotificationService {
     traceparent?: string,
   ): Promise<NotificationDispatchResult> {
     const eventId = input.eventId?.trim() || `po-submitted:${input.poNumber}`;
-    const subject = `Tầm Xuân Atelier B2B · Đơn đặt hàng nhập mới ${input.poNumber}`;
+    const subject = `TryVibe Atelier B2B · Đơn đặt hàng nhập mới ${input.poNumber}`;
     const supplierLabel = input.supplierName?.trim() || 'Quý đối tác cung ứng';
     const items = input.items ?? [];
 
@@ -800,17 +800,17 @@ export class NotificationService {
     ].join('');
 
     const html = renderAtelierEmailShell({
-      eyebrow: 'Tầm Xuân Fashion Atelier · B2B Procurement',
+      eyebrow: 'TryVibe Fashion Atelier · B2B Procurement',
       title: `Đơn đặt hàng nhập mới ${input.poNumber}`,
-      lead: `Kính gửi ${supplierLabel}, Tầm Xuân Atelier đã phê duyệt và phát hành đơn đặt hàng nhập chính thức.`,
+      lead: `Kính gửi ${supplierLabel}, TryVibe Atelier đã phê duyệt và phát hành đơn đặt hàng nhập chính thức.`,
       bodyHtml,
       footerNote:
-        'Email tự động từ hệ thống Thu mua B2B Tầm Xuân Atelier. Công nợ đối soát sẽ được tạo tự động dựa trên số lượng nghiệm thu đạt chuẩn (GRN).',
+        'Email tự động từ hệ thống Thu mua B2B TryVibe Atelier. Công nợ đối soát sẽ được tạo tự động dựa trên số lượng nghiệm thu đạt chuẩn (GRN).',
     });
 
     const text = [
       `Kính gửi ${supplierLabel},`,
-      `Tầm Xuân Atelier phát hành đơn đặt hàng nhập mới: ${input.poNumber}`,
+      `TryVibe Atelier phát hành đơn đặt hàng nhập mới: ${input.poNumber}`,
       ...(input.expectedDeliveryDate ? [`Ngày giao dự kiến: ${input.expectedDeliveryDate}`] : []),
       `Tổng giá trị: ${formatVnd(input.totalAmountVnd)}`,
       ...items.map(

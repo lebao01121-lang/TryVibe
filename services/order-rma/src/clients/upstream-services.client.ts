@@ -350,7 +350,7 @@ export class UpstreamServicesClient {
           skuCode: String(rec.skuCode ?? skuId),
           variantId: String(rec.variantId ?? ''),
           productId: String(rec.productId ?? ''),
-          productName: String(rec.productName ?? 'Thiết kế Tầm Xuân Atelier'),
+          productName: String(rec.productName ?? 'Thiết kế TryVibe Atelier'),
           productSlug: String(rec.productSlug ?? ''),
           colorName: String(rec.colorName ?? 'Mặc định'),
           colorHex: String(rec.colorHex ?? '#1C1410'),

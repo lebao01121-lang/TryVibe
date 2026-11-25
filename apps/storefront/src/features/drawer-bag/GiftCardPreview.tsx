@@ -8,7 +8,7 @@ export interface GiftCardPreviewProps {
 
 /**
  * Faithful `.order__card` slanted (-4deg) ivory Atelier gift card
- * displaying monogram `T&X`, live keystroke-synced calligraphic Dancing Script
+ * displaying monogram `T&V`, live keystroke-synced calligraphic Dancing Script
  * (`var(--cursive)`) message (maxLength 140), and Atelier signature.
  * Supports both floating drawer presentation and inline Checkout presentation.
  */
@@ -44,7 +44,7 @@ export function GiftCardPreview({
         />
 
         <span className="order__mono text-center font-editorial text-[20px] tracking-[0.04em] text-[#B08A4A]">
-          T<i className="mx-0.5 text-[0.6em]">&#38;</i>X
+          T<i className="mx-0.5 text-[0.6em]">&#38;</i>V
         </span>
 
         <p
@@ -57,7 +57,7 @@ export function GiftCardPreview({
         </p>
 
         <i className="order__sign text-right font-editorial text-[12px] text-[#8A672C]">
-          — Tầm Xuân gửi kèm thiết kế
+          — TryVibe gửi kèm thiết kế
         </i>
       </div>
     );
@@ -92,7 +92,7 @@ export function GiftCardPreview({
       />
 
       <span className="order__mono text-center font-editorial text-[22px] tracking-[0.04em] text-[#B08A4A]">
-        T<i className="mx-0.5 text-[0.6em]">&#38;</i>X
+        T<i className="mx-0.5 text-[0.6em]">&#38;</i>V
       </span>
 
       <p
@@ -106,7 +106,7 @@ export function GiftCardPreview({
       </p>
 
       <i className="order__sign text-right font-editorial text-[13px] text-[#8A672C]">
-        — Tầm Xuân gửi kèm thiết kế
+        — TryVibe gửi kèm thiết kế
       </i>
     </div>
   );

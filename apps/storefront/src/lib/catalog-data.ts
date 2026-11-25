@@ -121,7 +121,7 @@ export const SEASON_DROPS: SeasonDrop[] = [
   {
     slug: 'xuan-tam-xuan',
     months: 'Tháng 1 – 2',
-    title: 'Xuân Tầm Xuân',
+    title: 'Xuân TryVibe',
     note: 'Tơ tằm dệt nổi và phom cổ trụ thanh thoát.',
     isCurrent: false,
   },
@@ -240,7 +240,7 @@ export const FALLBACK_PRODUCTS: ProductSpuDto[] = [
     slug: 'ao-blazer-linen-dang-suong',
     name: 'Áo Blazer Linen Dáng Suông',
     subtitle: 'Linen hữu cơ dệt thưa · Dựng vai mềm không gò bó',
-    brandName: 'Tầm Xuân Atelier',
+    brandName: 'TryVibe Atelier',
     description:
       'Thiết kế blazer một hàng khuy cúc sừng tự nhiên, lót nửa thân bằng lụa Habotai thoáng khí cho ngày công sở và dạo phố.',
     fabricComposition: '100% Linen Hữu Cơ 240gsm · Lót lụa Habotai',
@@ -300,9 +300,9 @@ export const FALLBACK_PRODUCTS: ProductSpuDto[] = [
     categorySlug: 'ao-so-mi',
     categoryName: 'Áo Sơ Mi',
     slug: 'ao-so-mi-lua-to-tam-tam-xuan',
-    name: 'Áo Sơ Mi Lụa Tơ Tằm Tầm Xuân',
+    name: 'Áo Sơ Mi Lụa Tơ Tằm TryVibe',
     subtitle: 'Lụa Bảo Lộc 19 momme · Nẹp giấu khuy tối giản',
-    brandName: 'Tầm Xuân Atelier',
+    brandName: 'TryVibe Atelier',
     description:
       'Chất lụa tơ tằm bóng mờ tự nhiên, đường may lộn giấu chỉ bên trong tinh xảo.',
     fabricComposition: '100% Lụa Tơ Tằm Bảo Lộc 19 momme',
@@ -349,7 +349,7 @@ export const FALLBACK_PRODUCTS: ProductSpuDto[] = [
     slug: 'dam-du-tiec-lua-satin-co-do',
     name: 'Đầm Dự Tiệc Lụa Satin Cổ Đổ',
     subtitle: 'Cắt chéo sợi 45° tôn đường cong mềm mại',
-    brandName: 'Tầm Xuân Atelier',
+    brandName: 'TryVibe Atelier',
     description:
       'Phom đầm bias-cut rủ dọc tự nhiên theo chuyển động, phù hợp tiệc tối và sự kiện trang trọng.',
     fabricComposition: '100% Silk Satin 22 momme',
@@ -396,7 +396,7 @@ export const FALLBACK_PRODUCTS: ProductSpuDto[] = [
     slug: 'quan-tay-ong-suong-xep-ly-doi',
     name: 'Quần Tây Ống Suông Xếp Ly Đôi',
     subtitle: 'Cạp cao hai ly sâu · Wool lạnh thoáng nhẹ',
-    brandName: 'Tầm Xuân Atelier',
+    brandName: 'TryVibe Atelier',
     description:
       'Quần tây ống suông tạo tỷ lệ thanh thoát, ít nhăn khi di chuyển và ngồi làm việc.',
     fabricComposition: '65% Wool Lạnh · 35% Tencel',

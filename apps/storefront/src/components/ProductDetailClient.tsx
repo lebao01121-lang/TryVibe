@@ -1065,7 +1065,7 @@ export function ProductDetailClient({
                   <div className="space-y-2 px-6 pb-5 text-sm text-[#5C4B41]">
                     <p>
                       • Miễn phí đổi kích cỡ trong vòng 7–14 ngày kể từ khi nhận
-                      hàng (sản phẩm còn nguyên tem mác xưởng Tầm Xuân).
+                      hàng (sản phẩm còn nguyên tem mác xưởng TryVibe).
                     </p>
                     <p>
                       • Ảnh khách hàng tải lên khi ướm thử AI được cách ly tại

@@ -16,7 +16,7 @@ interface OutfitStudioPageProps {
 export async function generateMetadata(): Promise<Metadata> {
   const siteUrl = getSiteBaseUrl();
   return {
-    title: 'Mix & Match Outfit Studio · Tầm Xuân Fashion Atelier',
+    title: 'Mix & Match Outfit Studio · TryVibe Fashion Atelier',
     description:
       'Xưởng phối đồ cá nhân Mix & Match trực quan trên ma-nơ-canh, tự động tính ưu đãi Combo -5% / -10%, kiểm tra tồn kho theo size và chia sẻ liên kết bộ trang phục.',
     alternates: {

@@ -177,7 +177,7 @@ export function PaymentResultClient() {
               Đang đối soát kết quả thanh toán
             </h1>
             <p className="mt-3 text-sm text-[#6B5B4C]">
-              Hệ thống Tầm Xuân Atelier đang xác minh chữ ký số và đồng bộ trạng thái đơn hàng
+              Hệ thống TryVibe Atelier đang xác minh chữ ký số và đồng bộ trạng thái đơn hàng
               của bạn…
             </p>
           </div>

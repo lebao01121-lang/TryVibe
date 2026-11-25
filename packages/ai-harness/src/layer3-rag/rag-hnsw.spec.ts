@@ -56,7 +56,7 @@ describe('Layer 3 RAG — Context-Overlapping Chunking, HNSW DDL & Dynamic Versi
     expect(shortChunks[0]?.totalChunks).toBe(1);
 
     const longVietnameseDoc = [
-      'Bộ sưu tập Tầm Xuân Fashion Atelier 2026 sử dụng lụa tơ tằm Bảo Lộc 19 momme dệt thủ công kết hợp đường cắt may chuẩn phom dáng Việt Nam. Mỗi sản phẩm đều trải qua ba vòng kiểm định đường kim mũi chỉ nghiêm ngặt trước khi đóng gói vào hộp lụa cổ điển.',
+      'Bộ sưu tập TryVibe Fashion Atelier 2026 sử dụng lụa tơ tằm Bảo Lộc 19 momme dệt thủ công kết hợp đường cắt may chuẩn phom dáng Việt Nam. Mỗi sản phẩm đều trải qua ba vòng kiểm định đường kim mũi chỉ nghiêm ngặt trước khi đóng gói vào hộp lụa cổ điển.',
       'Hướng dẫn bảo quản áo len cashmere và lụa tơ tằm yêu cầu giặt tay nhẹ nhàng bằng nước mát dưới 28 độ C cùng dung dịch giặt độ pH trung tính. Tuyệt đối không sử dụng chất tẩy clo, không vắt xoắn mạnh tay và luôn thấm khô bằng khăn bông trắng trước khi phơi ngang trong bóng râm.',
       'Chính sách bảo hành cúc ngọc trai và chỉnh sửa gấu áo miễn phí trọn đời áp dụng cho toàn bộ đơn hàng có mã xác thực Atelier Authenticity Tag tại hệ thống showroom Hà Nội và Thành phố Hồ Chí Minh. Khách hàng chỉ cần xuất trình mã đơn hàng để nghệ nhân rập trực tiếp đo chỉnh trong vòng 48 giờ làm việc.',
       'Đối với các đơn hàng đặt may đo cá nhân hóa hoặc đổi size RMA hai chiều, bưu tá chuyên trách sẽ giao sản phẩm mới đồng thời thu hồi sản phẩm cần đổi tận cửa mà không phát sinh phụ phí vận chuyển nội thành.',
@@ -137,7 +137,7 @@ describe('Layer 3 RAG — Context-Overlapping Chunking, HNSW DDL & Dynamic Versi
       maxChunkChars: 240,
       overlapChars: 60,
       content: [
-        'Hội viên VIP Platinum của Tầm Xuân Atelier được miễn phí dịch vụ giặt hấp Cashmere bằng hơi nước lạnh 2 lần mỗi mùa đông tại xưởng chăm sóc độc quyền.',
+        'Hội viên VIP Platinum của TryVibe Atelier được miễn phí dịch vụ giặt hấp Cashmere bằng hơi nước lạnh 2 lần mỗi mùa đông tại xưởng chăm sóc độc quyền.',
         'Mọi áo khoác Tweed và áo sơ mi lụa gắn cúc ngọc trai Akoya đều được bảo hành thay cúc miễn phí trọn đời trong vòng 24 giờ kể từ khi tiếp nhận tại boutique.',
         'Vui lòng bảo quản áo len Cashmere trong túi vải cotton thoáng khí kèm gỗ tuyết tùng tự nhiên và không treo móc sắt để tránh bai dão cầu vai.',
       ].join('\n\n'),

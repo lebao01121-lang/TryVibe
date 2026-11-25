@@ -23,36 +23,36 @@ export async function generateMetadata({
   const description = [
     product.subtitle || product.description || product.fabricComposition,
     `Giá từ ${FORMAT_VND(product.minPriceVnd)}.`,
-    'Đổi size 7–14 ngày và hỗ trợ ướm thử dáng thực tế bằng AI tại Tầm Xuân Fashion Atelier.',
+    'Đổi size 7–14 ngày và hỗ trợ ướm thử dáng thực tế bằng AI tại TryVibe Fashion Atelier.',
   ]
     .filter(Boolean)
     .join(' ');
 
   return {
-    title: `${product.name} · ${product.categoryName} | Tầm Xuân Fashion Atelier`,
+    title: `${product.name} · ${product.categoryName} | TryVibe Fashion Atelier`,
     description,
     alternates: {
       canonical: canonicalUrl,
     },
     openGraph: {
-      title: `${product.name} | Tầm Xuân Fashion Atelier`,
+      title: `${product.name} | TryVibe Fashion Atelier`,
       description,
       url: canonicalUrl,
       type: 'website',
       locale: 'vi_VN',
-      siteName: 'Tầm Xuân Fashion Atelier',
+      siteName: 'TryVibe Fashion Atelier',
       images: [
         {
           url: ogImageUrl,
           width: 1200,
           height: 630,
-          alt: `${product.name} — Tầm Xuân Fashion Atelier`,
+          alt: `${product.name} — TryVibe Fashion Atelier`,
         },
       ],
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${product.name} | Tầm Xuân Fashion Atelier`,
+      title: `${product.name} | TryVibe Fashion Atelier`,
       description,
       images: [ogImageUrl],
     },
@@ -103,7 +103,7 @@ export default async function ProductDetailPage({
           : 'https://schema.org/InStock',
       seller: {
         '@type': 'Organization',
-        name: 'Tầm Xuân Fashion Atelier',
+        name: 'TryVibe Fashion Atelier',
       },
     },
   };

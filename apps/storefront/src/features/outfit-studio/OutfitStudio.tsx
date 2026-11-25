@@ -411,7 +411,7 @@ export function OutfitStudio({
                 variantId: slotItem.variantId,
                 skuId: slotItem.skuId,
                 slug: slotItem.slug ?? '',
-                productName: slotItem.productName ?? 'Thiết kế Tầm Xuân',
+                productName: slotItem.productName ?? 'Thiết kế TryVibe',
                 colorName: slotItem.colorName ?? 'Tiêu chuẩn',
                 colorHex: slotItem.colorHex ?? '#EBD9B4',
                 sizeCode: slotItem.sizeCode ?? 'M',
@@ -885,7 +885,7 @@ export function OutfitStudio({
       headers: getGuestHeader(),
       skipAuthRefresh: true,
       body: JSON.stringify({
-        title: title || 'Set đồ Tầm Xuân Atelier',
+        title: title || 'Set đồ TryVibe Atelier',
         slots: orderedSelections.map((item) => ({
           slot: item.slot,
           productId: item.productId,
@@ -925,7 +925,7 @@ export function OutfitStudio({
         const updated = [
           {
             shareCode,
-            title: title || 'Set đồ Tầm Xuân Atelier',
+            title: title || 'Set đồ TryVibe Atelier',
             slots: orderedSelections,
             packagingOptionId: activePackaging?.id ?? null,
             giftNote: giftNote.trim() || null,

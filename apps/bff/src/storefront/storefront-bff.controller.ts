@@ -328,16 +328,16 @@ function sanitizeHeroVideoUrl(value: unknown): string | null {
 const FALLBACK_HOMEPAGE_CAMPAIGN: HomepageCampaignDto = {
   id: 'fallback-homepage-campaign',
   code: 'ATELIER_AW2026_SILK',
-  slug: 'tam-xuan-aw2026',
+  slug: 'tryvibe-aw2026',
   eyebrow: HERO_EYEBROW_CANONICAL,
-  title: 'Tầm Xuân',
+  title: 'TryVibe',
   subtitle:
     'Thiết kế may đo thủ công trên lụa tơ tằm và linen hữu cơ — ướm thử dáng thật bằng AI trước khi đặt may.',
-  heroTitle: 'Tầm Xuân',
+  heroTitle: 'TryVibe',
   heroSubtitle:
     'Thiết kế may đo thủ công trên lụa tơ tằm và linen hữu cơ — ướm thử dáng thật bằng AI trước khi đặt may.',
   atelierManifesto:
-    'Mỗi thiết kế tại xưởng Tầm Xuân được dựng rập 3D, cắt tay từ vải tự nhiên và hoàn thiện từng mũi khâu thủ công.',
+    'Mỗi thiết kế tại xưởng TryVibe được dựng rập 3D, cắt tay từ vải tự nhiên và hoàn thiện từng mũi khâu thủ công.',
   privacyGuaranteeMinutes: 15,
   heroImageUrl: DEFAULT_HERO_POSTER_URL,
   heroVideoUrl: null,
@@ -349,14 +349,14 @@ const FALLBACK_HOMEPAGE_CAMPAIGN: HomepageCampaignDto = {
   intro: {
     monogramLeft: 'T',
     monogramAmp: '&',
-    monogramRight: 'X',
+    monogramRight: 'V',
     tagline: 'May đo thủ công · Hà Nội',
-    brandName: 'Tầm Xuân',
+    brandName: 'TryVibe',
     brandSub: 'Fashion Atelier',
   },
   hero: {
     eyebrow: HERO_EYEBROW_CANONICAL,
-    title: 'Tầm Xuân',
+    title: 'TryVibe',
     lead: 'Thiết kế may đo thủ công trên lụa tơ tằm và linen hữu cơ — ướm thử dáng thật bằng AI trước khi đặt may.',
     primaryCtaLabel: 'Khám phá bộ sưu tập',
     serviceNote: 'May đo theo số đo · Đổi size 7–14 ngày · Xóa ảnh AI sau 15 phút',
@@ -372,7 +372,7 @@ const FALLBACK_HOMEPAGE_CAMPAIGN: HomepageCampaignDto = {
       description:
         'Kiểm định từng cuộn lụa tơ tằm Bảo Lộc 19 momme và linen hữu cơ theo độ rủ, mật độ sợi và ánh màu tự nhiên.',
       imageUrl: 'http://127.0.0.1:9000/atelier-public/seed/atelier-step-1.webp',
-      imageAlt: 'Tuyển chọn lụa tơ tằm và linen tại xưởng Tầm Xuân',
+      imageAlt: 'Tuyển chọn lụa tơ tằm và linen tại xưởng TryVibe',
     },
     {
       stepOrder: 2,
@@ -408,7 +408,7 @@ const FALLBACK_HOMEPAGE_CAMPAIGN: HomepageCampaignDto = {
     leadEmphasis: 'mỗi đường kim đều chuẩn theo dáng bạn.',
     ctaLabel: 'Khám phá bộ sưu tập',
     showroomInfo: 'Phố Phan Đình Phùng, Ba Đình · Mở cửa 9:00 – 21:00 mỗi ngày',
-    wordmark: 'Tầm Xuân',
+    wordmark: 'TryVibe',
     featuredVoices: [
       {
         quote:
@@ -820,7 +820,7 @@ export class StorefrontBffService {
     const payload: StorefrontBootstrapDto = stripStorefrontSensitiveFields({
       brand: mergedCampaign.intro?.brandName
         ? `${mergedCampaign.intro.brandName} · ${mergedCampaign.intro.brandSub}`
-        : 'Tầm Xuân · Fashion Atelier',
+        : 'TryVibe · Fashion Atelier',
       platformVersion: '3.0.0',
       campaign: {
         code: mergedCampaign.code,
@@ -1585,7 +1585,7 @@ export class StorefrontBffService {
     const derivedUserName =
       typeof bodyRec.reviewerName === 'string' && bodyRec.reviewerName.trim().length > 0
         ? bodyRec.reviewerName.trim()
-        : user.email.split('@')[0] || 'Khách hàng Tầm Xuân';
+        : user.email.split('@')[0] || 'Khách hàng TryVibe';
 
     const upstream = await this.proxy.request({
       method: 'POST',

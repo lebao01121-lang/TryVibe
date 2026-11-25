@@ -60,7 +60,7 @@ const CreateAdminProductSchema = z.object({
   name: z.string().trim().min(2).max(200),
   subtitle: z.string().max(300).nullable().optional(),
   brandName: z.string().max(120).optional(),
-  description: z.string().trim().min(2).max(4000).default('Thiết kế thủ công tại Tầm Xuân Atelier.'),
+  description: z.string().trim().min(2).max(4000).default('Thiết kế thủ công tại TryVibe Atelier.'),
   fabricComposition: z.string().trim().min(2).max(300).default('100% Lụa tơ tằm Bảo Lộc'),
   fitType: FitTypeSchema.optional(),
   stretchLevel: StretchLevelSchema.optional(),

@@ -2677,7 +2677,7 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
          )
          SELECT
            COALESCE(o.product_id, r.product_id) AS product_id,
-           COALESCE(o.product_name, 'Sản phẩm Tầm Xuân Atelier') AS product_name,
+           COALESCE(o.product_name, 'Sản phẩm TryVibe Atelier') AS product_name,
            COALESCE(o.total_ordered, 0)::int AS total_ordered,
            COALESCE(r.rma_count, 0)::int AS rma_count,
            COALESCE(r.size_exchange_count, 0)::int AS size_exchange_count
@@ -2717,7 +2717,7 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
             );
       return {
         productId: row.product_id,
-        productName: row.product_name ?? 'Sản phẩm Tầm Xuân Atelier',
+        productName: row.product_name ?? 'Sản phẩm TryVibe Atelier',
         totalOrdered,
         rmaCount,
         sizeExchangeRatePct: prodRatePct,

@@ -176,7 +176,7 @@ export function PartnerPurchaseOrdersTab({
     );
 
     if (res.ok) {
-      const msg = `Đã xác nhận đáp ứng đơn ${po.poNumber} (Hẹn giao: ${confirmedDate}) — kho Tầm Xuân đã nhận lịch GRN.`;
+      const msg = `Đã xác nhận đáp ứng đơn ${po.poNumber} (Hẹn giao: ${confirmedDate}) — kho TryVibe đã nhận lịch GRN.`;
       setFeedback({ kind: 'success', message: msg });
       emitPortalToast({ kind: 'success', title: 'XÁC NHẬN PO THÀNH CÔNG', message: msg });
       setConfirmingId(null);
@@ -241,7 +241,7 @@ export function PartnerPurchaseOrdersTab({
       const proposedHint = rejectProposedDate.trim()
         ? ` · Đề xuất ngày giao mới: ${rejectProposedDate.trim()}`
         : '';
-      const msg = `Đã gửi từ chối đơn ${rejectingPo.poNumber}${proposedHint}. Kho Tầm Xuân đã nhận phản hồi.`;
+      const msg = `Đã gửi từ chối đơn ${rejectingPo.poNumber}${proposedHint}. Kho TryVibe đã nhận phản hồi.`;
       setFeedback({ kind: 'success', message: msg });
       emitPortalToast({
         kind: 'success',
@@ -393,7 +393,7 @@ export function PartnerPurchaseOrdersTab({
 
                     {po.cancelReason ? (
                       <p className="text-[11px] text-[#5C4B41]">
-                        Lý do hủy đơn từ Tầm Xuân: {po.cancelReason}
+                        Lý do hủy đơn từ TryVibe: {po.cancelReason}
                       </p>
                     ) : null}
                   </div>
@@ -444,7 +444,7 @@ export function PartnerPurchaseOrdersTab({
                     </label>
                     <label className="block md:col-span-2">
                       <span className="text-[10px] uppercase tracking-[0.14em] text-[#8A672C]">
-                        Ghi chú cho kho Tầm Xuân (supplierNote)
+                        Ghi chú cho kho TryVibe (supplierNote)
                       </span>
                       <input
                         type="text"

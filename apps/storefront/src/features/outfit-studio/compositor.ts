@@ -680,12 +680,12 @@ export async function renderOutfitCompositeSnapshot(
     ctx.fillStyle = '#FBF7EF';
     ctx.font = '600 13px Georgia, serif';
     ctx.textAlign = 'center';
-    ctx.fillText('T&X', 300, 723);
+    ctx.fillText('T&V', 300, 723);
 
     ctx.fillStyle = '#EBCF8F';
     ctx.font = '500 11px sans-serif';
     ctx.fillText(
-      (input.packagingName || 'Hộp Signature Tầm Xuân Atelier').toUpperCase(),
+      (input.packagingName || 'Hộp Signature TryVibe Atelier').toUpperCase(),
       300,
       768,
     );
@@ -710,7 +710,7 @@ export async function renderOutfitCompositeSnapshot(
   ctx.fillStyle = '#8A672C';
   ctx.font = '600 11px Georgia, serif';
   ctx.textAlign = 'center';
-  ctx.fillText('TẦM XUÂN · MIX & MATCH STUDIO', 300, 875);
+  ctx.fillText('TRYVIBE · MIX & MATCH STUDIO', 300, 875);
   ctx.restore();
 
   if (offscreen && typeof offscreen.convertToBlob === 'function') {

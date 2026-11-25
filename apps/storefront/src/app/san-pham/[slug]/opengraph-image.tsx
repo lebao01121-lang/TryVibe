@@ -3,7 +3,7 @@ import { fetchPdpCompositeBySlug } from '@/lib/bootstrap';
 import { FORMAT_VND } from '@/lib/catalog-data';
 
 export const runtime = 'nodejs';
-export const alt = 'Tầm Xuân · Fashion Atelier';
+export const alt = 'TryVibe · Fashion Atelier';
 export const size = {
   width: 1200,
   height: 630,
@@ -19,7 +19,7 @@ export default async function OpenGraphImage({ params }: OpenGraphImageProps) {
 
   let productName = 'Thiết Kế May Đo Thủ Công';
   let fabricLine = 'Lụa tơ tằm Bảo Lộc · Linen hữu cơ cao cấp';
-  let priceText = 'Tầm Xuân Atelier';
+  let priceText = 'TryVibe Atelier';
   let categoryText = 'BỘ SƯU TẬP ATELIER';
   let ratingSummary = '';
 
@@ -81,7 +81,7 @@ export default async function OpenGraphImage({ params }: OpenGraphImageProps) {
               letterSpacing: '2px',
             }}
           >
-            Tầm Xuân · Fashion Atelier
+            TryVibe · Fashion Atelier
           </span>
         </div>
 

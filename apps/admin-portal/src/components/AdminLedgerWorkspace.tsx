@@ -114,8 +114,8 @@ function getBadgeToneClasses(tone?: AdminNavBadgeTone): string {
 }
 
 function getUserMonogram(email?: string): string {
-  if (!email) return 'TX';
-  const local = email.split('@')[0]?.replace(/[^a-zA-Z0-9]/g, '') || 'TX';
+  if (!email) return 'TV';
+  const local = email.split('@')[0]?.replace(/[^a-zA-Z0-9]/g, '') || 'TV';
   return local.slice(0, 2).toUpperCase();
 }
 
@@ -453,15 +453,15 @@ export function AdminLedgerWorkspace({
           type="button"
           onClick={() => handleNavigateTab('dashboard')}
           className="flex min-w-0 items-center gap-2.5 text-left"
-          title="Tầm Xuân Atelier · Enterprise Admin"
+          title="TryVibe Atelier · Enterprise Admin"
         >
           <span className="font-editorial flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#EBCF8F] via-[#B08A4A] to-[#8A672C] text-lg font-bold tracking-tight text-[#16100C] shadow-[0_8px_20px_-6px_rgba(176,138,74,0.65)]">
-            TX
+            TV
           </span>
           {!compact ? (
             <span className="min-w-0">
               <span className="block truncate text-[12px] font-semibold tracking-[0.14em] text-[#FBF7EF]">
-                TẦM XUÂN ATELIER
+                TRYVIBE ATELIER
               </span>
               <span className="mt-0.5 block truncate font-mono text-[9px] uppercase tracking-[0.22em] text-[#EBCF8F]/75">
                 ENTERPRISE ADMIN
@@ -502,7 +502,7 @@ export function AdminLedgerWorkspace({
 
       {/* Grouped Navigation Sections (4 Collapsible Groups, Zero Horizontal Overflow) */}
       <nav
-        aria-label="Phân hệ điều hành Tầm Xuân Atelier"
+        aria-label="Phân hệ điều hành TryVibe Atelier"
         className="adm-sidebar-scroll flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-2.5 py-4"
       >
         {visibleNavGroups.map((group) => {
@@ -733,14 +733,14 @@ export function AdminLedgerWorkspace({
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <span className="font-editorial flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#EBCF8F] via-[#B08A4A] to-[#8A672C] text-xl font-bold text-[#16100C] shadow-md">
-            TX
+            TV
           </span>
           <div>
             <p className="ledger-eyebrow text-[#EBCF8F]">
               {Portal.ADMIN_PORTAL} · Zero-Trust Operational Ledger
             </p>
             <h1 className="font-editorial text-2xl font-normal tracking-wide text-[#FBF7EF]">
-              Tầm Xuân Atelier · Enterprise Admin
+              TryVibe Atelier · Enterprise Admin
             </h1>
           </div>
         </div>
@@ -787,7 +787,7 @@ export function AdminLedgerWorkspace({
         {renderPreAuthHeader()}
         <main className="flex flex-1 items-center justify-center px-6 py-12">
           <div className="rounded-2xl border border-[#B08A4A]/30 bg-[#FFFDF9] px-6 py-4 text-xs text-[#7A6A5B] shadow-sm">
-            Đang khởi tạo phiên điều hành Tầm Xuân Atelier...
+            Đang khởi tạo phiên điều hành TryVibe Atelier...
           </div>
         </main>
         <PortalToastBanner />
@@ -811,7 +811,7 @@ export function AdminLedgerWorkspace({
               <div className="relative">
                 <div className="inline-flex items-center gap-2 rounded-full border border-[#EBCF8F]/35 bg-[#2A1E17]/90 px-3 py-1 font-mono text-[10px] tracking-[0.16em] text-[#EBCF8F]">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  TẦM XUÂN ATELIER · ENTERPRISE ADMIN
+                  TRYVIBE ATELIER · ENTERPRISE ADMIN
                 </div>
 
                 <h2 className="font-editorial mt-6 text-4xl font-light leading-tight text-[#FBF7EF] sm:text-[42px]">
@@ -1081,7 +1081,7 @@ export function AdminLedgerWorkspace({
                         isDark ? 'text-[#C2B3A3]/80' : 'text-[#7A6A5B]'
                       }`}
                     >
-                      Hệ thống Quản trị &amp; Sổ cái Vận hành Tầm Xuân Fashion
+                      Hệ thống Quản trị &amp; Sổ cái Vận hành TryVibe Fashion
                       Atelier · BFF :4000 &amp; Ollama qwen2.5:3b
                     </p>
                   </div>

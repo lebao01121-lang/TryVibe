@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tam Xuan Fashion Atelier — Offline 4-bit QLoRA DPO Alignment Pipeline.
+TryVibe Fashion Atelier — Offline 4-bit QLoRA DPO Alignment Pipeline.
 
 Aligns the QLoRA SFT checkpoint (or base Qwen 2.5 Instruct model) with human operational
 preferences (`NHAP_AI` PO approvals/edits + McpCopilotDrawer 👍/👎 feedback + governance rules)
@@ -439,7 +439,7 @@ def run_live_dpo_training(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Tam Xuan Fashion Atelier — TRL DPO Alignment Trainer (4-bit QLoRA)"
+        description="TryVibe Fashion Atelier — TRL DPO Alignment Trainer (4-bit QLoRA)"
     )
     parser.add_argument(
         "--base-model",

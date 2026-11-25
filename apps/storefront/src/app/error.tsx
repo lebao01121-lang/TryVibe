@@ -76,11 +76,11 @@ export default function StorefrontError({
 
       <div className="relative z-10 w-full max-w-xl rounded-[32px] border border-[#B08A4A]/35 bg-[#F4EBDA]/65 p-8 text-center shadow-[0_30px_80px_-40px_rgba(28,20,16,0.35)] backdrop-blur-md sm:p-12">
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-[#B08A4A]/45 bg-[#1C1410] font-editorial text-xl tracking-wider text-[#EBCF8F]">
-          T&amp;X
+          T&amp;V
         </div>
 
         <p className="atelier-eyebrow text-[#8A672C]">
-          Tầm Xuân · Fashion Atelier
+          TryVibe · Fashion Atelier
         </p>
 
         <h1 className="font-editorial mt-3 text-4xl leading-tight font-light text-[#1C1410] sm:text-5xl">

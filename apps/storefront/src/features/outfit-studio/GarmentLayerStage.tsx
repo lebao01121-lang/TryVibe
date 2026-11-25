@@ -977,7 +977,7 @@ export function GarmentLayerStage({
         }}
         aria-hidden="true"
       >
-        T&amp;X
+        T&amp;V
       </div>
 
       {/* Layer 200: PKG_FRONT animated gift box lid (z-index: 200) — strictly hidden when !isFinalized */}
@@ -995,7 +995,7 @@ export function GarmentLayerStage({
           Set đồ đã hoàn thiện · {ordered.length} món
         </p>
         <p className="mt-1 font-editorial text-lg text-[#FBF7EF]">
-          {activePackaging?.name || 'Đóng gói Signature Tầm Xuân'}
+          {activePackaging?.name || 'Đóng gói Signature TryVibe'}
         </p>
       </div>
 

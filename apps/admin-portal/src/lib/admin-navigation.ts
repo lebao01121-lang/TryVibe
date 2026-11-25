@@ -61,7 +61,7 @@ export const ADMIN_NAV_GROUPS: readonly AdminNavGroup[] = [
         group: 'operations',
         pathSlug: '/admin/dashboard',
         subtitle:
-          'Trung tâm điều hành & sổ cái vận hành thời gian thực Tầm Xuân Fashion Atelier',
+          'Trung tâm điều hành & sổ cái vận hành thời gian thực TryVibe Fashion Atelier',
       },
       {
         key: 'orders',

@@ -1856,7 +1856,7 @@ export function createLiveToolExecutors(
         sizeChartSummary,
         fitAdvice: sizeChartSummary
           ? `Kích cỡ gợi ý là Size ${recommendedSize}. ${sizeChartSummary}`
-          : `Dựa trên thông tin quý khách cung cấp, kích cỡ phù hợp là Size ${recommendedSize}. Các thiết kế lụa tơ tằm và linen hữu cơ tại Tầm Xuân Atelier được dựng rập chuẩn phom Việt.`,
+          : `Dựa trên thông tin quý khách cung cấp, kích cỡ phù hợp là Size ${recommendedSize}. Các thiết kế lụa tơ tằm và linen hữu cơ tại TryVibe Atelier được dựng rập chuẩn phom Việt.`,
         citations,
         sourceMode,
       });
@@ -1915,7 +1915,7 @@ export function createLiveToolExecutors(
         ? [
             {
               sourceId: 'storefront_live_catalog_inventory',
-              title: 'Kho sản phẩm còn hàng trực tiếp tại Tầm Xuân Atelier',
+              title: 'Kho sản phẩm còn hàng trực tiếp tại TryVibe Atelier',
               snippet: `Tìm thấy ${tier0Res.totalMatched} thiết kế còn hàng khớp tiêu chí lọc hiện tại.`,
               score: 1,
             },
@@ -2022,7 +2022,7 @@ export function createLiveToolExecutors(
           authenticated: false,
           orders: [],
           summary:
-            'Quý khách vui lòng đăng nhập tài khoản thành viên Tầm Xuân Atelier để tra cứu đơn hàng cá nhân và trạng thái yêu cầu đổi size RMA.',
+            'Quý khách vui lòng đăng nhập tài khoản thành viên TryVibe Atelier để tra cứu đơn hàng cá nhân và trạng thái yêu cầu đổi size RMA.',
           sourceMode: 'unauthenticated',
         };
       }

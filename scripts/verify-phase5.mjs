@@ -564,7 +564,7 @@ async function runTest1CheckoutSagaAndVipBonus(sharedState) {
       deliverySlot: '11:00–13:00',
       paymentMethod: 'VIETQR',
       voucherCode: 'ATELIER10',
-      giftNote: 'Tầm Xuân Phase 5 Checkout Test',
+      giftNote: 'TryVibe Phase 5 Checkout Test',
       customerEmail: 'customer@atelier.local',
       // Deliberately inject spoofed low unitPriceVnd: 1 to prove server ignores client price!
       items: [

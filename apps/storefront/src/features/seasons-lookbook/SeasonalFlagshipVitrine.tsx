@@ -96,7 +96,7 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
         slotKey: 'TOP',
         productId: 'prod-ao-so-mi-lua-tam-xuan',
         productSlug: 'ao-so-mi-lua-to-tam-tam-xuan',
-        productName: 'Áo Sơ Mi Lụa Tơ Tằm Tầm Xuân',
+        productName: 'Áo Sơ Mi Lụa Tơ Tằm TryVibe',
         basePriceVnd: 1_850_000,
         pinPosition: { xPercent: 56, yPercent: 34 },
         garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-top.png',

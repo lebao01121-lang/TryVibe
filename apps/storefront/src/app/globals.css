@@ -286,7 +286,7 @@ body.is-loading {
   letter-spacing: 0.02em;
   display: flex;
   flex-direction: column;
-  line-height: 1;
+  line-height: 1.08;
 }
 
 .nav__brand small {
@@ -294,7 +294,7 @@ body.is-loading {
   font-size: 9px;
   letter-spacing: 0.36em;
   text-transform: uppercase;
-  margin-top: 4px;
+  margin-top: 3px;
   opacity: 0.8;
 }
 
@@ -432,10 +432,10 @@ body[data-camera-active="true"] .hero__kenburns {
   font-family: var(--serif);
   font-weight: 300;
   font-size: clamp(58px, 12.5vw, 196px);
-  line-height: 0.9;
+  line-height: 1.06;
   letter-spacing: -0.02em;
-  margin: 16px 0 24px;
-  padding-bottom: 0.08em;
+  margin: 16px 0 20px;
+  padding-bottom: 0.2em;
 }
 
 .hero__title .ch {
@@ -946,16 +946,18 @@ body[data-camera-active="true"] .hero__kenburns {
   font-family: var(--serif);
   font-weight: 300;
   font-size: clamp(72px, 18vw, 310px);
-  line-height: 0.88;
-  letter-spacing: -0.03em;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
   white-space: nowrap;
-  margin: clamp(44px, 8vh, 92px) 0 0;
+  margin: clamp(36px, 6.5vh, 76px) 0 0;
   text-align: center;
   user-select: none;
+  overflow: visible;
 }
 
 .finale__base {
   display: block;
+  padding: 0.04em 0.02em 0.22em;
   color: transparent;
   -webkit-text-stroke: 1px rgba(235, 207, 143, 0.42);
 }
@@ -963,6 +965,7 @@ body[data-camera-active="true"] .hero__kenburns {
 .finale__lit {
   position: absolute;
   inset: 0;
+  padding: 0.04em 0.02em 0.22em;
   background: linear-gradient(100deg, #9c7535, #e9cf95 25%, #fff3d6 33%, #d9b46e 45%, #9c7535 60%, #e9cf95, #9c7535);
   background-size: 250% 100%;
   -webkit-background-clip: text;

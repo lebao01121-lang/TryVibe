@@ -137,7 +137,7 @@ function parseArgs(argv) {
 function printHelp() {
   console.log(`
 ${ANSI.bold}${ANSI.brightYellow}========================================================================${ANSI.reset}
-${ANSI.bold}  Tầm Xuân · fashion-atelier-ai-platform (v3.1) — Trình khởi chạy ./run${ANSI.reset}
+${ANSI.bold}  TryVibe · fashion-atelier-ai-platform (v3.1) — Trình khởi chạy ./run${ANSI.reset}
 ${ANSI.bold}${ANSI.brightYellow}========================================================================${ANSI.reset}
 
 ${ANSI.bold}Cách dùng:${ANSI.reset}
@@ -878,7 +878,7 @@ function printDashboard(infraMode, probeResults, seededThisRun, ollamaInfo) {
 
   console.log(`
 ${ANSI.bold}${ANSI.brightGreen}================================================================================${ANSI.reset}
-${ANSI.bold}${ANSI.brightGreen}  TẦM XUÂN · FASHION ATELIER AI PLATFORM (v3.1) — SẴN SÀNG 14/14 (200 OK)${ANSI.reset}
+${ANSI.bold}${ANSI.brightGreen}  TRYVIBE · FASHION ATELIER AI PLATFORM (v3.1) — SẴN SÀNG 14/14 (200 OK)${ANSI.reset}
 ${ANSI.bold}${ANSI.brightGreen}================================================================================${ANSI.reset}
   Chế độ hạ tầng : ${ANSI.bold}${ANSI.yellow}${infraMode}${ANSI.reset}  (${httpsNote})
   Local AI       : ${ollamaLine}
@@ -941,7 +941,7 @@ async function main() {
     process.exit(0);
   }
 
-  console.log(`\n${ANSI.bold}${ANSI.brightYellow}>>> TẦM XUÂN · FASHION ATELIER AI PLATFORM (v3.1) — ONE-COMMAND LAUNCHER <<<${ANSI.reset}`);
+  console.log(`\n${ANSI.bold}${ANSI.brightYellow}>>> TRYVIBE · FASHION ATELIER AI PLATFORM (v3.1) — ONE-COMMAND LAUNCHER <<<${ANSI.reset}`);
 
   // --------------------------------------------------------------------------
   // BƯỚC 1: Kiểm tra Môi trường, .env, Chứng chỉ HTTPS & Giải phóng Cổng

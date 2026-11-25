@@ -242,7 +242,7 @@ export class GhnAdapter implements IShippingProviderAdapter {
 
     const payload = {
       payment_type_id: request.codAmountVnd > 0 ? 2 : 1,
-      note: request.note || `Đơn hàng Tầm Xuân Atelier ${request.orderCode}`,
+      note: request.note || `Đơn hàng TryVibe Atelier ${request.orderCode}`,
       required_note: 'CHOXEMHANGKHONGTHU',
       from_name: this.config.shipping.originName,
       from_phone: this.config.shipping.originPhone,
@@ -260,7 +260,7 @@ export class GhnAdapter implements IShippingProviderAdapter {
       to_district_name: location.districtName,
       to_province_name: location.provinceName,
       cod_amount: Math.max(0, Math.round(request.codAmountVnd)),
-      content: `Trang phục Tầm Xuân Atelier (${request.orderCode})`,
+      content: `Trang phục TryVibe Atelier (${request.orderCode})`,
       weight: Math.max(100, Math.round(request.weightGrams)),
       length: 35,
       width: 25,

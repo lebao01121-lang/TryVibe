@@ -33,7 +33,7 @@ const dancingScript = Dancing_Script({
 });
 
 export const metadata: Metadata = {
-  title: 'Sổ Cái Điều Hành · Tầm Xuân Admin Portal',
+  title: 'Sổ Cái Điều Hành · TryVibe Admin Portal',
   description:
     'Cổng quản trị nội bộ tách biệt vật lý (ADMIN_PORTAL :3001) với bảo vệ RBAC, xác thực 2FA TOTP và Trợ lý MCP Copilot Human-in-the-Loop.',
 };

@@ -451,7 +451,7 @@ export function ReportsReconciliationTab({
       o.totalAmountVnd,
       o.createdAt,
     ]);
-    downloadUtf8BomCsv(`tam-xuan-doi-soat-don-hang-${dateStamp}.csv`, headers, rows);
+    downloadUtf8BomCsv(`tryvibe-doi-soat-don-hang-${dateStamp}.csv`, headers, rows);
     emitPortalToast({
       kind: 'success',
       title: 'XUẤT CSV ĐƠN HÀNG',
@@ -491,7 +491,7 @@ export function ReportsReconciliationTab({
         po.rationale ?? '',
       ];
     });
-    downloadUtf8BomCsv(`tam-xuan-po-b2b-${dateStamp}.csv`, headers, rows);
+    downloadUtf8BomCsv(`tryvibe-po-b2b-${dateStamp}.csv`, headers, rows);
     emitPortalToast({
       kind: 'success',
       title: 'XUẤT CSV PO B2B',
@@ -526,7 +526,7 @@ export function ReportsReconciliationTab({
       entry.note ?? '',
       entry.createdAt,
     ]);
-    downloadUtf8BomCsv(`tam-xuan-so-cai-ton-kho-${dateStamp}.csv`, headers, rows);
+    downloadUtf8BomCsv(`tryvibe-so-cai-ton-kho-${dateStamp}.csv`, headers, rows);
     emitPortalToast({
       kind: 'success',
       title: 'XUẤT CSV SỔ CÁI KHO',

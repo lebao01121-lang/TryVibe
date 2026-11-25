@@ -109,15 +109,15 @@ function sanitizeHeroVideoUrl(value: string | null | undefined): string | null {
 const DEFAULT_INTRO: CampaignIntro = {
   monogramLeft: 'T',
   monogramAmp: '&',
-  monogramRight: 'X',
+  monogramRight: 'V',
   tagline: 'May đo thủ công · Hà Nội',
-  brandName: 'Tầm Xuân',
+  brandName: 'TryVibe',
   brandSub: 'Fashion Atelier',
 };
 
 const DEFAULT_HERO: CampaignHero = {
   eyebrow: HERO_EYEBROW_CANONICAL,
-  title: 'Tầm Xuân',
+  title: 'TryVibe',
   lead: 'Thiết kế may đo thủ công trên lụa tơ tằm và linen hữu cơ — ướm thử dáng thật bằng AI trước khi đặt may.',
   primaryCtaLabel: 'Khám phá bộ sưu tập',
   serviceNote: 'May đo theo số đo · Đổi size 7–14 ngày · Xóa ảnh AI sau 15 phút',
@@ -134,7 +134,7 @@ const DEFAULT_ATELIER_STEPS: AtelierStep[] = [
     description:
       'Kiểm tra từng thước lụa tơ tằm Bảo Lộc 19 momme, linen hữu cơ và wool lạnh dưới ánh sáng tự nhiên buổi sớm.',
     imageUrl: `${DEFAULT_MINIO_PUBLIC}/atelier-public/seed/atelier-step-1.webp`,
-    imageAlt: 'Tuyển chọn lụa tơ tằm và linen tự nhiên tại xưởng Tầm Xuân',
+    imageAlt: 'Tuyển chọn lụa tơ tằm và linen tự nhiên tại xưởng TryVibe',
   },
   {
     stepOrder: 2,
@@ -171,7 +171,7 @@ const DEFAULT_FINALE: CampaignFinale = {
   leadEmphasis: 'mỗi đường kim đều chuẩn theo dáng bạn.',
   ctaLabel: 'Khám phá bộ sưu tập',
   showroomInfo: 'Phố Phan Đình Phùng, Ba Đình · Mở cửa 9:00 – 21:00 mỗi ngày',
-  wordmark: 'Tầm Xuân',
+  wordmark: 'TryVibe',
   featuredVoices: [
     {
       quote:

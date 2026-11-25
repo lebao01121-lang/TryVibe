@@ -57,7 +57,7 @@ function createShippingConfig(overrides?: {
       originWardName: 'Phường Quán Thánh',
       originAddress: '18 Phan Đình Phùng, Ba Đình, Hà Nội',
       originPhone: '02438882026',
-      originName: 'Tầm Xuân Fashion Atelier',
+      originName: 'TryVibe Fashion Atelier',
       ghn: {
         token: overrides?.ghnLive ? 'ghn-live-token' : null,
         shopId: overrides?.ghnLive ? '123456' : null,

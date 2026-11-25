@@ -705,7 +705,7 @@ function createOrderHarness(overrides?: { codTrustScore?: number; loyaltyTier?: 
       originWardName: 'Phường Quán Thánh',
       originAddress: '18 Phan Đình Phùng',
       originPhone: '02438882026',
-      originName: 'Tầm Xuân Atelier',
+      originName: 'TryVibe Atelier',
       ghn: { token: null, shopId: null, apiUrl: 'https://ghn.test', webhookSecret: 'ghn-sec', fromDistrictId: 1482, fromWardCode: '1A0107' },
       ghtk: { token: null, apiUrl: 'https://ghtk.test', webhookSecret: 'ghtk-sec' },
       ahamove: { token: null, apiUrl: 'https://aha.test', webhookSecret: 'aha-sec' },

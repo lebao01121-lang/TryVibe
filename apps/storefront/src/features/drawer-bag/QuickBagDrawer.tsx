@@ -378,7 +378,7 @@ export function QuickBagDrawer({
         {/* Header */}
         <header className="order__head flex items-center justify-between border-b border-[#8A672C]/20 px-6 py-4">
           <div>
-            <p className="eyebrow">Túi đồ · Tầm Xuân Atelier</p>
+            <p className="eyebrow">Túi đồ · TryVibe Atelier</p>
             <h2 id="odDrawerTitle" className="font-editorial text-2xl text-[#1C1410]">
               {mode === 'quick' && quickProduct
                 ? 'Chọn nhanh thiết kế'

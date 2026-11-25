@@ -40,7 +40,7 @@ function TryOnStudioSkeleton() {
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
         <div className="flex flex-col items-center justify-center rounded-2xl border border-[#B08A4A]/22 bg-gradient-to-b from-[#241A14] via-[#1C1410] to-[#140E0B] p-8 text-center">
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-[#B08A4A]/45 bg-[#1F1712] font-editorial text-lg tracking-wider text-[#EBCF8F]">
-            T&amp;X
+            T&amp;V
           </div>
           <p className="font-editorial text-2xl font-light text-[#FBF7EF]">
             Đang chuẩn bị Phòng Thử Đồ AI...

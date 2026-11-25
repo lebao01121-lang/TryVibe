@@ -2283,7 +2283,7 @@ export function DashboardOverviewTab({
                 Biểu đồ Donut Cơ cấu Danh mục &amp; Thiết kế
               </h3>
               <p className={`mt-0.5 text-xs ${ui.muted}`}>
-                Tỷ trọng phân bổ thiết kế SPU hiện hành trên Storefront Tầm Xuân
+                Tỷ trọng phân bổ thiết kế SPU hiện hành trên Storefront TryVibe
               </p>
             </div>
             {canAccessAdminTab(roles, 'catalog') ? (

@@ -564,7 +564,7 @@ function synthesizeProductFromCartItem(item: CartItemDto): ProductSpuDto {
     slug: item.slug,
     name: item.productName,
     subtitle: `${item.colorName} · Size ${item.sizeCode}`,
-    brandName: 'Tầm Xuân Atelier',
+    brandName: 'TryVibe Atelier',
     description: item.productName,
     fabricComposition: 'Chất liệu Atelier cao cấp',
     fitType: FitType.REGULAR,
@@ -2841,7 +2841,7 @@ export function VirtualTryOnModal({
     if (!displayAfterImageUrl || typeof document === 'undefined') return;
     const anchor = document.createElement('a');
     anchor.href = displayAfterImageUrl;
-    anchor.download = `tam-xuan-atelier-tryon-${selectedSizeCode.toLowerCase()}.webp`;
+    anchor.download = `tryvibe-atelier-tryon-${selectedSizeCode.toLowerCase()}.webp`;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
@@ -3030,7 +3030,7 @@ export function VirtualTryOnModal({
       data-lenis-prevent=""
       role={embedded ? 'region' : 'dialog'}
       aria-modal={embedded ? undefined : true}
-      aria-label="Phòng Thử Đồ AI Tầm Xuân"
+      aria-label="Phòng Thử Đồ AI TryVibe"
       className={`${styles.studioPortalLayer} ${
         embedded && quickBagDrawerOpen ? styles.studioPortalLayerBehindDrawer : ''
       }`}

@@ -861,7 +861,7 @@ export function CustomerAccountClient() {
           {orders.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-[#B08A4A]/40 bg-white/75 p-12 text-center">
               <p className="font-editorial text-3xl text-[#1C1410]">
-                Bạn chưa có đơn hàng nào tại Tầm Xuân
+                Bạn chưa có đơn hàng nào tại TryVibe
               </p>
               <p className="mt-2 text-xs text-[#7A6A5B]">
                 Khám phá bộ sưu tập mới nhất và nhận ưu đãi Combo khi phối trọn bộ.

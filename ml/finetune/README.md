@@ -1,4 +1,4 @@
-# Tầm Xuân Fashion Atelier — Offline QLoRA / DPO Fine-Tuning & MLOps Pipeline
+# TryVibe Fashion Atelier — Offline QLoRA / DPO Fine-Tuning & MLOps Pipeline
 
 Quy trình MLOps tách biệt hoàn toàn khỏi các container Web/BFF/FastAPI (`services/ai-tryon`), phục vụ chuẩn hóa dữ liệu Zero-PII, huấn luyện offline QLoRA SFT + DPO trên GPU (local NVIDIA GPU / Google Colab / Cloud GPU), xuất **GGUF (`Q4_K_M`)**, đóng gói custom Ollama model **`atelier-copilot:v1`**, kiểm thử A/B live và rollback trong 1 giây.
 
@@ -130,7 +130,7 @@ python ml/finetune/train_dpo.py \
 
 ### Bước 5 — Đóng gói Custom Ollama Model (`atelier-copilot:v1`)
 
-- **Stage 1 (mặc định ngay lập tức)**: `ml/finetune/Modelfile.atelier-copilot` dùng `FROM qwen2.5:3b` kết hợp Qwen 2.5 ChatML template + System Directive tiếng Việt chuyên biệt của Tầm Xuân Atelier (`temperature 0.1`, `top_p 0.9`, `num_ctx 8192`).
+- **Stage 1 (mặc định ngay lập tức)**: `ml/finetune/Modelfile.atelier-copilot` dùng `FROM qwen2.5:3b` kết hợp Qwen 2.5 ChatML template + System Directive tiếng Việt chuyên biệt của TryVibe Atelier (`temperature 0.1`, `top_p 0.9`, `num_ctx 8192`).
 - **Stage 2 (sau khi có file GGUF từ Bước 4)**: Chuyển dòng `FROM` trong `ml/finetune/Modelfile.atelier-copilot` sang:
   ```dockerfile
   FROM ./outputs/atelier-copilot-q4_k_m.gguf

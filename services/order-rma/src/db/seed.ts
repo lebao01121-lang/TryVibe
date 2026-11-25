@@ -115,7 +115,7 @@ export async function seedOrderDatabase(db: AtelierDbClient): Promise<OrderSeedS
       ShippingMethod.GHN,
       JSON.stringify(shippingAddress),
       JSON.stringify(packagingOption),
-      'Chúc nàng ngày mới thanh lịch cùng Tầm Xuân Atelier.',
+      'Chúc nàng ngày mới thanh lịch cùng TryVibe Atelier.',
     ],
   );
 

@@ -528,7 +528,7 @@ async function runTest2SplitShimmerText(browser) {
       assert.equal(domCheck.orphanCombining.length, 0, `Broken combining diacritics in .ch spans: ${JSON.stringify(domCheck.orphanCombining)}`);
       assert.equal(domCheck.isNfc, true, `Rendered shimmer headline is not NFC normalized: "${domCheck.joined}"`);
       assert.ok(
-        /Tầm Xuân|Thiết Kế|Atelier/i.test(domCheck.joined),
+        /TryVibe|Thiết Kế|Atelier/i.test(domCheck.joined),
         `Unexpected rendered hero title: "${domCheck.joined}"`,
       );
       details.push(`Live Chrome DOM check: PASS (.ch spans=${domCheck.chCount}, orphanCombining=0, NFC=true, text="${domCheck.joined}")`);

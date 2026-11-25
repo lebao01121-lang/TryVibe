@@ -1923,7 +1923,7 @@ export function InventoryLedgerTab({
                     required
                     value={whName}
                     onChange={(e) => setWhName(e.target.value)}
-                    placeholder="VD: Showroom Tầm Xuân Đà Nẵng"
+                    placeholder="VD: Showroom TryVibe Đà Nẵng"
                     className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-[#FBF7EF] px-3 py-2 text-xs"
                   />
                 </label>

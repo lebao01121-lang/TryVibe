@@ -42,7 +42,7 @@ function classifySlug(slug?: string): {
 } {
   if (!slug) {
     return {
-      heading: 'Bộ sưu tập Tầm Xuân Fashion Atelier',
+      heading: 'Bộ sưu tập TryVibe Fashion Atelier',
       description:
         'Khám phá toàn bộ thiết kế lụa tơ tằm Bảo Lộc, linen hữu cơ, đầm dự tiệc và blazer may đo thủ công hỗ trợ thử đồ AI.',
     };
@@ -53,7 +53,7 @@ function classifySlug(slug?: string): {
     return {
       categorySlug: cat.slug,
       heading: cat.name,
-      description: `Bộ sưu tập ${cat.name} may đo thủ công tại Tầm Xuân Fashion Atelier với tồn kho theo size thời gian thực.`,
+      description: `Bộ sưu tập ${cat.name} may đo thủ công tại TryVibe Fashion Atelier với tồn kho theo size thời gian thực.`,
     };
   }
 
@@ -79,7 +79,7 @@ function classifySlug(slug?: string): {
     categorySlug: slug,
     heading: `Bộ sưu tập · ${slug}`,
     description:
-      'Danh mục thiết kế may đo thủ công tại Tầm Xuân Fashion Atelier.',
+      'Danh mục thiết kế may đo thủ công tại TryVibe Fashion Atelier.',
   };
 }
 
@@ -99,18 +99,18 @@ export async function generateMetadata({
     : '/bo-suu-tap';
 
   return {
-    title: `${info.heading} | Tầm Xuân Fashion Atelier`,
+    title: `${info.heading} | TryVibe Fashion Atelier`,
     description: info.description,
     alternates: {
       canonical: `${siteUrl}${canonicalPath}`,
     },
     openGraph: {
-      title: `${info.heading} | Tầm Xuân Fashion Atelier`,
+      title: `${info.heading} | TryVibe Fashion Atelier`,
       description: info.description,
       url: `${siteUrl}${canonicalPath}`,
       type: 'website',
       locale: 'vi_VN',
-      siteName: 'Tầm Xuân Fashion Atelier',
+      siteName: 'TryVibe Fashion Atelier',
     },
   };
 }

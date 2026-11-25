@@ -1227,7 +1227,7 @@ export class ReviewsService implements OnModuleInit {
     const reviewerName =
       rawReviewerName && rawReviewerName.trim().length > 0
         ? rawReviewerName.trim().slice(0, 120)
-        : 'Khách hàng Tầm Xuân';
+        : 'Khách hàng TryVibe';
 
     let resolvedOrderId = payload.orderId ?? null;
 

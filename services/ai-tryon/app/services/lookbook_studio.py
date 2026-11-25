@@ -115,7 +115,7 @@ VIRTUAL_STUDIO_MODELS: tuple[VirtualStudioModel, ...] = (
     ),
     VirtualStudioModel(
         code="MODEL_EDITORIAL_UNISEX_01",
-        display_name="Tầm Xuân Editorial · Warm Ivory Studio (1m75)",
+        display_name="TryVibe Editorial · Warm Ivory Studio (1m75)",
         height_cm=175,
         weight_kg=None,
         gender="UNISEX",

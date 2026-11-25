@@ -557,7 +557,7 @@ function generateSyntheticCorpus(totalChunks) {
   const chunks = new Array(totalChunks);
 
   const collections = [
-    'Tầm Xuân 2026',
+    'TryVibe 2026',
     'Hạ Phố Cổ',
     'Thu Hoàng Hôn',
     'Đông Cashmere',

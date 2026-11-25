@@ -77,8 +77,8 @@ export class ShippingProviderRegistry {
       estimatedDeliveryHours: 2,
       estimatedDeliveryDate: addHoursIso(2),
       serviceName: location.isHcm
-        ? 'Nhận tại Showroom Tầm Xuân Atelier · Quận 1, TP.HCM'
-        : 'Nhận tại Showroom Tầm Xuân Atelier · Ba Đình, Hà Nội',
+        ? 'Nhận tại Showroom TryVibe Atelier · Quận 1, TP.HCM'
+        : 'Nhận tại Showroom TryVibe Atelier · Ba Đình, Hà Nội',
       mode: 'SANDBOX_LOCAL',
       available: true,
       breakdown: {

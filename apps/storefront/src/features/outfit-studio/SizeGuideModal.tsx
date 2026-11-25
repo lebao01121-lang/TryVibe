@@ -103,7 +103,7 @@ export function computeRecommendedStudioSize(input: {
       ? `Phom ${recommendedSize} tạo độ rủ thoáng nhẹ quanh vòng eo (${band.waist} cm) và cầu vai.`
       : input.fitPreference === FitPreference.SLIM
         ? `Phom ${recommendedSize} ôm gọn đường chiết eo (${band.waist} cm), tôn dáng thanh thoát.`
-        : `Phom ${recommendedSize} cân đối với vòng ngực ~${band.bust} cm và eo ~${band.waist} cm chuẩn rập Tầm Xuân.`;
+        : `Phom ${recommendedSize} cân đối với vòng ngực ~${band.bust} cm và eo ~${band.waist} cm chuẩn rập TryVibe.`;
 
   return { recommendedSize, fitNote };
 }
@@ -255,7 +255,7 @@ export function SizeGuideModal({
         <header className="flex items-start justify-between gap-4 border-b border-[#B08A4A]/20 px-6 py-5">
           <div>
             <p className="text-[10px] font-medium tracking-[0.26em] uppercase text-[#8A672C]">
-              Hồ Sơ Số Đo · Tầm Xuân Atelier
+              Hồ Sơ Số Đo · TryVibe Atelier
             </p>
             <h3
               id={titleId}

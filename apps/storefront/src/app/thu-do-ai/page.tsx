@@ -11,7 +11,7 @@ interface VirtualTryOnPageProps {
 export async function generateMetadata(): Promise<Metadata> {
   const siteUrl = getSiteBaseUrl();
   return {
-    title: 'Phòng Thử Đồ AI · Tầm Xuân Fashion Atelier',
+    title: 'Phòng Thử Đồ AI · TryVibe Fashion Atelier',
     description:
       'Trải nghiệm Phòng Thử Đồ AI Atelier trên vóc dáng thật với Gương Camera Thông Minh, Tải Ảnh Của Bạn và Dáng Mẫu Thử Nhanh. Tự động xóa ảnh sau 15 phút.',
     alternates: {

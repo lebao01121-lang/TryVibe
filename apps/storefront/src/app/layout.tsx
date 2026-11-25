@@ -42,9 +42,12 @@ const dancingScript = Dancing_Script({
 });
 
 export const metadata: Metadata = {
-  title: 'Tầm Xuân · Fashion Atelier — Thời Trang May Đo Thủ Công',
+  title: 'TryVibe · Fashion Atelier — Thời Trang May Đo Thủ Công',
   description:
     'Nhà mốt thời trang Editorial Quiet Luxury: giá treo 3D, phối đồ Mix & Match Studio, sợi chỉ vàng xưởng may và phòng thử đồ AI riêng tư.',
+  openGraph: {
+    siteName: 'TryVibe Fashion Atelier',
+  },
 };
 
 interface RootLayoutProps {

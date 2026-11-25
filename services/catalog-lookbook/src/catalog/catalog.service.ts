@@ -2499,7 +2499,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     );
 
     return {
-      brand: 'Tầm Xuân · Fashion Atelier',
+      brand: 'TryVibe · Fashion Atelier',
       platformVersion: '3.0.0',
       campaign: {
         code: homepageCampaign.code,
@@ -3569,7 +3569,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         slug,
         input.name,
         input.subtitle ?? null,
-        input.brandName ?? 'Tầm Xuân Atelier',
+        input.brandName ?? 'TryVibe Atelier',
         input.description,
         input.fabricComposition,
         input.fitType ?? FitType.REGULAR,

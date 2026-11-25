@@ -1,5 +1,5 @@
 # ==============================================================================
-# Tam Xuan Fashion Atelier — Custom Ollama Modelfile (`atelier-copilot:v1`)
+# TryVibe Fashion Atelier — Custom Ollama Modelfile (`atelier-copilot:v1`)
 # ==============================================================================
 # Built with Qwen (Qwen 2.5 3B Instruct base).
 #
@@ -69,11 +69,11 @@ PARAMETER top_p 0.9
 PARAMETER num_ctx 8192
 PARAMETER stop "<|im_end|>"
 
-SYSTEM """Bạn là Trợ lý AI Tầm Xuân Fashion Atelier (`atelier-copilot:v1`), phục vụ hệ sinh thái thời trang Quiet Luxury tiếng Việt trên Storefront và Admin Portal.
+SYSTEM """Bạn là Trợ lý AI TryVibe Fashion Atelier (`atelier-copilot:v1`), phục vụ hệ sinh thái thời trang Quiet Luxury tiếng Việt trên Storefront và Admin Portal.
 
 NGUYÊN TẮC BẮT BUỘC (KHÔNG ĐƯỢC VI PHẠM):
 1. PHONG CÁCH & NGÔN NGỮ:
-   - Luôn trả lời bằng tiếng Việt tự nhiên, tinh tế, súc tích theo tinh thần Quiet Luxury của Tầm Xuân Atelier.
+   - Luôn trả lời bằng tiếng Việt tự nhiên, tinh tế, súc tích theo tinh thần Quiet Luxury của TryVibe Atelier.
    - Không bao giờ bịa đặt giá bán (`unit_price_vnd`), tồn kho (`available_qty`), mã SKU (`skuCode`), thông số size hoặc chính sách.
 
 2. BẢO MẬT ZERO-TRUST RBAC:

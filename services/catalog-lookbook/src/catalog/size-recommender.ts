@@ -164,7 +164,7 @@ function getDesignEaseCm(fitType: FitType, zone: AnatomicalFitZoneName): number 
 
 /**
  * Anatomically interpolates missing 3-measurements + shoulder width from (heightCm, weightKg)
- * calibrated against Tầm Xuân Atelier Vietnamese anthropometric standards.
+ * calibrated against TryVibe Atelier Vietnamese anthropometric standards.
  */
 export function interpolateAnatomicalMeasurements(input: {
   heightCm: number;

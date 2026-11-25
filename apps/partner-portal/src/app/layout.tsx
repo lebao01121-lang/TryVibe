@@ -33,7 +33,7 @@ const dancingScript = Dancing_Script({
 });
 
 export const metadata: Metadata = {
-  title: 'Cổng Đối Tác Nhà Cung Cấp · Tầm Xuân Partner Portal',
+  title: 'Cổng Đối Tác Nhà Cung Cấp · TryVibe Partner Portal',
   description:
     'Cổng B2B Supplier tách biệt vật lý (PARTNER_PORTAL :3002) khóa phạm vi supplier_id, yêu cầu vai trò SUPPLIER và xác thực 2FA.',
 };

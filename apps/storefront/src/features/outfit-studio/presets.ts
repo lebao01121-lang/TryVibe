@@ -246,7 +246,7 @@ export function computeHarmonyProducts(
     currentSlots[OutfitSlot.ACCESSORY] ??
     null;
 
-  const anchorLabel = anchor ? compactAnchorLabel(anchor.productName) : 'Đầm Lụa Tầm Xuân';
+  const anchorLabel = anchor ? compactAnchorLabel(anchor.productName) : 'Đầm Lụa TryVibe';
   const anchorColor = anchor ? anchor.colorName : 'Đỏ Rượu Vang';
   const anchorColorHex = anchor ? anchor.colorHex : '#6F1D2B';
 

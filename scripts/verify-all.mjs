@@ -1513,7 +1513,7 @@ async function runGate6GoldenPathE2E(ctx, envVars) {
     await apiRequest(`${BFF_BASE}/bff/v1/storefront/cart/packaging`, {
       method: 'PATCH',
       headers: custHeaders,
-      body: { packagingCode: 'SILK_BOX_PREMIUM', giftNote: 'Tặng riêng mùa Thu · Tầm Xuân Atelier' },
+      body: { packagingCode: 'SILK_BOX_PREMIUM', giftNote: 'Tặng riêng mùa Thu · TryVibe Atelier' },
     }).catch(() => {});
 
     metrics.tryon = { sessionId: tryonSessionId, cacheHitMs: Number(cacheRes.elapsedMs.toFixed(1)), quotaBeforeCache, quotaAfterCache: cacheData.remainingQuota };
@@ -1536,7 +1536,7 @@ async function runGate6GoldenPathE2E(ctx, envVars) {
       deliveryDate: '2026-11-25',
       deliverySlot: '13:00–15:00',
       customerEmail: 'customer@atelier.local',
-      giftNote: 'Tặng riêng mùa Thu · Tầm Xuân Atelier',
+      giftNote: 'Tặng riêng mùa Thu · TryVibe Atelier',
       shippingAddress: {
         recipientName: 'Nguyễn Minh Anh',
         phone: '0901234567',

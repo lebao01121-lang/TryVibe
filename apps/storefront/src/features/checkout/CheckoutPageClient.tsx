@@ -679,7 +679,7 @@ export function CheckoutPageClient() {
     const intent = createdOrder.paymentIntent;
     const qrPayload =
       intent?.vietQrPayload ||
-      `VIETQR|TAMXUAN|${createdOrder.orderCode}|${createdOrder.totalAmountVnd}`;
+      `VIETQR|TRYVIBE|${createdOrder.orderCode}|${createdOrder.totalAmountVnd}`;
 
     return (
       <div className="mx-auto max-w-3xl px-6 py-12 lg:px-10">
@@ -812,7 +812,7 @@ export function CheckoutPageClient() {
         <div>
           <p className="eyebrow text-[#8A672C]">Thanh toán Một trang · Quiet Luxury</p>
           <h1 className="mt-2 font-editorial text-4xl font-light text-[#1C1410] sm:text-5xl">
-            Hoàn tất đơn hàng Tầm Xuân
+            Hoàn tất đơn hàng TryVibe
           </h1>
         </div>
         <Link

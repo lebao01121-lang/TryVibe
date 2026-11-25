@@ -483,7 +483,7 @@ async function main() {
     assert.ok(qrPayload.includes('970422'), 'qrPayload missing Bank BIN 970422');
     assert.ok(qrPayload.includes('088820269999'), 'qrPayload missing Account No 088820269999');
     assert.ok(qrPayload.includes(`54${String(String(grandTotalVnd).length).padStart(2, '0')}${grandTotalVnd}`), `qrPayload missing exact integer VND amount ${grandTotalVnd}`);
-    const expectedDesc = `TAMXUAN ${orderCode.toUpperCase()}`;
+    const expectedDesc = `TRYVIBE ${orderCode.toUpperCase()}`;
     assert.ok(qrPayload.includes(expectedDesc), `qrPayload missing description "${expectedDesc}"`);
 
     const rawPngDataUrl = intent.rawQrPngDataUrl;
@@ -640,7 +640,7 @@ async function main() {
       orderId: momoOrderCode,
       requestId: `REQ-${momoOrderCode}-${Date.now().toString().slice(-6)}`,
       amount: momoAmount,
-      orderInfo: `Tam Xuan Atelier ${momoOrderCode}`,
+      orderInfo: `TryVibe Atelier ${momoOrderCode}`,
       orderType: 'momo_wallet',
       transId: Number(`99${Date.now().toString().slice(-8)}`),
       resultCode: 0,

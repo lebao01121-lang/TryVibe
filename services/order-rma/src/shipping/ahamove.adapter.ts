@@ -100,7 +100,7 @@ export class AhaMoveAdapter implements IShippingProviderAdapter {
       ? '68 Đồng Khởi, Phường Bến Nghé, Quận 1, Thành phố Hồ Chí Minh'
       : this.config.shipping.originAddress;
     const pickupName = location.isHcm
-      ? 'Tầm Xuân Atelier · Showroom TP.HCM'
+      ? 'TryVibe Atelier · Showroom TP.HCM'
       : this.config.shipping.originName;
 
     return [
@@ -251,7 +251,7 @@ export class AhaMoveAdapter implements IShippingProviderAdapter {
             service_id: serviceId,
             order_time: 0,
             payment_method: 'BALANCE',
-            remarks: request.note || `Đơn hàng hỏa tốc 2H Tầm Xuân Atelier (${request.orderCode})`,
+            remarks: request.note || `Đơn hàng hỏa tốc 2H TryVibe Atelier (${request.orderCode})`,
             path: this.buildAhaMovePath(location, {
               address: request.streetLine,
               name: request.recipientName,

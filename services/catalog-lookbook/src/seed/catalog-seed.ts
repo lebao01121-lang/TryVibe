@@ -211,7 +211,7 @@ const PRODUCTS_SEED: readonly SeedProductDef[] = [
     slug: 'ao-so-mi-lua-to-tam-tam-xuan',
     categorySlug: 'ao-so-mi',
     sizeChartCode: 'CHART_TOPS_BLAZER',
-    name: 'Áo Sơ Mi Lụa Tơ Tằm Tầm Xuân',
+    name: 'Áo Sơ Mi Lụa Tơ Tằm TryVibe',
     subtitle: 'Lụa tơ tằm Bảo Lộc 19 momme · Nẹp giấu khuy ngọc trai',
     description:
       'Thiết kế biểu tượng của nhà mốt với độ rủ mềm mại từ lụa tơ tằm Bảo Lộc dệt mật độ cao, bề mặt óng nhẹ tự nhiên.',
@@ -697,7 +697,7 @@ const PRODUCTS_SEED: readonly SeedProductDef[] = [
     name: 'Áo Khoác Tweed Nút Đồng',
     subtitle: 'Dệt tweed phối sợi ánh kim · Hàng nút đồng chạm khắc thủ công',
     description:
-      'Áo khoác tweed dáng cropped cổ tròn sắc nét với hàng nút đồng thau đúc riêng của Tầm Xuân, tôn vẻ sang trọng tĩnh lặng.',
+      'Áo khoác tweed dáng cropped cổ tròn sắc nét với hàng nút đồng thau đúc riêng của TryVibe, tôn vẻ sang trọng tĩnh lặng.',
     fabricComposition: '60% Wool · 25% Cotton · 15% Tơ tổng hợp ánh kim',
     fitType: FitType.REGULAR,
     stretchLevel: StretchLevel.NONE,
@@ -819,10 +819,10 @@ const PRODUCTS_SEED: readonly SeedProductDef[] = [
     skuPrefix: 'KLHTX',
     categorySlug: 'phu-kien',
     sizeChartCode: 'CHART_TOPS_BLAZER',
-    name: 'Khăn Lụa Họa Tiết Tầm Xuân',
+    name: 'Khăn Lụa Họa Tiết TryVibe',
     subtitle: 'Lụa tơ tằm Bảo Lộc 16 momme · Cuốn biên khâu tay thủ công',
     description:
-      'Khăn lụa vuông họa tiết vân mây hoa mai đặc trưng của nhà mốt Tầm Xuân, linh hoạt thắt cổ áo sơ mi, buộc quai túi hoặc điểm xuyết mái tóc.',
+      'Khăn lụa vuông họa tiết vân mây hoa mai đặc trưng của nhà mốt TryVibe, linh hoạt thắt cổ áo sơ mi, buộc quai túi hoặc điểm xuyết mái tóc.',
     fabricComposition: '100% Lụa tơ tằm Bảo Lộc 16 momme in lụa thủ công',
     fitType: FitType.REGULAR,
     stretchLevel: StretchLevel.NONE,
@@ -1067,15 +1067,15 @@ export function buildDefaultCampaignSections(
   const intro: CampaignIntro = {
     monogramLeft: 'T',
     monogramAmp: '&',
-    monogramRight: 'X',
+    monogramRight: 'V',
     tagline: 'May đo thủ công · Hà Nội',
-    brandName: 'Tầm Xuân',
+    brandName: 'TryVibe',
     brandSub: 'Fashion Atelier',
   };
 
   const hero: CampaignHero = {
     eyebrow: HERO_EYEBROW_CANONICAL,
-    title: 'Tầm Xuân',
+    title: 'TryVibe',
     lead: 'Thiết kế may đo thủ công trên lụa tơ tằm và linen hữu cơ — ướm thử dáng thật bằng AI trước khi đặt may.',
     primaryCtaLabel: 'Khám phá bộ sưu tập',
     serviceNote: 'May đo theo số đo · Đổi size 7–14 ngày · Xóa ảnh AI sau 15 phút',
@@ -1092,7 +1092,7 @@ export function buildDefaultCampaignSections(
       description:
         'Kiểm tra mật độ sợi lụa tơ tằm Bảo Lộc 19–22 momme và linen hữu cơ Bỉ dưới ánh sáng tự nhiên trước khi trải bàn cắt.',
       imageUrl: urls.step1Url,
-      imageAlt: 'Tuyển chọn lụa tơ tằm và linen hữu cơ tại xưởng may Tầm Xuân',
+      imageAlt: 'Tuyển chọn lụa tơ tằm và linen hữu cơ tại xưởng may TryVibe',
     },
     {
       stepOrder: 2,
@@ -1129,7 +1129,7 @@ export function buildDefaultCampaignSections(
     leadEmphasis: 'mỗi đường kim đều chuẩn theo dáng bạn.',
     ctaLabel: 'Khám phá bộ sưu tập',
     showroomInfo: 'Phố Phan Đình Phùng, Ba Đình · Mở cửa 9:00 – 21:00 mỗi ngày',
-    wordmark: 'Tầm Xuân',
+    wordmark: 'TryVibe',
     featuredVoices: [
       {
         quote:
@@ -1158,7 +1158,7 @@ export function buildDefaultCampaignSections(
     heroTitle: hero.title,
     heroSubtitle: hero.lead,
     atelierManifesto:
-      'Mỗi đường rập tại Tầm Xuân được cân chỉnh cho vóc dáng Việt — tôn vinh chất liệu tự nhiên, đổi size miễn phí 7–14 ngày và cam kết xóa cứng ảnh thử đồ riêng tư sau đúng 15 phút.',
+      'Mỗi đường rập tại TryVibe được cân chỉnh cho vóc dáng Việt — tôn vinh chất liệu tự nhiên, đổi size miễn phí 7–14 ngày và cam kết xóa cứng ảnh thử đồ riêng tư sau đúng 15 phút.',
     ctaLabel: hero.primaryCtaLabel,
     serviceNote: hero.serviceNote,
     privacyGuaranteeMinutes: 15,
@@ -1238,6 +1238,10 @@ export async function ensureCampaignSeeded(
     return editorialUrls;
   }
 
+  const introJsonStr =
+    typeof active.intro_jsonb === 'string'
+      ? active.intro_jsonb
+      : JSON.stringify(active.intro_jsonb ?? {});
   const heroJsonStr =
     typeof active.hero_jsonb === 'string'
       ? active.hero_jsonb
@@ -1246,8 +1250,21 @@ export async function ensureCampaignSeeded(
     typeof active.atelier_steps_jsonb === 'string'
       ? active.atelier_steps_jsonb
       : JSON.stringify(active.atelier_steps_jsonb ?? []);
+  const finaleJsonStr =
+    typeof active.finale_jsonb === 'string'
+      ? active.finale_jsonb
+      : JSON.stringify(active.finale_jsonb ?? {});
+
+  const legacyBrandPattern = /T\u1EA7m\s*Xu\u00E2n/i;
+  const hasStaleBrand =
+    legacyBrandPattern.test(introJsonStr) ||
+    legacyBrandPattern.test(heroJsonStr) ||
+    legacyBrandPattern.test(stepsJsonStr) ||
+    legacyBrandPattern.test(finaleJsonStr) ||
+    /"monogramRight"\s*:\s*"X"/i.test(introJsonStr);
 
   const hasStaleVisuals =
+    hasStaleBrand ||
     /\/media\/(?!atelier-)/i.test(heroJsonStr) ||
     /hero-atelier-poster/i.test(heroJsonStr) ||
     /hero-atelier-poster/i.test(active.hero_image_url ?? '') ||
@@ -1287,14 +1304,18 @@ export async function ensureCampaignSeeded(
         defaults.ctaLabel,
         defaults.serviceNote,
         defaults.heroImageUrl,
-        force || !active.intro_jsonb ? JSON.stringify(defaults.intro) : null,
+        force || !active.intro_jsonb || hasStaleBrand
+          ? JSON.stringify(defaults.intro)
+          : null,
         force || !active.hero_jsonb || hasStaleVisuals
           ? JSON.stringify(defaults.hero)
           : null,
         force || !active.atelier_steps_jsonb || hasStaleVisuals
           ? JSON.stringify(defaults.atelierSteps)
           : null,
-        force || !active.finale_jsonb ? JSON.stringify(defaults.finale) : null,
+        force || !active.finale_jsonb || hasStaleBrand
+          ? JSON.stringify(defaults.finale)
+          : null,
       ],
     );
   }
@@ -1441,16 +1462,23 @@ async function ensureVisualOverhaulCatalogSync(
     const urls = assetUrlsBySlug.get(prod.slug);
     if (!urls) continue;
     const productId = deterministicUuid(`product:${prod.slug}`);
+    const legacyBrandToken = 'T\u1EA7m Xu\u00E2n';
     await db.query(
       `UPDATE products
        SET tryon_flat_asset_url = $2,
            season_slugs = $3::jsonb,
+           brand_name = CASE WHEN brand_name ILIKE $6 THEN 'TryVibe Atelier' ELSE brand_name END,
+           name = CASE WHEN name ILIKE $6 THEN $4 ELSE name END,
+           description = CASE WHEN description ILIKE $6 THEN $5 ELSE description END,
            updated_at = NOW()
        WHERE id = $1`,
       [
         productId,
         prod.isTryonEnabled ? urls.tryonFlatPreviewUrl : null,
         JSON.stringify(prod.seasonSlugs),
+        prod.name,
+        prod.description,
+        `%${legacyBrandToken}%`,
       ],
     );
 
@@ -1742,7 +1770,7 @@ export async function runCatalogSeed(
         prod.slug,
         prod.name,
         prod.subtitle,
-        'Tầm Xuân Atelier',
+        'TryVibe Atelier',
         prod.description,
         prod.fabricComposition,
         prod.fitType,

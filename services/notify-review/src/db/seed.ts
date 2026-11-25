@@ -158,7 +158,7 @@ const SEED_REVIEWS: readonly SeedReviewBlueprint[] = [
     daysAgo: 23,
   },
 
-  // 2. Áo Sơ Mi Lụa Tơ Tằm Tầm Xuân — 4 reviews: 3 TRUE_TO_SIZE (75%), 1 RUNS_SMALL (25%)
+  // 2. Áo Sơ Mi Lụa Tơ Tằm TryVibe — 4 reviews: 3 TRUE_TO_SIZE (75%), 1 RUNS_SMALL (25%)
   {
     slug: 'ao-so-mi-lua-to-tam-tam-xuan',
     variantIdx: 0,
@@ -737,7 +737,7 @@ const SEED_REVIEWS: readonly SeedReviewBlueprint[] = [
     rating: 5,
     fitFeedback: FitFeedback.TRUE_TO_SIZE,
     comment:
-      '1m54 · 44kg · Mặc size XS — Dáng người nhỏ rất khó chọn áo nhưng XS của Tầm Xuân vừa vặn bờ vai, chất organza mềm nhẹ bay bổng.',
+      '1m54 · 44kg · Mặc size XS — Dáng người nhỏ rất khó chọn áo nhưng XS của TryVibe vừa vặn bờ vai, chất organza mềm nhẹ bay bổng.',
     daysAgo: 3,
   },
   {

@@ -732,13 +732,13 @@ async function runTest3OutfitComboShareAndMerge(sharedState) {
     );
 
     // 3c. Save Outfit + Share Link restoration
-    const giftNoteText = `Chúc mừng sinh nhật từ Tầm Xuân #${runId}`;
+    const giftNoteText = `Chúc mừng sinh nhật từ TryVibe #${runId}`;
     const guestId = `guest-p4-test-${runId}`;
     const saveRes = await apiRequest(`${BFF_BASE}/bff/v1/storefront/outfits`, {
       method: 'POST',
       headers: { Origin: 'http://localhost:3000', 'X-Guest-Session-Id': guestId },
       body: {
-        title: `Set Công Sở Tầm Xuân ${runId}`,
+        title: `Set Công Sở TryVibe ${runId}`,
         slots: [slotTop, slotBottom, slotOuter],
         packagingOptionId,
         giftNote: giftNoteText,

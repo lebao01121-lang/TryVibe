@@ -3097,7 +3097,7 @@ export class AdminP2Controller {
       const productName =
         typeof product.name === 'string' && product.name.trim()
           ? product.name.trim()
-          : 'Sản phẩm Tầm Xuân';
+          : 'Sản phẩm TryVibe';
       const variants = Array.isArray(product.variants) ? product.variants : [];
       let costSum = 0;
       let costCount = 0;

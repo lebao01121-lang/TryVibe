@@ -189,7 +189,7 @@ export const DEFAULT_TIER0_CATALOG_SNAPSHOT: readonly Tier0CatalogItemSnapshot[]
   {
     productId: 'prod_ao_so_mi_lua_02',
     slug: 'ao-so-mi-lua-to-tam-tam-xuan',
-    name: 'Áo Sơ Mi Lụa Tơ Tằm Tầm Xuân',
+    name: 'Áo Sơ Mi Lụa Tơ Tằm TryVibe',
     categorySlug: 'ao-so-mi',
     fabricComposition: '100% Lụa tơ tằm Bảo Lộc 19 momme',
     stretchLevel: 'NONE',
@@ -749,7 +749,7 @@ export function executeTier0SearchInStockOutfits(
   const citations: GroundedCitation[] = [
     {
       sourceId: 'catalog_in_stock_index_tier0',
-      title: 'Tồn kho thực tế theo size tại Tầm Xuân Atelier (Tier-0)',
+      title: 'Tồn kho thực tế theo size tại TryVibe Atelier (Tier-0)',
       snippet: `Tìm thấy ${matched.length} thiết kế đang còn hàng khớp bộ lọc khách hàng.`,
       score: 1,
     },

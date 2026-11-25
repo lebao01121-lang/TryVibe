@@ -100,7 +100,7 @@ function easeJourneyIntraProgress(t: number): number {
 }
 
 export function SiteHeader({
-  brandName = 'Tầm Xuân',
+  brandName = 'TryVibe',
   brandSub = 'Fashion Atelier',
 }: SiteHeaderProps) {
   const pathname = usePathname();

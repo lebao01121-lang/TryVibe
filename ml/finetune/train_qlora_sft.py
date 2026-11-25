@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tam Xuan Fashion Atelier — Offline 4-bit QLoRA SFT Fine-Tuning Pipeline.
+TryVibe Fashion Atelier — Offline 4-bit QLoRA SFT Fine-Tuning Pipeline.
 
 Trains Qwen 2.5 Instruct (`Qwen/Qwen2.5-3B-Instruct` default, supports `Qwen/Qwen2.5-7B-Instruct`)
 on Zero-PII ChatML/ShareGPT datasets exported by `pnpm ai:export-sft`:
@@ -429,7 +429,7 @@ def run_live_sft_training(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Tam Xuan Fashion Atelier — 4-bit QLoRA SFT Trainer (Qwen 2.5 Instruct)"
+        description="TryVibe Fashion Atelier — 4-bit QLoRA SFT Trainer (Qwen 2.5 Instruct)"
     )
     parser.add_argument(
         "--base-model",

@@ -171,7 +171,7 @@ export async function createMomoPayment(
     input.requestId?.trim() || `${input.orderCode}-${randomUUID().slice(0, 8)}`;
   const redirectUrl = input.redirectUrl || config.redirectUrl;
   const ipnUrl = input.ipnUrl || config.ipnUrl;
-  const orderInfo = input.orderInfo || `Tam Xuan Atelier ${input.orderCode}`;
+  const orderInfo = input.orderInfo || `TryVibe Atelier ${input.orderCode}`;
   const extraData = input.extraData ?? '';
   const requestType = 'captureWallet';
 
@@ -214,8 +214,8 @@ export async function createMomoPayment(
 
   const requestBody = {
     partnerCode: config.partnerCode,
-    partnerName: 'Tam Xuan Atelier',
-    storeId: 'TamXuanAtelier',
+    partnerName: 'TryVibe Atelier',
+    storeId: 'TryVibeAtelier',
     requestId,
     amount,
     orderId: input.orderCode,

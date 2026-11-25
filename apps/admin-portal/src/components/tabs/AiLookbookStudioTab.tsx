@@ -96,7 +96,7 @@ const FALLBACK_VIRTUAL_MODELS: VirtualModelOption[] = [
   },
   {
     code: VirtualModelCode.MODEL_EDITORIAL_UNISEX_01,
-    name: 'Tầm Xuân Editorial (Unisex · 1m75)',
+    name: 'TryVibe Editorial (Unisex · 1m75)',
     description: 'Tối giản phông nền Ivory #FBF7EF & ánh vàng Champagne',
     palette: ['#FBF7EF', '#EFE6D5', '#B08A4A'],
   },
@@ -132,7 +132,7 @@ function normalizeVirtualModel(raw: Record<string, unknown>): VirtualModelOption
     (typeof raw.vibe === 'string' && raw.vibe.trim()) ||
     (typeof raw.description === 'string' && raw.description.trim()) ||
     (typeof raw.studioBackdrop === 'string' && raw.studioBackdrop.trim()) ||
-    'Người mẫu Studio Tầm Xuân Atelier';
+    'Người mẫu Studio TryVibe Atelier';
   return {
     code,
     name,

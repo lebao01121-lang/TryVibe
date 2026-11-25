@@ -1363,7 +1363,7 @@ export class PaymentsService {
     }
 
     const description = toSingleQueryValue(dataRec.description).trim();
-    const descMatch = /TAMXUAN\s+([A-Za-z0-9_-]+)/i.exec(description);
+    const descMatch = /(?:TRYVIBE|TAMXUAN)\s+([A-Za-z0-9_-]+)/i.exec(description);
     const paymentLinkId = toSingleQueryValue(dataRec.paymentLinkId).trim();
 
     const chargeTx = await this.findChargeTransaction({

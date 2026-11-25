@@ -9,6 +9,7 @@ export const STOREFRONT_RACK_CACHE_KEY = 'storefront:rack:v1';
 export const STOREFRONT_OCCASIONS_CACHE_KEY = 'storefront:occasions:v1';
 export const STOREFRONT_SEASONS_CACHE_KEY = 'storefront:seasons:v1';
 export const STOREFRONT_CATEGORIES_CACHE_KEY = 'bff:storefront:categories';
+export const STOREFRONT_PROMOTIONS_CACHE_KEY = 'bff:storefront:promotions';
 
 export interface RevalidationResult {
   deletedKeys: number;
@@ -32,19 +33,28 @@ export class CacheInvalidationService {
     tags: string[],
     paths: string[] = [],
     correlationId?: string,
+    extraPatterns: string[] = [],
   ): Promise<RevalidationResult> {
-    const [fixedDeleted, patternDeleted] = await Promise.all([
+    const patternDeletes = [
+      this.redis.delByPatternSafe('bff:storefront:*'),
+      ...Array.from(new Set(extraPatterns.filter((p) => p.trim().length > 0))).map((pattern) =>
+        this.redis.delByPatternSafe(pattern),
+      ),
+    ];
+
+    const [fixedDeleted, ...patternCounts] = await Promise.all([
       this.redis.delSafe(
         STOREFRONT_BOOTSTRAP_CACHE_KEY,
         STOREFRONT_RACK_CACHE_KEY,
         STOREFRONT_OCCASIONS_CACHE_KEY,
         STOREFRONT_SEASONS_CACHE_KEY,
         STOREFRONT_CATEGORIES_CACHE_KEY,
+        STOREFRONT_PROMOTIONS_CACHE_KEY,
       ),
-      this.redis.delByPatternSafe('bff:storefront:*'),
+      ...patternDeletes,
     ]);
 
-    const deletedKeys = fixedDeleted + patternDeleted;
+    const deletedKeys = fixedDeleted + patternCounts.reduce((acc, n) => acc + n, 0);
     const uniqueTags = Array.from(new Set(tags.filter((t) => t.trim().length > 0)));
     const uniquePaths = Array.from(new Set(paths.filter((p) => p.trim().length > 0)));
 
@@ -101,5 +111,23 @@ export class CacheInvalidationService {
       tags: uniqueTags,
       paths: uniquePaths,
     };
+  }
+
+  async invalidatePromotionsAndRevalidate(
+    correlationId?: string,
+  ): Promise<RevalidationResult> {
+    return this.invalidateAndRevalidate(
+      ['storefront', 'promotions', 'bootstrap', 'products'],
+      ['/', '/san-pham', '/bo-suu-tap'],
+      correlationId,
+      [
+        'promotions:*',
+        'promo:active*',
+        'atelier:promotions:*',
+        'payment:promo*',
+        'storefront:promotions*',
+        'bff:storefront:promotions*',
+      ],
+    );
   }
 }

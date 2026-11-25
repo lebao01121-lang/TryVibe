@@ -46,6 +46,9 @@ export interface AuthCustomerConfig {
   smtp: {
     host: string;
     port: number;
+    secure: boolean;
+    user?: string;
+    pass?: string;
     from: string;
   };
   jwt: {
@@ -84,6 +87,20 @@ function parsePort(raw: string | undefined, fallback: number): number {
     throw new Error(`Invalid port value "${raw}" for ${SERVICE_NAME}.`);
   }
   return parsed;
+}
+
+function parseOptionalBoolean(raw: string | undefined, fallback: boolean): boolean {
+  if (!raw || raw.trim() === '') {
+    return fallback;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') {
+    return true;
+  }
+  if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') {
+    return false;
+  }
+  return fallback;
 }
 
 function parseIsolatedDatabaseTarget(rawUrl: string | undefined): AuthCustomerConfig['database'] {
@@ -131,6 +148,14 @@ export function loadAuthCustomerConfig(): AuthCustomerConfig {
   const redisUrl = process.env.REDIS_URL?.trim() || 'redis://:Atelier_Redis2026!@127.0.0.1:6379';
   const redisPassword = process.env.REDIS_PASSWORD?.trim() || undefined;
 
+  const smtpHost = process.env.SMTP_HOST?.trim() || '127.0.0.1';
+  const smtpPort = parsePort(process.env.SMTP_PORT, 1025);
+  const smtpSecure = parseOptionalBoolean(process.env.SMTP_SECURE, smtpPort === 465);
+  const smtpUser = process.env.SMTP_USER?.trim() || undefined;
+  const smtpPass = process.env.SMTP_PASS?.trim() || undefined;
+  const smtpFrom =
+    process.env.SMTP_FROM?.trim() || smtpUser || 'atelier@fashion-atelier.local';
+
   return {
     serviceName: SERVICE_NAME,
     boundedContext: BOUNDED_CONTEXT,
@@ -144,9 +169,12 @@ export function loadAuthCustomerConfig(): AuthCustomerConfig {
       configured: Boolean(process.env.REDIS_URL?.trim()),
     },
     smtp: {
-      host: process.env.SMTP_HOST?.trim() || '127.0.0.1',
-      port: parsePort(process.env.SMTP_PORT, 1025),
-      from: process.env.SMTP_FROM?.trim() || 'atelier@fashion-atelier.local',
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      ...(smtpUser ? { user: smtpUser } : {}),
+      ...(smtpPass ? { pass: smtpPass } : {}),
+      from: smtpFrom,
     },
     jwt: {
       keyDir: path.join(repoRoot, '.secrets', 'jwt'),

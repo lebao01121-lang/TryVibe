@@ -10,18 +10,33 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentProvider,
+  PromoStatus,
+  PromoType,
   ShippingMethod,
   type CartDto,
   type CustomerAddressDto,
   type EvaluatePromotionResultDTO,
   type OrderDTO,
   type PackagingOptionDto,
+  type PromotionDTO,
   type StorefrontBootstrapDto,
 } from '@atelier/contracts';
 import { GiftCardPreview } from '@/features/drawer-bag/GiftCardPreview';
 import { apiFetch, getBffBaseUrl, getStoredSession } from '@/lib/api-client';
 import { FORMAT_VND, PACKAGING_TIERS } from '@/lib/catalog-data';
+import { getOrCreateGuestSessionId } from '@/lib/guest-session';
 import { emitCartUpdated, refreshCartCount } from '@/lib/storefront-actions';
+import {
+  VN_PROVINCES,
+  getDefaultDivisionSelection,
+  getDistrictsByProvinceCode,
+  getWardsByDistrictCode,
+  resolveDivisionSelection,
+  selectDistrictCascade,
+  selectProvinceCascade,
+  selectWardCascade,
+  type VnDivisionSelection,
+} from '@/lib/vn-admin-divisions';
 
 const DAY_NAMES_VI = [
   'Chủ nhật',
@@ -41,11 +56,38 @@ const TWO_HOUR_SLOTS = [
   '17:00–19:00',
 ] as const;
 
-const QUICK_VOUCHERS = [
-  { code: 'ATELIER10', hint: 'Giảm 10% (tối đa 500K)' },
-  { code: 'FREESHIP', hint: 'Miễn phí vận chuyển' },
-  { code: 'FLASH200K', hint: 'Giảm ngay 200K' },
-] as const;
+function formatPromotionHint(promo: PromotionDTO): string {
+  if (promo.type === PromoType.FREESHIP) {
+    return promo.minOrderVnd > 0
+      ? `Miễn phí vận chuyển (đơn từ ${FORMAT_VND(promo.minOrderVnd)})`
+      : 'Miễn phí vận chuyển';
+  }
+  if (promo.discountPercent != null && promo.discountPercent > 0) {
+    return promo.maxDiscountVnd
+      ? `Giảm ${promo.discountPercent}% (tối đa ${FORMAT_VND(promo.maxDiscountVnd)})`
+      : `Giảm ${promo.discountPercent}%`;
+  }
+  if (promo.discountAmountVnd != null && promo.discountAmountVnd > 0) {
+    return `Giảm ngay ${FORMAT_VND(promo.discountAmountVnd)}`;
+  }
+  return promo.description || promo.name;
+}
+
+function extractPromotionsList(payload: unknown): PromotionDTO[] {
+  if (Array.isArray(payload)) {
+    return payload as PromotionDTO[];
+  }
+  if (payload && typeof payload === 'object') {
+    const rec = payload as Record<string, unknown>;
+    if (Array.isArray(rec.promotions)) {
+      return rec.promotions as PromotionDTO[];
+    }
+    if (Array.isArray(rec.items)) {
+      return rec.items as PromotionDTO[];
+    }
+  }
+  return [];
+}
 
 const FALLBACK_PACKAGING: PackagingOptionDto[] = PACKAGING_TIERS.map((p, idx) => ({
   id: p.id,
@@ -125,9 +167,9 @@ export function CheckoutPageClient() {
   const [recipientName, setRecipientName] = useState('');
   const [phone, setPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
-  const [provinceName, setProvinceName] = useState('Hà Nội');
-  const [districtName, setDistrictName] = useState('Quận Hoàn Kiếm');
-  const [wardName, setWardName] = useState('Phường Hàng Trống');
+  const [division, setDivision] = useState<VnDivisionSelection>(() =>
+    getDefaultDivisionSelection(),
+  );
   const [streetLine, setStreetLine] = useState('');
   const [shippingMethod, setShippingMethod] = useState<ShippingMethod>(
     ShippingMethod.AHAMOVE_2H,
@@ -139,6 +181,8 @@ export function CheckoutPageClient() {
   const [selectedPkgId, setSelectedPkgId] = useState<string>(FALLBACK_PACKAGING[0]!.id);
   const [giftNote, setGiftNote] = useState('');
   const [voucherInput, setVoucherInput] = useState('');
+  const [activePromotions, setActivePromotions] = useState<PromotionDTO[]>([]);
+  const [promotionsLoading, setPromotionsLoading] = useState(true);
   const [voucherEval, setVoucherEval] = useState<EvaluatePromotionResultDTO | null>(null);
   const [evaluatingVoucher, setEvaluatingVoucher] = useState(false);
 
@@ -160,18 +204,36 @@ export function CheckoutPageClient() {
     setSelectedAddressId(addr.id);
     setRecipientName(addr.recipientName);
     setPhone(addr.phone);
-    setProvinceName(addr.provinceName);
-    setDistrictName(addr.districtName);
-    setWardName(addr.wardName);
+    const resolved = resolveDivisionSelection({
+      provinceCode: addr.provinceCode,
+      provinceName: addr.provinceName,
+      districtCode: addr.districtCode,
+      districtName: addr.districtName,
+      wardCode: addr.wardCode,
+      wardName: addr.wardName,
+    });
+    if (resolved) {
+      setDivision(resolved);
+    } else {
+      setDivision({
+        provinceCode: addr.provinceCode || '',
+        provinceName: addr.provinceName,
+        districtCode: addr.districtCode || '',
+        districtName: addr.districtName,
+        wardCode: addr.wardCode || '',
+        wardName: addr.wardName,
+      });
+    }
     setStreetLine(addr.streetLine);
   }, []);
 
-  // Load live cart, packaging options, and logged-in saved addresses
+  // Load live cart, packaging options, active promotions, and logged-in saved addresses
   useEffect(() => {
     let cancelled = false;
 
     const loadInitial = async () => {
       setLoading(true);
+      setPromotionsLoading(true);
       const session = getStoredSession();
       if (session?.user?.email) {
         setCustomerEmail(session.user.email);
@@ -180,11 +242,15 @@ export function CheckoutPageClient() {
         setRecipientName(session.user.fullName);
       }
 
-      const [cartRes, bootRes, addrRes] = await Promise.all([
+      const [cartRes, bootRes, promosRes, addrRes] = await Promise.all([
         apiFetch<CartDto>('/bff/v1/storefront/cart', { skipAuthRefresh: true }),
         apiFetch<StorefrontBootstrapDto>('/bff/v1/storefront/bootstrap', {
           skipAuthRefresh: true,
         }),
+        apiFetch<PromotionDTO[] | { items?: PromotionDTO[]; promotions?: PromotionDTO[] }>(
+          '/bff/v1/storefront/promotions',
+          { skipAuthRefresh: true },
+        ),
         session?.accessToken
           ? apiFetch<CustomerAddressDto[]>('/bff/v1/customers/me/addresses')
           : Promise.resolve({ ok: false, status: 401, data: null, error: null, headers: null }),
@@ -209,6 +275,22 @@ export function CheckoutPageClient() {
           setGiftNote(cartRes.data.giftNote);
         }
       }
+
+      if (promosRes.ok && promosRes.data) {
+        const nowMs = Date.now();
+        const rawList = extractPromotionsList(promosRes.data);
+        const liveActive = rawList.filter((promo) => {
+          if (promo.status && promo.status !== PromoStatus.ACTIVE) return false;
+          if (promo.startsAt && new Date(promo.startsAt).getTime() > nowMs) return false;
+          if (promo.endsAt && new Date(promo.endsAt).getTime() < nowMs) return false;
+          if (promo.maxUses != null && promo.usedCount >= promo.maxUses) return false;
+          return Boolean(promo.code);
+        });
+        setActivePromotions(liveActive);
+      } else {
+        setActivePromotions([]);
+      }
+      setPromotionsLoading(false);
 
       if (addrRes.ok && Array.isArray(addrRes.data) && addrRes.data.length > 0) {
         setSavedAddresses(addrRes.data);
@@ -366,9 +448,26 @@ export function CheckoutPageClient() {
     };
 
     try {
-      const socket = io(`${getBffBaseUrl()}/realtime`, {
+      const session = getStoredSession();
+      const guestSessionId = getOrCreateGuestSessionId();
+      const explicitRealtimeUrl = process.env.NEXT_PUBLIC_REALTIME_URL?.trim();
+      const realtimeSocketUrl = explicitRealtimeUrl
+        ? `${explicitRealtimeUrl.replace(/\/+$/, '')}/realtime`
+        : typeof window !== 'undefined' &&
+            window.location.port === '3000' &&
+            (window.location.hostname === '127.0.0.1' ||
+              window.location.hostname === 'localhost')
+          ? `${window.location.protocol}//${window.location.hostname}:4000/realtime`
+          : `${getBffBaseUrl()}/realtime`;
+
+      const socket = io(realtimeSocketUrl, {
+        path: '/socket.io/',
         transports: ['websocket', 'polling'],
         withCredentials: true,
+        auth: {
+          ...(session?.accessToken ? { token: session.accessToken } : {}),
+          guestSessionId,
+        },
         reconnectionAttempts: 3,
         timeout: 5000,
       });
@@ -430,9 +529,9 @@ export function CheckoutPageClient() {
       !recipientName.trim() ||
       phone.trim().length < 8 ||
       !streetLine.trim() ||
-      !provinceName.trim() ||
-      !districtName.trim() ||
-      !wardName.trim()
+      !division.provinceName.trim() ||
+      !division.districtName.trim() ||
+      !division.wardName.trim()
     ) {
       setErrorMessage('Vui lòng điền đầy đủ họ tên, số điện thoại và địa chỉ giao hàng.');
       return;
@@ -442,6 +541,10 @@ export function CheckoutPageClient() {
 
     const chosenDay = deliveryDays[deliveryDayIdx];
     const chosenSlot = TWO_HOUR_SLOTS[deliverySlotIdx];
+    const returnUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/thanh-toan/ket-qua`
+        : undefined;
 
     // Intentionally send ZERO price fields — order-rma resolves authoritative prices server-side
     const res = await apiFetch<OrderDTO>('/bff/v1/storefront/orders', {
@@ -453,9 +556,12 @@ export function CheckoutPageClient() {
         shippingAddress: {
           recipientName: recipientName.trim(),
           phone: phone.trim(),
-          provinceName: provinceName.trim(),
-          districtName: districtName.trim(),
-          wardName: wardName.trim(),
+          provinceCode: division.provinceCode || undefined,
+          provinceName: division.provinceName.trim(),
+          districtCode: division.districtCode || undefined,
+          districtName: division.districtName.trim(),
+          wardCode: division.wardCode || undefined,
+          wardName: division.wardName.trim(),
           streetLine: streetLine.trim(),
         },
         shippingMethod,
@@ -464,6 +570,7 @@ export function CheckoutPageClient() {
         deliverySlot:
           shippingMethod === ShippingMethod.AHAMOVE_2H ? chosenSlot ?? null : null,
         paymentMethod,
+        ...(returnUrl ? { returnUrl } : {}),
         voucherCode: voucherEval?.valid ? voucherEval.voucherCode : null,
         packagingOptionId: activePackaging?.id ?? null,
         giftNote: giftNote.trim() ? giftNote.trim().slice(0, 140) : null,
@@ -497,6 +604,33 @@ export function CheckoutPageClient() {
     const order = res.data;
     emitCartUpdated(null);
     refreshCartCount();
+
+    const externalPaymentUrl = order.paymentIntent?.paymentUrl;
+    if (
+      (order.paymentMethod === PaymentMethod.VNPAY ||
+        order.paymentMethod === PaymentMethod.MOMO) &&
+      typeof externalPaymentUrl === 'string' &&
+      /^https?:\/\//i.test(externalPaymentUrl)
+    ) {
+      if (typeof window !== 'undefined') {
+        try {
+          window.sessionStorage.setItem(
+            'atelier_pending_payment_v1',
+            JSON.stringify({
+              orderId: order.id,
+              orderCode: order.orderCode,
+              provider: order.paymentMethod,
+              amountVnd: order.totalAmountVnd,
+              createdAt: new Date().toISOString(),
+            }),
+          );
+        } catch {
+          // Ignore private-mode storage restrictions
+        }
+        window.location.assign(externalPaymentUrl);
+      }
+      return;
+    }
 
     if (
       order.paymentMethod === PaymentMethod.VIETQR &&
@@ -806,35 +940,103 @@ export function CheckoutPageClient() {
 
                 <label className="text-xs">
                   <span className="text-[#6B5B4C]">Tỉnh / Thành phố *</span>
-                  <input
-                    type="text"
+                  <select
                     required
-                    value={provinceName}
-                    onChange={(e) => setProvinceName(e.target.value)}
+                    value={division.provinceCode}
+                    onChange={(e) => {
+                      setSelectedAddressId('custom');
+                      setDivision(selectProvinceCascade(e.target.value));
+                    }}
+                    data-testid="checkout-province-select"
                     className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-[#FBF7EF]/60 px-3.5 py-2.5 text-sm text-[#1C1410] outline-none focus:border-[#8A672C]"
-                  />
+                  >
+                    {!VN_PROVINCES.some((p) => p.code === division.provinceCode) &&
+                    division.provinceName ? (
+                      <option value={division.provinceCode}>{division.provinceName}</option>
+                    ) : null}
+                    {VN_PROVINCES.map((p) => (
+                      <option key={p.code} value={p.code}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
                 </label>
 
                 <label className="text-xs">
                   <span className="text-[#6B5B4C]">Quận / Huyện *</span>
-                  <input
-                    type="text"
+                  <select
                     required
-                    value={districtName}
-                    onChange={(e) => setDistrictName(e.target.value)}
+                    value={division.districtCode}
+                    onChange={(e) => {
+                      setSelectedAddressId('custom');
+                      setDivision(
+                        selectDistrictCascade(division.provinceCode, e.target.value),
+                      );
+                    }}
+                    data-testid="checkout-district-select"
                     className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-[#FBF7EF]/60 px-3.5 py-2.5 text-sm text-[#1C1410] outline-none focus:border-[#8A672C]"
-                  />
+                  >
+                    {(() => {
+                      const districts = getDistrictsByProvinceCode(division.provinceCode);
+                      const hasCurrent = districts.some(
+                        (d) => d.code === division.districtCode,
+                      );
+                      return (
+                        <>
+                          {!hasCurrent && division.districtName ? (
+                            <option value={division.districtCode}>
+                              {division.districtName}
+                            </option>
+                          ) : null}
+                          {districts.map((d) => (
+                            <option key={d.code} value={d.code}>
+                              {d.name}
+                            </option>
+                          ))}
+                        </>
+                      );
+                    })()}
+                  </select>
                 </label>
 
                 <label className="text-xs">
                   <span className="text-[#6B5B4C]">Phường / Xã *</span>
-                  <input
-                    type="text"
+                  <select
                     required
-                    value={wardName}
-                    onChange={(e) => setWardName(e.target.value)}
+                    value={division.wardCode}
+                    onChange={(e) => {
+                      setSelectedAddressId('custom');
+                      setDivision(
+                        selectWardCascade(
+                          division.provinceCode,
+                          division.districtCode,
+                          e.target.value,
+                        ),
+                      );
+                    }}
+                    data-testid="checkout-ward-select"
                     className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-[#FBF7EF]/60 px-3.5 py-2.5 text-sm text-[#1C1410] outline-none focus:border-[#8A672C]"
-                  />
+                  >
+                    {(() => {
+                      const wards = getWardsByDistrictCode(
+                        division.provinceCode,
+                        division.districtCode,
+                      );
+                      const hasCurrent = wards.some((w) => w.code === division.wardCode);
+                      return (
+                        <>
+                          {!hasCurrent && division.wardName ? (
+                            <option value={division.wardCode}>{division.wardName}</option>
+                          ) : null}
+                          {wards.map((w) => (
+                            <option key={w.code} value={w.code}>
+                              {w.name}
+                            </option>
+                          ))}
+                        </>
+                      );
+                    })()}
+                  </select>
                 </label>
 
                 <label className="text-xs">
@@ -843,7 +1045,10 @@ export function CheckoutPageClient() {
                     type="text"
                     required
                     value={streetLine}
-                    onChange={(e) => setStreetLine(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedAddressId('custom');
+                      setStreetLine(e.target.value);
+                    }}
                     placeholder="18 Hàng Trống"
                     className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-[#FBF7EF]/60 px-3.5 py-2.5 text-sm text-[#1C1410] outline-none focus:border-[#8A672C]"
                   />
@@ -992,7 +1197,7 @@ export function CheckoutPageClient() {
                     type="text"
                     value={voucherInput}
                     onChange={(e) => setVoucherInput(e.target.value.toUpperCase())}
-                    placeholder="Nhập ATELIER10, FREESHIP hoặc FLASH200K"
+                    placeholder="Nhập mã ưu đãi của bạn"
                     className="min-w-[200px] flex-1 rounded-full border border-[#B08A4A]/40 bg-[#FBF7EF] px-4 py-2.5 font-mono text-sm uppercase text-[#1C1410] outline-none focus:border-[#8A672C]"
                   />
                   <button
@@ -1005,17 +1210,42 @@ export function CheckoutPageClient() {
                   </button>
                 </div>
 
-                <div className="flex flex-wrap gap-1.5">
-                  {QUICK_VOUCHERS.map((q) => (
-                    <button
-                      key={q.code}
-                      type="button"
-                      onClick={() => void handleEvaluateVoucher(q.code)}
-                      className="rounded-full border border-[#B08A4A]/35 bg-[#F4EBDA]/70 px-3 py-1 text-[11px] text-[#5C431C] transition-colors hover:bg-[#EBCF8F]"
-                    >
-                      <strong>{q.code}</strong> · {q.hint}
-                    </button>
-                  ))}
+                <div
+                  data-testid="checkout-live-promotions"
+                  className="flex flex-wrap items-center gap-1.5"
+                >
+                  {promotionsLoading ? (
+                    <span className="text-[11px] text-[#7A6A5B]">
+                      Đang tải các chương trình ưu đãi đang mở...
+                    </span>
+                  ) : activePromotions.length > 0 ? (
+                    activePromotions.map((promo) => {
+                      const isApplied =
+                        voucherEval?.valid &&
+                        voucherEval.voucherCode?.toUpperCase() ===
+                          promo.code.toUpperCase();
+                      return (
+                        <button
+                          key={promo.id}
+                          type="button"
+                          data-testid="checkout-promo-chip"
+                          onClick={() => void handleEvaluateVoucher(promo.code)}
+                          className={`rounded-full border px-3 py-1 text-[11px] transition-colors ${
+                            isApplied
+                              ? 'border-[#1C1410] bg-[#1C1410] text-[#EBCF8F]'
+                              : 'border-[#B08A4A]/35 bg-[#F4EBDA]/70 text-[#5C431C] hover:bg-[#EBCF8F]'
+                          }`}
+                        >
+                          <strong>{promo.code}</strong> · {formatPromotionHint(promo)}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <span className="text-[11px] text-[#7A6A5B]">
+                      Hiện chưa có mã ưu đãi công khai nào đang mở — bạn vẫn có thể nhập mã
+                      riêng nếu có.
+                    </span>
+                  )}
                 </div>
 
                 {voucherEval ? (
@@ -1253,7 +1483,11 @@ export function CheckoutPageClient() {
                   ? 'Đang giữ tồn kho & tạo đơn...'
                   : paymentMethod === PaymentMethod.VIETQR
                     ? 'Tạo mã VietQR & Đặt hàng'
-                    : 'Xác nhận đặt hàng Atelier'}
+                    : paymentMethod === PaymentMethod.VNPAY
+                      ? 'Tiếp tục thanh toán VNPay'
+                      : paymentMethod === PaymentMethod.MOMO
+                        ? 'Tiếp tục thanh toán ví MoMo'
+                        : 'Xác nhận đặt hàng Atelier'}
               </button>
 
               <p className="mt-3 text-center text-[11px] text-[#7A6A5B]">

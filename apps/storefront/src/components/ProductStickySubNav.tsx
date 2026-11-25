@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { FORMAT_VND } from '@/lib/catalog-data';
 
 export interface ProductStickySubNavProps {
@@ -15,6 +15,16 @@ export interface ProductStickySubNavProps {
   onJumpToBuy: () => void;
 }
 
+type ActiveSectionKey = 'overview' | 'size-advisor' | 'reviews';
+
+function findFirstSection(ids: readonly string[]): HTMLElement | null {
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el) return el;
+  }
+  return null;
+}
+
 export function ProductStickySubNav({
   productName,
   priceVnd,
@@ -27,41 +37,67 @@ export function ProductStickySubNav({
   onJumpToBuy,
 }: ProductStickySubNavProps) {
   const [visible, setVisible] = useState(false);
+  const [activeSection, setActiveSection] =
+    useState<ActiveSectionKey>('overview');
 
   useEffect(() => {
     const sentinel = document.getElementById(sentinelId);
-    if (!sentinel) return;
 
-    const evaluate = () => {
-      const rect = sentinel.getBoundingClientRect();
-      setVisible(rect.bottom <= 92);
+    const evaluateScroll = () => {
+      if (sentinel) {
+        const rect = sentinel.getBoundingClientRect();
+        setVisible(rect.bottom <= 92);
+      } else {
+        setVisible(window.scrollY > 360);
+      }
+
+      const reviewsEl = findFirstSection(['pdp-reviews', 'danh-gia-do-vua']);
+      const advisorEl = findFirstSection(['pdp-size-advisor', 'co-van-size-ai']);
+      if (reviewsEl && reviewsEl.getBoundingClientRect().top <= 220) {
+        setActiveSection('reviews');
+      } else if (advisorEl && advisorEl.getBoundingClientRect().top <= 220) {
+        setActiveSection('size-advisor');
+      } else {
+        setActiveSection('overview');
+      }
     };
 
-    evaluate();
+    evaluateScroll();
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry) return;
-        setVisible(!entry.isIntersecting && entry.boundingClientRect.bottom <= 92);
-      },
-      {
-        rootMargin: '-88px 0px 0px 0px',
-        threshold: [0, 0.05],
-      },
-    );
+    let observer: IntersectionObserver | null = null;
+    if (sentinel && typeof IntersectionObserver !== 'undefined') {
+      observer = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          if (!entry) return;
+          setVisible(!entry.isIntersecting && entry.boundingClientRect.bottom <= 92);
+        },
+        {
+          rootMargin: '-88px 0px 0px 0px',
+          threshold: [0, 0.05],
+        },
+      );
+      observer.observe(sentinel);
+    }
 
-    observer.observe(sentinel);
-    window.addEventListener('scroll', evaluate, { passive: true });
+    window.addEventListener('scroll', evaluateScroll, { passive: true });
 
     return () => {
-      observer.disconnect();
-      window.removeEventListener('scroll', evaluate);
+      observer?.disconnect();
+      window.removeEventListener('scroll', evaluateScroll);
     };
   }, [sentinelId]);
 
-  const scrollToSection = (sectionId: string) => {
-    const el = document.getElementById(sectionId);
+  const scrollToSections = (
+    event: MouseEvent<HTMLAnchorElement>,
+    candidateIds: readonly string[],
+    nextKey: ActiveSectionKey,
+    afterClick?: () => void,
+  ) => {
+    event.preventDefault();
+    afterClick?.();
+    setActiveSection(nextKey);
+    const el = findFirstSection(candidateIds);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -69,6 +105,7 @@ export function ProductStickySubNav({
 
   return (
     <div
+      data-testid="pdp-sticky-subnav"
       role="region"
       aria-label="Thanh điều hướng nhanh sản phẩm"
       aria-hidden={!visible}
@@ -99,53 +136,77 @@ export function ProductStickySubNav({
           aria-label="Mục nội dung sản phẩm"
           className="hidden items-center gap-5 text-[11px] uppercase tracking-[0.16em] text-[#5C4B41] lg:flex"
         >
-          <button
-            type="button"
+          <a
+            href="#pdp-overview"
             tabIndex={visible ? 0 : -1}
-            onClick={() => scrollToSection('pdp-overview')}
-            className="transition-colors hover:text-[#8A672C]"
+            onClick={(e) => scrollToSections(e, ['pdp-overview'], 'overview')}
+            className={`transition-colors hover:text-[#8A672C] ${
+              activeSection === 'overview' ? 'font-medium text-[#1C1410]' : ''
+            }`}
           >
             Tổng quan
-          </button>
-          <button
-            type="button"
+          </a>
+          <span aria-hidden="true" className="text-[#B08A4A]/50">
+            ·
+          </span>
+          <a
+            href="#pdp-size-advisor"
             tabIndex={visible ? 0 : -1}
-            onClick={() => {
-              onJumpToSizeAdvisor();
-              scrollToSection('co-van-size-ai');
-            }}
-            className="transition-colors hover:text-[#8A672C]"
+            onClick={(e) =>
+              scrollToSections(
+                e,
+                ['pdp-size-advisor', 'co-van-size-ai'],
+                'size-advisor',
+                onJumpToSizeAdvisor,
+              )
+            }
+            className={`transition-colors hover:text-[#8A672C] ${
+              activeSection === 'size-advisor' ? 'font-medium text-[#1C1410]' : ''
+            }`}
           >
             Cố vấn Size AI
-          </button>
-          <button
-            type="button"
+          </a>
+          <span aria-hidden="true" className="text-[#B08A4A]/50">
+            ·
+          </span>
+          <a
+            href="#pdp-reviews"
             tabIndex={visible ? 0 : -1}
-            onClick={() => scrollToSection('danh-gia-do-vua')}
-            className="transition-colors hover:text-[#8A672C]"
+            onClick={(e) =>
+              scrollToSections(
+                e,
+                ['pdp-reviews', 'danh-gia-do-vua'],
+                'reviews',
+              )
+            }
+            className={`transition-colors hover:text-[#8A672C] ${
+              activeSection === 'reviews' ? 'font-medium text-[#1C1410]' : ''
+            }`}
           >
             Đánh giá độ vừa{totalReviews > 0 ? ` (${totalReviews})` : ''}
-          </button>
+          </a>
         </nav>
 
         <div className="flex shrink-0 items-center gap-2">
           {isTryonEnabled ? (
             <button
               type="button"
+              data-testid="sticky-tryon-btn"
               tabIndex={visible ? 0 : -1}
               onClick={onOpenTryOn}
               className="rounded-full border border-[#8A672C] bg-[#F4EBDA] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[#1C1410] transition-colors hover:bg-[#1C1410] hover:text-[#EBCF8F]"
             >
-              Ướm thử AI
+              ✦ Ướm thử AI
             </button>
           ) : null}
           <button
             type="button"
+            data-testid="sticky-buy-btn"
             tabIndex={visible ? 0 : -1}
             onClick={onJumpToBuy}
             className="rounded-full bg-[#1C1410] px-5 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-[#EBCF8F] transition-opacity hover:opacity-90"
           >
-            Chọn mua
+            + Chọn mua
           </button>
         </div>
       </div>

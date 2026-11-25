@@ -1,34 +1,40 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from app.providers.auto_provider import AutoVTONProvider
+from app.config import get_settings
+from app.providers.auto_provider import CompositeVtonRouter
 from app.providers.base import (
-    POSE_WARP_BADGE,
+    PHOTOMETRIC_INPAINT_BADGE,
+    BaseVtonProvider,
     ProviderCapabilities,
+    TryOnGenerationRequest,
+    TryOnGenerationResult,
     VTONProvider,
     VTONProviderType,
-    VTONRenderStepResult,
     VTONRequest,
     VTONResult,
-    VTONStepCategory,
 )
-from app.providers.fal_provider import FalCatVTONProvider
-from app.providers.hf_gradio_provider import HuggingFaceGradioVTONProvider
-from app.providers.smart_pose_warp_provider import SmartPoseWarpVTONProvider
+from app.providers.circuit_breaker import ProviderCircuitBreaker
+from app.providers.fal_provider import FalCatVtonProvider
+from app.providers.fashn_provider import FashnVtonProvider
+from app.providers.hf_gradio_provider import HuggingFaceZeroGpuVtonProvider
+from app.providers.local_gpu_provider import LocalGpuVtonProvider
+from app.providers.photometric_inpaint_provider import PhotometricInpaintWarpProvider
 
 
-class MockVTONProvider:
+class MockVTONProvider(BaseVtonProvider):
     """
-    Backward-compatible adapter delegating to SmartPoseWarpVTONProvider.
+    Backward-compatible adapter delegating to Tier 4 `PhotometricInpaintWarpProvider`.
     NEVER uses legacy polygon placeholders or face-overwriting static overlays.
     """
 
     name: str = "mock"
-    provider_type: VTONProviderType = "SMART_POSE_WARP"
+    provider_type: VTONProviderType = "PHOTOMETRIC_INPAINT"
     capabilities: ProviderCapabilities = ProviderCapabilities(
         name="mock",
-        display_name="Atelier Smart Pose-Warp Local CV Engine ($0)",
+        display_name="Atelier Photometric Inpaint & TPS Engine ($0 · Immortal Fallback)",
         mode="local-cv",
         supported_categories=("TOP", "BOTTOM", "ONE_PIECE", "OUTERWEAR"),
         supported_aspect_ratios=("2:3", "3:4"),
@@ -46,104 +52,111 @@ class MockVTONProvider:
         del step_delay_seconds
         self.private_bucket = private_bucket
         self.purge_ttl_minutes = purge_ttl_minutes
-        self._delegate = SmartPoseWarpVTONProvider(
+        self._delegate = PhotometricInpaintWarpProvider(
             private_bucket=private_bucket,
             purge_ttl_minutes=purge_ttl_minutes,
         )
 
-    async def render_step(
-        self,
-        *,
-        person_image_bytes: bytes,
-        garment_image_bytes: bytes | None,
-        garment_image_url: str | None,
-        garment_category: VTONStepCategory,
-        garment_label: str = "",
-        step_order: int = 1,
-        total_steps: int = 1,
-        pose_landmarks: dict[str, Any] | None = None,
-    ) -> VTONRenderStepResult:
-        res = await self._delegate.render_step(
-            person_image_bytes=person_image_bytes,
-            garment_image_bytes=garment_image_bytes,
-            garment_image_url=garment_image_url,
-            garment_category=garment_category,
-            garment_label=garment_label,
-            step_order=step_order,
-            total_steps=total_steps,
-            pose_landmarks=pose_landmarks,
-        )
-        return VTONRenderStepResult(
-            image_bytes=res.image_bytes,
+    async def synthesize(self, request: TryOnGenerationRequest) -> TryOnGenerationResult:
+        res = await self._delegate.synthesize(request)
+        return TryOnGenerationResult(
+            result_bytes=res.result_bytes,
             content_type=res.content_type,
+            provider_used=res.provider_used,
             provider_type=res.provider_type,
-            provider_display_badge=res.provider_display_badge or POSE_WARP_BADGE,
+            provider_badge=res.provider_badge or PHOTOMETRIC_INPAINT_BADGE,
+            latency_ms=res.latency_ms,
+            clean_collar_applied=res.clean_collar_applied,
             external_job_id=res.external_job_id,
             estimated_cost_usd=0.0,
-            latency_ms=res.latency_ms,
+            width=res.width,
+            height=res.height,
             notes=res.notes,
         )
 
-    async def generate(self, request: VTONRequest) -> VTONResult:
-        return await self._delegate.generate(request)
+    async def _generate_legacy_preview(self, request: VTONRequest) -> VTONResult:
+        return await self._delegate._generate_legacy_preview(request)
 
     async def health_check(self) -> bool:
         return True
 
 
 def list_registered_providers(active_provider: str = "auto") -> list[dict[str, Any]]:
-    """Return catalog of all 3-tier VTON provider adapters."""
+    """Return catalog of all 4-tier VTON provider adapters."""
     normalized = (active_provider or "auto").strip().lower()
     return [
         {
-            "name": AutoVTONProvider.name,
-            "providerType": "SMART_POSE_WARP",
-            "displayName": AutoVTONProvider.capabilities.display_name,
-            "mode": AutoVTONProvider.capabilities.mode,
+            "name": CompositeVtonRouter.name,
+            "providerType": "PHOTOMETRIC_INPAINT",
+            "displayName": CompositeVtonRouter.capabilities.display_name,
+            "mode": CompositeVtonRouter.capabilities.mode,
             "active": normalized == "auto",
             "status": "active",
-            "supportedCategories": list(AutoVTONProvider.capabilities.supported_categories),
-            "supportedAspectRatios": list(AutoVTONProvider.capabilities.supported_aspect_ratios),
+            "supportedCategories": list(CompositeVtonRouter.capabilities.supported_categories),
+            "supportedAspectRatios": list(CompositeVtonRouter.capabilities.supported_aspect_ratios),
             "supportsAlphaCutout": True,
         },
         {
-            "name": FalCatVTONProvider.name,
+            "name": FalCatVtonProvider.name,
             "providerType": "FAL_CATVTON",
-            "displayName": FalCatVTONProvider.capabilities.display_name,
-            "mode": FalCatVTONProvider.capabilities.mode,
+            "displayName": FalCatVtonProvider.capabilities.display_name,
+            "mode": FalCatVtonProvider.capabilities.mode,
             "active": normalized in ("fal", "fal_catvton", "catvton"),
             "status": "active",
-            "supportedCategories": list(FalCatVTONProvider.capabilities.supported_categories),
-            "supportedAspectRatios": list(FalCatVTONProvider.capabilities.supported_aspect_ratios),
+            "supportedCategories": list(FalCatVtonProvider.capabilities.supported_categories),
+            "supportedAspectRatios": list(FalCatVtonProvider.capabilities.supported_aspect_ratios),
             "supportsAlphaCutout": True,
         },
         {
-            "name": HuggingFaceGradioVTONProvider.name,
+            "name": FashnVtonProvider.name,
+            "providerType": "FASHN_VTON",
+            "displayName": FashnVtonProvider.capabilities.display_name,
+            "mode": FashnVtonProvider.capabilities.mode,
+            "active": normalized in ("fashn", "fashn_vton"),
+            "status": "active",
+            "supportedCategories": list(FashnVtonProvider.capabilities.supported_categories),
+            "supportedAspectRatios": list(FashnVtonProvider.capabilities.supported_aspect_ratios),
+            "supportsAlphaCutout": True,
+        },
+        {
+            "name": LocalGpuVtonProvider.name,
+            "providerType": "LOCAL_GPU_VTON",
+            "displayName": LocalGpuVtonProvider.capabilities.display_name,
+            "mode": LocalGpuVtonProvider.capabilities.mode,
+            "active": normalized in ("local_gpu", "local_gpu_vton", "lan"),
+            "status": "active",
+            "supportedCategories": list(LocalGpuVtonProvider.capabilities.supported_categories),
+            "supportedAspectRatios": list(LocalGpuVtonProvider.capabilities.supported_aspect_ratios),
+            "supportsAlphaCutout": True,
+        },
+        {
+            "name": HuggingFaceZeroGpuVtonProvider.name,
             "providerType": "HF_GRADIO_VTON",
-            "displayName": HuggingFaceGradioVTONProvider.capabilities.display_name,
-            "mode": HuggingFaceGradioVTONProvider.capabilities.mode,
+            "displayName": HuggingFaceZeroGpuVtonProvider.capabilities.display_name,
+            "mode": HuggingFaceZeroGpuVtonProvider.capabilities.mode,
             "active": normalized in ("hf", "hf_gradio", "hf_gradio_vton"),
             "status": "active",
             "supportedCategories": list(
-                HuggingFaceGradioVTONProvider.capabilities.supported_categories
+                HuggingFaceZeroGpuVtonProvider.capabilities.supported_categories
             ),
             "supportedAspectRatios": list(
-                HuggingFaceGradioVTONProvider.capabilities.supported_aspect_ratios
+                HuggingFaceZeroGpuVtonProvider.capabilities.supported_aspect_ratios
             ),
             "supportsAlphaCutout": True,
         },
         {
-            "name": SmartPoseWarpVTONProvider.name,
-            "providerType": "SMART_POSE_WARP",
-            "displayName": SmartPoseWarpVTONProvider.capabilities.display_name,
-            "mode": SmartPoseWarpVTONProvider.capabilities.mode,
-            "active": normalized in ("pose_warp", "smart_pose_warp", "mock"),
+            "name": PhotometricInpaintWarpProvider.name,
+            "providerType": "PHOTOMETRIC_INPAINT",
+            "displayName": PhotometricInpaintWarpProvider.capabilities.display_name,
+            "mode": PhotometricInpaintWarpProvider.capabilities.mode,
+            "active": normalized
+            in ("photometric", "photometric_inpaint", "pose_warp", "smart_pose_warp", "mock"),
             "status": "active",
             "supportedCategories": list(
-                SmartPoseWarpVTONProvider.capabilities.supported_categories
+                PhotometricInpaintWarpProvider.capabilities.supported_categories
             ),
             "supportedAspectRatios": list(
-                SmartPoseWarpVTONProvider.capabilities.supported_aspect_ratios
+                PhotometricInpaintWarpProvider.capabilities.supported_aspect_ratios
             ),
             "supportsAlphaCutout": True,
         },
@@ -156,88 +169,199 @@ def get_vton_provider(
     private_bucket: str = "atelier-private-tryon",
     purge_ttl_minutes: int = 15,
     fal_key: str = "",
-    fal_catvton_url: str = "https://queue.fal.run/fal-ai/cat-vton",
+    fal_vton_model: str | None = None,
+    fal_catvton_url: str | None = None,
     fal_timeout_seconds: float = 45.0,
+    fashn_api_key: str | None = None,
+    fashn_api_url: str | None = None,
     hf_token: str = "",
-    hf_vton_timeout_seconds: float = 40.0,
+    hf_vton_timeout_seconds: float | None = None,
     hf_vton_enabled: bool = True,
+    local_vton_endpoint: str | None = None,
+    total_timeout_seconds: float | None = None,
+    circuit_breaker_seconds: int | None = None,
+    tmp_dir: str | Path | None = None,
 ) -> VTONProvider:
     """
-    Resolve configured VTON provider:
-      - `auto` (default): 3-Tier AutoVTONProvider (POSE_TOO_CLOSE gate -> Fal -> HF Gradio -> SmartPoseWarp)
-      - `fal`: FalCatVTONProvider (or AutoVTONProvider with Fal Tier 1 when key set)
-      - `hf_gradio`: AutoVTONProvider starting at Tier 2 HF Gradio -> Tier 3 SmartPoseWarp
-      - `pose_warp` / `smart_pose_warp` / `mock`: SmartPoseWarpVTONProvider (Zero face pasting)
+    Resolve configured 4-tier VTON provider (100% backwards-compatible with Stage 1 calls):
+      - `auto` (default): `CompositeVtonRouter` (Fal -> Fashn -> LAN GPU -> HF ZeroGPU -> PhotometricInpaint)
+      - `fal` / `fal_catvton` / `catvton`: FalCatVtonProvider -> Tier 4 fallback
+      - `fashn` / `fashn_vton`: FashnVtonProvider -> Tier 4 fallback
+      - `local_gpu`: LocalGpuVtonProvider -> Tier 4 fallback
+      - `hf_gradio` / `hf`: HuggingFaceZeroGpuVtonProvider -> Tier 4 fallback
+      - `photometric_inpaint` / `pose_warp` / `smart_pose_warp` / `mock`: PhotometricInpaintWarpProvider
     """
-    normalized = (provider_name or "auto").strip().lower()
+    cfg = get_settings()
+    resolved_fal_key = fal_key if fal_key else cfg.fal_key
+    resolved_fal_model = fal_vton_model if fal_vton_model is not None else cfg.fal_vton_model
+    resolved_fal_url = (
+        fal_catvton_url if fal_catvton_url is not None else cfg.resolved_fal_endpoint_url
+    )
+    resolved_fashn_key = fashn_api_key if fashn_api_key is not None else cfg.fashn_api_key
+    resolved_fashn_url = fashn_api_url if fashn_api_url is not None else cfg.fashn_api_url
+    resolved_hf_token = hf_token if hf_token else cfg.hf_token
+    resolved_hf_timeout = (
+        hf_vton_timeout_seconds
+        if hf_vton_timeout_seconds is not None
+        else cfg.hf_vton_timeout_seconds
+    )
+    resolved_local_endpoint = (
+        local_vton_endpoint if local_vton_endpoint is not None else cfg.local_vton_endpoint
+    )
+    resolved_total_timeout = (
+        total_timeout_seconds
+        if total_timeout_seconds is not None
+        else cfg.tryon_total_timeout_seconds
+    )
+    resolved_cb_seconds = (
+        circuit_breaker_seconds
+        if circuit_breaker_seconds is not None
+        else cfg.tryon_circuit_breaker_seconds
+    )
+    resolved_tmp_dir = tmp_dir if tmp_dir is not None else cfg.tryon_tmp_dir
 
-    pose_warp = SmartPoseWarpVTONProvider(
+    normalized = (provider_name or "auto").strip().lower()
+    cb = ProviderCircuitBreaker(cooldown_seconds=float(resolved_cb_seconds), failure_threshold=2)
+
+    tier4 = PhotometricInpaintWarpProvider(
         private_bucket=private_bucket,
         purge_ttl_minutes=purge_ttl_minutes,
     )
 
-    if normalized in ("pose_warp", "smart_pose_warp", "mock"):
-        return pose_warp
+    if normalized in ("photometric", "photometric_inpaint", "pose_warp", "smart_pose_warp", "mock"):
+        return tier4
 
     if normalized in ("fal", "fal_catvton", "catvton"):
-        fal = FalCatVTONProvider(
-            fal_key=fal_key,
-            endpoint_url=fal_catvton_url,
+        fal = FalCatVtonProvider(
+            fal_key=resolved_fal_key,
+            fal_vton_model=resolved_fal_model,
+            endpoint_url=resolved_fal_url,
             timeout_seconds=fal_timeout_seconds,
             private_bucket=private_bucket,
             purge_ttl_minutes=purge_ttl_minutes,
         )
-        return AutoVTONProvider(
+        return CompositeVtonRouter(
             fal_provider=fal,
-            hf_provider=None,
-            pose_warp_provider=pose_warp,
+            photometric_provider=tier4,
+            circuit_breaker=cb,
+            total_timeout_seconds=resolved_total_timeout,
+            circuit_breaker_seconds=resolved_cb_seconds,
+            private_bucket=private_bucket,
+            purge_ttl_minutes=purge_ttl_minutes,
+        )
+
+    if normalized in ("fashn", "fashn_vton"):
+        fashn = FashnVtonProvider(
+            api_key=resolved_fashn_key,
+            api_url=resolved_fashn_url,
+            timeout_seconds=fal_timeout_seconds,
+            private_bucket=private_bucket,
+            purge_ttl_minutes=purge_ttl_minutes,
+        )
+        return CompositeVtonRouter(
+            fashn_provider=fashn,
+            photometric_provider=tier4,
+            circuit_breaker=cb,
+            total_timeout_seconds=resolved_total_timeout,
+            circuit_breaker_seconds=resolved_cb_seconds,
+            private_bucket=private_bucket,
+            purge_ttl_minutes=purge_ttl_minutes,
+        )
+
+    if normalized in ("local_gpu", "local_gpu_vton", "lan"):
+        local_gpu = LocalGpuVtonProvider(
+            endpoint_url=resolved_local_endpoint,
+            timeout_seconds=min(35.0, resolved_total_timeout),
+            private_bucket=private_bucket,
+            purge_ttl_minutes=purge_ttl_minutes,
+        )
+        return CompositeVtonRouter(
+            local_gpu_provider=local_gpu,
+            photometric_provider=tier4,
+            circuit_breaker=cb,
+            total_timeout_seconds=resolved_total_timeout,
+            circuit_breaker_seconds=resolved_cb_seconds,
             private_bucket=private_bucket,
             purge_ttl_minutes=purge_ttl_minutes,
         )
 
     if normalized in ("hf", "hf_gradio", "hf_gradio_vton"):
-        hf = HuggingFaceGradioVTONProvider(
-            hf_token=hf_token,
-            timeout_seconds=hf_vton_timeout_seconds,
+        hf = HuggingFaceZeroGpuVtonProvider(
+            hf_token=resolved_hf_token,
+            timeout_seconds=resolved_hf_timeout,
             enabled=hf_vton_enabled,
+            circuit_breaker=cb,
+            tmp_dir=resolved_tmp_dir,
             private_bucket=private_bucket,
             purge_ttl_minutes=purge_ttl_minutes,
         )
-        return AutoVTONProvider(
-            fal_provider=None,
+        return CompositeVtonRouter(
             hf_provider=hf,
-            pose_warp_provider=pose_warp,
+            photometric_provider=tier4,
+            circuit_breaker=cb,
+            total_timeout_seconds=resolved_total_timeout,
+            circuit_breaker_seconds=resolved_cb_seconds,
             private_bucket=private_bucket,
             purge_ttl_minutes=purge_ttl_minutes,
         )
 
-    # Default: "auto" -> 3-tier chain (Fal -> HF Gradio -> SmartPoseWarp)
+    # Default "auto": Full 4-Tier CompositeVtonRouter
     fal_tier = (
-        FalCatVTONProvider(
-            fal_key=fal_key,
-            endpoint_url=fal_catvton_url,
+        FalCatVtonProvider(
+            fal_key=resolved_fal_key,
+            fal_vton_model=resolved_fal_model,
+            endpoint_url=resolved_fal_url,
             timeout_seconds=fal_timeout_seconds,
             private_bucket=private_bucket,
             purge_ttl_minutes=purge_ttl_minutes,
         )
-        if (fal_key or "").strip()
+        if (resolved_fal_key or "").strip()
+        else None
+    )
+    fashn_tier = (
+        FashnVtonProvider(
+            api_key=resolved_fashn_key,
+            api_url=resolved_fashn_url,
+            timeout_seconds=fal_timeout_seconds,
+            private_bucket=private_bucket,
+            purge_ttl_minutes=purge_ttl_minutes,
+        )
+        if (resolved_fashn_key or "").strip()
+        else None
+    )
+    local_gpu_tier = (
+        LocalGpuVtonProvider(
+            endpoint_url=resolved_local_endpoint,
+            timeout_seconds=min(35.0, resolved_total_timeout),
+            private_bucket=private_bucket,
+            purge_ttl_minutes=purge_ttl_minutes,
+        )
+        if (resolved_local_endpoint or "").strip()
         else None
     )
     hf_tier = (
-        HuggingFaceGradioVTONProvider(
-            hf_token=hf_token,
-            timeout_seconds=hf_vton_timeout_seconds,
+        HuggingFaceZeroGpuVtonProvider(
+            hf_token=resolved_hf_token,
+            timeout_seconds=resolved_hf_timeout,
             enabled=hf_vton_enabled,
+            circuit_breaker=cb,
+            tmp_dir=resolved_tmp_dir,
             private_bucket=private_bucket,
             purge_ttl_minutes=purge_ttl_minutes,
         )
         if hf_vton_enabled
         else None
     )
-    return AutoVTONProvider(
+
+    return CompositeVtonRouter(
         fal_provider=fal_tier,
+        fashn_provider=fashn_tier,
+        local_gpu_provider=local_gpu_tier,
         hf_provider=hf_tier,
-        pose_warp_provider=pose_warp,
+        photometric_provider=tier4,
+        circuit_breaker=cb,
+        total_timeout_seconds=resolved_total_timeout,
+        circuit_breaker_seconds=resolved_cb_seconds,
         private_bucket=private_bucket,
         purge_ttl_minutes=purge_ttl_minutes,
     )

@@ -275,6 +275,7 @@ export class ReviewEventPublisherService implements OnModuleInit, OnModuleDestro
           'content-type': 'application/json',
           [HTTP_HEADERS.CORRELATION_ID]: correlationId,
           [TRACEPARENT_HEADER]: traceparent,
+          'x-internal-secret': this.config.internalServiceSecret,
         },
         body: JSON.stringify({
           productId: fitStats.productId,

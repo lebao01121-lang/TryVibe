@@ -163,6 +163,7 @@ async function pickFlashSaleSku(catalogAvailable) {
 
 export async function runFlashSaleStress({ stock = TARGET_STOCK, concurrency = CONCURRENCY, quiet = JSON_ONLY } = {}) {
   const envVars = { ...loadDotEnv(path.join(ROOT_DIR, '.env')), ...process.env };
+  const internalSecret = envVars.INTERNAL_SERVICE_SECRET || 'Atelier_Internal_Svc_2026!';
   const spawnedChildren = [];
   let infraHandle = null;
 
@@ -176,7 +177,7 @@ export async function runFlashSaleStress({ stock = TARGET_STOCK, concurrency = C
       assert.ok(fs.existsSync(invEntry), 'services/inventory/dist/main.js missing — run `pnpm build` first');
       const child = spawn(process.execPath, [invEntry], {
         cwd: ROOT_DIR,
-        env: { ...envVars, NODE_ENV: 'development', INVENTORY_SERVICE_PORT: '4004' },
+        env: { ...envVars, NODE_ENV: 'development', INVENTORY_SERVICE_PORT: '4004', INTERNAL_SERVICE_SECRET: internalSecret },
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });
@@ -201,6 +202,7 @@ export async function runFlashSaleStress({ stock = TARGET_STOCK, concurrency = C
     // Initialize exact Flash Sale stock: availableQty = stock (15), reservedQty = 0
     const setRes = await httpJson(`${INVENTORY_BASE}/v1/inventory/internal/test-set-stock`, {
       method: 'POST',
+      headers: { 'x-internal-secret': internalSecret },
       body: { skuId: target.skuId, availableQty: stock, reservedQty: 0 },
     });
     assert.ok(setRes.status >= 200 && setRes.status < 300, `Failed to set flash-sale stock (${setRes.status}): ${setRes.text}`);
@@ -256,6 +258,7 @@ export async function runFlashSaleStress({ stock = TARGET_STOCK, concurrency = C
     }
     await httpJson(`${INVENTORY_BASE}/v1/inventory/internal/test-set-stock`, {
       method: 'POST',
+      headers: { 'x-internal-secret': internalSecret },
       body: { skuId: target.skuId, availableQty: Math.max(originalAvailable, 15), reservedQty: 0 },
     }).catch(() => {});
 

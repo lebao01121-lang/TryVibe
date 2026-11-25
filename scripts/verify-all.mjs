@@ -25,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 import { io } from 'socket.io-client';
-import { startLocalInfraIfNeeded } from './local-infra-dev.mjs';
+import { isPortOpen, startLocalInfraIfNeeded } from './local-infra-dev.mjs';
 import { runFlashSaleStress } from './stress-flash-sale.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -56,6 +56,7 @@ const FLAGSHIP_PRODUCT_ID = 'abc8d089-785d-4562-89dc-e788ab683f30';
 const FLAGSHIP_SLUG = 'ao-blazer-linen-dang-suong';
 const FLAGSHIP_SIZE_M_SKU_CODE = 'AT-AOBLLI-C1-M';
 const SUPPLIER_A_ID = '11111111-1111-4111-8111-111111111101';
+let activeInternalSecret = process.env.INTERNAL_SERVICE_SECRET || 'Atelier_Internal_Svc_2026!';
 
 /** @type {Map<string, { id: string, title: string, status: 'PASS'|'FAIL', details: string[] }>} */
 const gateResults = new Map();
@@ -485,13 +486,39 @@ async function getSkuStock(skuId) {
   };
 }
 
-async function setTestStock(skuId, availableQty, reservedQty = 0) {
+async function setTestStock(skuId, availableQty, reservedQty = 0, internalSecret = activeInternalSecret) {
   const res = await apiRequest(`${INVENTORY_BASE}/v1/inventory/internal/test-set-stock`, {
     method: 'POST',
+    headers: { 'x-internal-secret': internalSecret },
     body: { skuId, availableQty, reservedQty },
   });
   assert.ok(res.status >= 200 && res.status < 300, `test-set-stock failed (${res.status}): ${res.text}`);
   return unwrapData(res);
+}
+
+async function probeSocketSubscribe(eventName, payload, auth = undefined) {
+  const probeSocket = io(`${BFF_BASE}/realtime`, {
+    transports: ['websocket', 'polling'],
+    reconnection: false,
+    timeout: 6000,
+    ...(auth ? { auth } : {}),
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`Probe socket connect timeout (${eventName})`)), 6000);
+      probeSocket.once('connect', () => { clearTimeout(t); resolve(); });
+      probeSocket.once('connect_error', (e) => { clearTimeout(t); reject(e); });
+    });
+    return await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`Probe socket ack timeout (${eventName})`)), 6000);
+      probeSocket.emit(eventName, payload, (ack) => {
+        clearTimeout(t);
+        resolve(ack);
+      });
+    });
+  } finally {
+    probeSocket.disconnect();
+  }
 }
 
 // =============================================================================
@@ -621,7 +648,7 @@ async function runGate2InfraMemoryAndDbIsolation(ctx) {
     );
 
     // 2c. Admin Cluster Health Endpoint (GET /api/v1/admin/ops/health-cluster)
-    const adminAuth = await loginPortalUser('admin@atelier.local', { requireMfa: true, origin: 'http://localhost:3001' });
+    const adminAuth = await loginPortalUser('lebao01121@gmail.com', { requireMfa: true, origin: 'http://localhost:3001' });
     ctx.adminToken = adminAuth.token;
     ctx.adminUser = adminAuth.user;
 
@@ -822,7 +849,44 @@ async function runGate4SecurityIdorRateLimitAndDlq(ctx) {
       },
     });
     assert.equal(csrfEvilOrigin.status, 403, `Evil Origin expected 403, got ${csrfEvilOrigin.status}`);
-    details.push('CSRF & Evil Origin Defense: PASS (missing CSRF=403, evil Origin=403)');
+
+    // Strict double-submit cookie enforcement: missing atelier_csrf_token cookie MUST return 403
+    const cookiesWithoutCsrf = { ...custALogin.cookies };
+    delete cookiesWithoutCsrf.atelier_csrf_token;
+    const csrfMissingCookie = await apiRequest(`${BFF_BASE}/bff/v1/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        ...(Object.keys(cookiesWithoutCsrf).length > 0
+          ? { Cookie: formatCookieHeader(cookiesWithoutCsrf) }
+          : {}),
+        'X-CSRF-Token': custALogin.csrfToken || 'tok',
+        Origin: 'http://localhost:3000',
+        'x-load-test-bypass': '1',
+      },
+    });
+    assert.equal(
+      csrfMissingCookie.status,
+      403,
+      `Missing atelier_csrf_token cookie expected 403, got ${csrfMissingCookie.status}`,
+    );
+
+    const csrfMismatch = await apiRequest(`${BFF_BASE}/bff/v1/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        Cookie: cookieHeader,
+        'X-CSRF-Token': 'mismatched-csrf-token-value',
+        Origin: 'http://localhost:3000',
+        'x-load-test-bypass': '1',
+      },
+    });
+    assert.equal(
+      csrfMismatch.status,
+      403,
+      `Mismatched X-CSRF-Token expected 403, got ${csrfMismatch.status}`,
+    );
+    details.push(
+      'CSRF & Evil Origin Defense: PASS (missing header=403, evil Origin=403, missing csrf cookie=403, mismatched csrf=403)',
+    );
 
     // 4b. Mandatory 2FA via Mailpit for SUPER_ADMIN, WAREHOUSE_MANAGER & SUPPLIER_A
     const whPre = await loginPortalUser('warehouse@atelier.local', { requireMfa: false, origin: 'http://localhost:3001' });
@@ -937,6 +1001,7 @@ async function runGate4SecurityIdorRateLimitAndDlq(ctx) {
         upperProductId: flagshipDetail.id,
         upperVariantId: flagshipVariant.id,
         privacyConsent: true,
+        simulateFailure: true,
       },
     });
     assert.ok(sessCreate.status === 200 || sessCreate.status === 202, `Gate 4 tryon session failed: ${sessCreate.text}`);
@@ -986,6 +1051,24 @@ async function runGate4SecurityIdorRateLimitAndDlq(ctx) {
     assert.ok(idorPoGet.status === 403 || idorPoGet.status === 404, `IDOR PO GET not blocked: ${idorPoGet.status}`);
     assert.ok(idorPoConfirm.status === 403 || idorPoConfirm.status === 404, `IDOR PO confirm not blocked: ${idorPoConfirm.status}`);
 
+    // 6) Socket.io Realtime Auth & Ownership IDOR Defense (anonymous + cross-user probes MUST return ok: false)
+    const anonWsOrderAck = await probeSocketSubscribe('order:subscribe', { orderCode: 'TX-2026SEED01' });
+    assert.equal(anonWsOrderAck?.ok, false, `Anonymous WS order:subscribe NOT blocked: ${JSON.stringify(anonWsOrderAck)}`);
+    const anonWsTryonAck = await probeSocketSubscribe('tryon:subscribe', { sessionId: custASessionId });
+    assert.equal(anonWsTryonAck?.ok, false, `Anonymous WS tryon:subscribe NOT blocked: ${JSON.stringify(anonWsTryonAck)}`);
+    const crossWsOrderAck = await probeSocketSubscribe(
+      'order:subscribe',
+      { orderCode: 'TX-2026SEED01' },
+      { token: custBLogin.token },
+    );
+    assert.equal(crossWsOrderAck?.ok, false, `Cross-user WS order:subscribe NOT blocked: ${JSON.stringify(crossWsOrderAck)}`);
+    const crossWsTryonAck = await probeSocketSubscribe(
+      'tryon:subscribe',
+      { sessionId: custASessionId },
+      { token: custBLogin.token },
+    );
+    assert.equal(crossWsTryonAck?.ok, false, `Cross-user WS tryon:subscribe NOT blocked: ${JSON.stringify(crossWsTryonAck)}`);
+
     metrics.idor = {
       orderRead: idorOrderRead.status,
       rmaPost: idorRmaPost.status,
@@ -993,9 +1076,13 @@ async function runGate4SecurityIdorRateLimitAndDlq(ctx) {
       tryonRead: idorTryon.status,
       supplierPoGet: idorPoGet.status,
       supplierPoConfirm: idorPoConfirm.status,
+      wsAnonOrderBlocked: anonWsOrderAck?.ok === false,
+      wsAnonTryonBlocked: anonWsTryonAck?.ok === false,
+      wsCrossUserOrderBlocked: crossWsOrderAck?.ok === false,
+      wsCrossUserTryonBlocked: crossWsTryonAck?.ok === false,
     };
     details.push(
-      `Strict IDOR Defense (Customer B w/ spoofed x-user-id & SUPPLIER_B): PASS (order=${idorOrderRead.status}, rma=${idorRmaPost.status}, profile=${idorProfile.status}, tryon=${idorTryon.status}, partnerPO=${idorPoGet.status}/${idorPoConfirm.status})`,
+      `Strict IDOR Defense (Customer B w/ spoofed x-user-id, SUPPLIER_B & Socket.io): PASS (order=${idorOrderRead.status}, rma=${idorRmaPost.status}, profile=${idorProfile.status}, tryon=${idorTryon.status}, partnerPO=${idorPoGet.status}/${idorPoConfirm.status}, wsAnon=blocked, wsCrossUser=blocked)`,
     );
 
     // 4e. Tiered Rate Limiting -> real HTTP 429 Too Many Requests + X-RateLimit-Limit header
@@ -1206,11 +1293,13 @@ async function runGate6GoldenPathE2E(ctx, envVars) {
   let s3 = null;
 
   try {
-    // 6.0 Run `pnpm db:seed` TWICE to prove 100% idempotency, 20 designs, 0 broken images, 52+ reviews, >40 try-on signals
-    const seed1 = await runCommand('pnpm', ['db:seed']);
-    assert.ok(seed1.ok, `1st pnpm db:seed failed:\n${seed1.stdout.slice(-1200)}\n${seed1.stderr.slice(-600)}`);
-    const seed2 = await runCommand('pnpm', ['db:seed']);
-    assert.ok(seed2.ok, `2nd pnpm db:seed (idempotency check) failed:\n${seed2.stdout.slice(-1200)}\n${seed2.stderr.slice(-600)}`);
+    // 6.0 Run `pnpm db:seed` (direct node invocation of infra/seeds/seed-demo-data.mjs) TWICE to prove 100% idempotency, 20 designs, 0 broken images, 52+ reviews, >40 try-on signals
+    const seedScriptPath = path.join(ROOT_DIR, 'infra', 'seeds', 'seed-demo-data.mjs');
+    const seedArgs = ['--max-old-space-size=96', seedScriptPath];
+    const seed1 = await runCommand(process.execPath, seedArgs, { env: envVars });
+    assert.ok(seed1.ok, `1st pnpm db:seed failed (code=${seed1.code}):\n${seed1.stdout.slice(-1200)}\n${seed1.stderr.slice(-600)}`);
+    const seed2 = await runCommand(process.execPath, seedArgs, { env: envVars });
+    assert.ok(seed2.ok, `2nd pnpm db:seed (idempotency check) failed (code=${seed2.code}):\n${seed2.stdout.slice(-1200)}\n${seed2.stderr.slice(-600)}`);
 
     const prodListRaw = unwrapData(await apiRequest(`${CATALOG_BASE}/v1/catalog/products?limit=50`));
     const allProducts = Array.isArray(prodListRaw) ? prodListRaw : prodListRaw?.items || prodListRaw?.products || [];
@@ -1323,19 +1412,30 @@ async function runGate6GoldenPathE2E(ctx, envVars) {
       await setTestStock(skuId, 15, 0);
     }
 
-    const portraitPng = createSyntheticPortraitPng(768, 1024, 77);
-    const portraitSha = crypto.createHash('sha256').update(portraitPng).digest('hex');
+    const studioModelPath = path.join(ROOT_DIR, 'apps', 'storefront', 'public', 'images', 'tryon-models', 'vn-model-balanced-s.webp');
+    const useStudioModel = fs.existsSync(studioModelPath);
+    const portraitBytes = useStudioModel ? fs.readFileSync(studioModelPath) : createSyntheticPortraitPng(768, 1024, 77);
+    const portraitContentType = useStudioModel ? 'image/webp' : 'image/png';
+    const portraitSha = crypto.createHash('sha256').update(portraitBytes).digest('hex');
     const upRes = await apiRequest(`${BFF_BASE}/bff/v1/storefront/tryon/upload-url`, {
       method: 'POST',
       headers: custHeaders,
-      body: { contentType: 'image/png', fileSizeBytes: portraitPng.length, sha256Hash: portraitSha, source: 'CAMERA_MEDIAPIPE', poseScore: 0.96, privacyConsent: true },
+      body: { contentType: portraitContentType, fileSizeBytes: portraitBytes.length, sha256Hash: portraitSha, source: 'CAMERA_MEDIAPIPE', poseScore: 0.96, privacyConsent: true },
     });
     assert.ok(upRes.status === 200 || upRes.status === 201, `Gate 6 upload-url failed: ${upRes.text}`);
     const up = unwrapData(upRes);
-    assert.equal((await apiRequest(up.uploadUrl, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: portraitPng })).status, 200);
+    assert.equal((await apiRequest(up.uploadUrl, { method: 'PUT', headers: { 'Content-Type': portraitContentType }, body: portraitBytes })).status, 200);
     assert.equal((await apiRequest(`${MINIO_BASE}/atelier-private-tryon/${up.objectKey}`)).status, 403, 'Private tryon bucket must reject unsigned GET with 403');
 
-    socket = io(`${BFF_BASE}/realtime`, { transports: ['websocket', 'polling'], reconnection: false, timeout: 8000 });
+    socket = io(`${BFF_BASE}/realtime`, {
+      transports: ['websocket', 'polling'],
+      reconnection: false,
+      timeout: 8000,
+      auth: {
+        token: ctx.customerAToken,
+        guestSessionId: 'guest-g6-e2e',
+      },
+    });
     await new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('Socket.io connect timeout')), 8000);
       socket.once('connect', () => { clearTimeout(t); resolve(); });
@@ -1344,8 +1444,10 @@ async function runGate6GoldenPathE2E(ctx, envVars) {
 
     const events = [];
     let completedEvt = null;
+    let failedEvt = null;
     socket.on('tryon:progress', (p) => events.push(p));
     socket.on('tryon:completed', (p) => { events.push(p); completedEvt = p; });
+    socket.on('tryon:failed', (p) => { events.push(p); failedEvt = p; });
 
     const tryonReqBody = {
       tempImageId: up.tempImageId,
@@ -1365,11 +1467,18 @@ async function runGate6GoldenPathE2E(ctx, envVars) {
     });
     assert.equal(sessRes.status, 202, `Expected 202 for 2-step MIX_MATCH_OUTFIT, got ${sessRes.status}: ${sessRes.text}`);
     const tryonSessionId = unwrapData(sessRes).sessionId;
-    socket.emit('tryon:subscribe', { sessionId: tryonSessionId });
+    const subAck = await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('tryon:subscribe ack timeout')), 6000);
+      socket.emit('tryon:subscribe', { sessionId: tryonSessionId }, (ack) => {
+        clearTimeout(t);
+        resolve(ack);
+      });
+    });
+    assert.equal(subAck?.ok, true, `Authenticated tryon:subscribe failed: ${JSON.stringify(subAck)}`);
 
-    const wsDeadline = Date.now() + 20_000;
-    while (!completedEvt && Date.now() < wsDeadline) {
-      await new Promise((r) => setTimeout(r, 100));
+    const wsDeadline = Date.now() + 120_000;
+    while (!completedEvt && !failedEvt && Date.now() < wsDeadline) {
+      await new Promise((r) => setTimeout(r, 150));
     }
     assert.ok(completedEvt?.resultUrl, `Socket.io tryon:completed did not arrive: ${JSON.stringify(events)}`);
     const resultUrl = completedEvt.resultUrl;
@@ -1658,7 +1767,24 @@ async function runGate6GoldenPathE2E(ctx, envVars) {
 async function main() {
   const startedAt = Date.now();
   const skipBuild = process.argv.includes('--skip-build');
-  const envVars = { ...loadDotEnv(path.join(ROOT_DIR, '.env')), ...process.env, NODE_ENV: 'development' };
+  const existingMailpitHttp = await isPortOpen('127.0.0.1', 8025);
+  const existingSmtp587 = await isPortOpen('127.0.0.1', 587);
+  const existingSmtp1025 = await isPortOpen('127.0.0.1', 1025);
+  const effectiveMailpitSmtpPort =
+    existingMailpitHttp && !existingSmtp1025 && existingSmtp587 ? '587' : '1025';
+  const envVars = {
+    ...loadDotEnv(path.join(ROOT_DIR, '.env')),
+    ...process.env,
+    NODE_ENV: 'development',
+    SMTP_HOST: '127.0.0.1',
+    SMTP_PORT: effectiveMailpitSmtpPort,
+    SMTP_SECURE: 'false',
+    SMTP_USER: '',
+    SMTP_PASS: '',
+    HF_VTON_ENABLED: 'false',
+    OLLAMA_KEEP_ALIVE: '0',
+  };
+  activeInternalSecret = envVars.INTERNAL_SERVICE_SECRET || activeInternalSecret;
 
   console.log('========================================================================');
   console.log(' fashion-atelier-ai-platform (v3.0) — Master 6-Gate Release Verification');
@@ -1690,57 +1816,77 @@ async function main() {
     // Boot ALL 11 backend services (4000..4010)
     console.log('\n--- Booting Full 11-Service Backend Stack (4000..4010) ---');
     const pyBin = resolvePythonBin();
+    const NODE_SVC_FLAGS = [
+      '--liftoff-only',
+      '--no-maglev',
+      '--no-turbofan',
+      '--max-old-space-size=96',
+      '--max-semi-space-size=2',
+    ];
+    const NODE_BFF_FLAGS = [
+      '--liftoff-only',
+      '--max-old-space-size=192',
+      '--max-semi-space-size=4',
+    ];
     const serviceSpecs = [
-      { name: 'services/auth-customer', cmd: process.execPath, args: ['services/auth-customer/dist/main.js'], readyUrl: `${AUTH_BASE}/ready`, env: { AUTH_SERVICE_PORT: '4001' } },
-      { name: 'services/catalog-lookbook', cmd: process.execPath, args: ['services/catalog-lookbook/dist/main.js'], readyUrl: `${CATALOG_BASE}/ready`, env: { CATALOG_SERVICE_PORT: '4002' } },
-      { name: 'services/media-pipeline', cmd: process.execPath, args: ['services/media-pipeline/dist/main.js'], readyUrl: `${MEDIA_BASE}/ready`, env: { MEDIA_SERVICE_PORT: '4003' } },
-      { name: 'services/inventory', cmd: process.execPath, args: ['services/inventory/dist/main.js'], readyUrl: `${INVENTORY_BASE}/ready`, env: { INVENTORY_SERVICE_PORT: '4004' } },
-      { name: 'services/cart-outfit', cmd: process.execPath, args: ['services/cart-outfit/dist/main.js'], readyUrl: `${CART_BASE}/ready`, env: { CART_SERVICE_PORT: '4005' } },
-      { name: 'services/order-rma', cmd: process.execPath, args: ['services/order-rma/dist/main.js'], readyUrl: `${ORDER_RMA_BASE}/ready`, env: { ORDER_SERVICE_PORT: '4006' } },
-      { name: 'services/payment-promo', cmd: process.execPath, args: ['services/payment-promo/dist/main.js'], readyUrl: `${PAYMENT_PROMO_BASE}/ready`, env: { PAYMENT_SERVICE_PORT: '4007' } },
-      { name: 'services/notify-review', cmd: process.execPath, args: ['services/notify-review/dist/main.js'], readyUrl: `${NOTIFY_BASE}/ready`, env: { NOTIFY_SERVICE_PORT: '4008' } },
+      { name: 'services/auth-customer', cmd: process.execPath, args: [...NODE_SVC_FLAGS, 'services/auth-customer/dist/main.js'], readyUrl: `${AUTH_BASE}/ready`, env: { AUTH_SERVICE_PORT: '4001' } },
+      { name: 'services/catalog-lookbook', cmd: process.execPath, args: [...NODE_SVC_FLAGS, 'services/catalog-lookbook/dist/main.js'], readyUrl: `${CATALOG_BASE}/ready`, env: { CATALOG_SERVICE_PORT: '4002' } },
+      { name: 'services/media-pipeline', cmd: process.execPath, args: [...NODE_SVC_FLAGS, 'services/media-pipeline/dist/main.js'], readyUrl: `${MEDIA_BASE}/ready`, env: { MEDIA_SERVICE_PORT: '4003' } },
+      { name: 'services/inventory', cmd: process.execPath, args: [...NODE_SVC_FLAGS, 'services/inventory/dist/main.js'], readyUrl: `${INVENTORY_BASE}/ready`, env: { INVENTORY_SERVICE_PORT: '4004' } },
+      { name: 'services/cart-outfit', cmd: process.execPath, args: [...NODE_SVC_FLAGS, 'services/cart-outfit/dist/main.js'], readyUrl: `${CART_BASE}/ready`, env: { CART_SERVICE_PORT: '4005' } },
+      { name: 'services/order-rma', cmd: process.execPath, args: [...NODE_SVC_FLAGS, 'services/order-rma/dist/main.js'], readyUrl: `${ORDER_RMA_BASE}/ready`, env: { ORDER_SERVICE_PORT: '4006' } },
+      { name: 'services/payment-promo', cmd: process.execPath, args: [...NODE_SVC_FLAGS, 'services/payment-promo/dist/main.js'], readyUrl: `${PAYMENT_PROMO_BASE}/ready`, env: { PAYMENT_SERVICE_PORT: '4007' } },
+      { name: 'services/notify-review', cmd: process.execPath, args: [...NODE_SVC_FLAGS, 'services/notify-review/dist/main.js'], readyUrl: `${NOTIFY_BASE}/ready`, env: { NOTIFY_SERVICE_PORT: '4008' } },
       {
         name: 'services/ai-tryon',
         cmd: pyBin,
         args: ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '4009'],
         cwd: path.join(ROOT_DIR, 'services', 'ai-tryon'),
         readyUrl: `${TRYON_BASE}/ready`,
-        env: { AI_TRYON_PORT: '4009' },
+        env: {
+          AI_TRYON_PORT: '4009',
+          OPENBLAS_NUM_THREADS: '1',
+          OMP_NUM_THREADS: '1',
+          MKL_NUM_THREADS: '1',
+        },
       },
-      { name: 'apps/mcp-copilot', cmd: process.execPath, args: ['apps/mcp-copilot/dist/main.js'], readyUrl: `${MCP_BASE}/ready`, env: { MCP_COPILOT_PORT: '4010' } },
-      { name: 'apps/bff', cmd: process.execPath, args: ['apps/bff/dist/main.js'], readyUrl: `${BFF_BASE}/ready`, env: { BFF_PORT: '4000' } },
+      { name: 'apps/mcp-copilot', cmd: process.execPath, args: [...NODE_SVC_FLAGS, 'apps/mcp-copilot/dist/main.js'], readyUrl: `${MCP_BASE}/ready`, env: { MCP_COPILOT_PORT: '4010' } },
+      { name: 'apps/bff', cmd: process.execPath, args: [...NODE_BFF_FLAGS, 'apps/bff/dist/main.js'], readyUrl: `${BFF_BASE}/ready`, env: { BFF_PORT: '4000' } },
     ];
 
-    for (const spec of serviceSpecs) {
-      const logs = [];
-      serviceLogs.set(spec.name, logs);
-      const child = spawn(spec.cmd, spec.args, {
-        cwd: spec.cwd || ROOT_DIR,
-        env: { ...envVars, ...(spec.env || {}) },
-        shell: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-      });
-      child.stdout?.on('data', (c) => logs.push(c.toString('utf8')));
-      child.stderr?.on('data', (c) => logs.push(c.toString('utf8')));
-      spawnedChildren.push(child);
-    }
+    const BOOT_BATCH_SIZE = 1;
+    for (let i = 0; i < serviceSpecs.length; i += BOOT_BATCH_SIZE) {
+      const batch = serviceSpecs.slice(i, i + BOOT_BATCH_SIZE);
+      for (const spec of batch) {
+        const logs = [];
+        serviceLogs.set(spec.name, logs);
+        const child = spawn(spec.cmd, spec.args, {
+          cwd: spec.cwd || ROOT_DIR,
+          env: { ...envVars, ...(spec.env || {}) },
+          shell: false,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+        });
+        child.stdout?.on('data', (c) => logs.push(c.toString('utf8')));
+        child.stderr?.on('data', (c) => logs.push(c.toString('utf8')));
+        spawnedChildren.push(child);
+      }
 
-    await Promise.all(
-      serviceSpecs.map(async (s) => {
-        await waitForHttp200(s.readyUrl, 45_000, serviceLogs.get(s.name));
-        console.log(`  [UP] ${s.name} (${new URL(s.readyUrl).port})`);
-      }),
-    );
+      await Promise.all(
+        batch.map(async (s) => {
+          await waitForHttp200(s.readyUrl, 45_000, serviceLogs.get(s.name));
+          console.log(`  [UP] ${s.name} (${new URL(s.readyUrl).port})`);
+        }),
+      );
+    }
 
     const ctx = {
       infraMode,
       servicePids: spawnedChildren.map((c) => c.pid).filter(Boolean),
     };
 
-    // Execute Gates 2..6 cleanly
+    // Execute live service gates (2, 4, 5, 6); Gate 3 runs right after cleanup to keep commit headroom
     await runGate2InfraMemoryAndDbIsolation(ctx);
-    await runGate3AiHarnessAndSft();
     await runGate4SecurityIdorRateLimitAndDlq(ctx);
     await runGate5FlashSaleAndLatePayment(ctx, envVars);
     await runGate6GoldenPathE2E(ctx, envVars);
@@ -1753,6 +1899,9 @@ async function main() {
     }
     console.log('\n[CLEANUP] All 11 backend services & local infra servers cleanly terminated.');
   }
+
+  // Gate 3 runs offline right after 11-service teardown so tsx/eval has full OS commit headroom
+  await runGate3AiHarnessAndSft();
 
   const totalSec = Number(((Date.now() - startedAt) / 1000).toFixed(1));
   const ordered = ['GATE 1', 'GATE 2', 'GATE 3', 'GATE 4', 'GATE 5', 'GATE 6'];

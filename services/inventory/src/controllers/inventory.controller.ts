@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Inject,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -19,6 +20,7 @@ import {
   ErrorCode,
   InventoryLedgerReason,
   ReserveStockRequestSchema,
+  WarehouseTypeSchema,
   type ApiResponse,
   type BatchAvailabilityResponse,
   type ReserveStockResponse,
@@ -34,11 +36,14 @@ import { INVENTORY_CONFIG_TOKEN, SERVICE_NAME, type InventoryConfig } from '../c
 import {
   InventoryService,
   type ExpireSweepResult,
+  type InventoryAdjustmentResult,
   type InventoryOpsSummaryDto,
-  type LedgerAdminViewDto,
+  type InventoryTransferResult,
+  type PaginatedLedgerResult,
   type RmaRestockResult,
   type StockLevelAdminExtendedDto,
   type SyncCatalogSkusResult,
+  type UpdateSafetyThresholdResult,
   type WarehouseAdminViewDto,
 } from '../services/inventory.service';
 
@@ -102,6 +107,88 @@ const RmaRestockSchema = z.object({
   note: z.string().max(400).optional(),
 });
 
+const AdjustmentBodySchema = z
+  .object({
+    sku: z.string().trim().min(1).optional(),
+    skuId: z.string().trim().min(1).optional(),
+    warehouseCode: z.string().trim().min(1),
+    deltaAvailable: z.coerce.number().int().optional(),
+    deltaQty: z.coerce.number().int().optional(),
+    deltaDamaged: z.coerce.number().int().optional(),
+    reasonCode: z.string().trim().min(1).max(80).optional(),
+    reason: z.string().trim().min(1).max(80).optional(),
+    note: z.string().max(600).optional(),
+    actorId: z.string().trim().max(128).optional(),
+    actorEmail: z.string().trim().max(255).optional(),
+  })
+  .refine((v) => Boolean(v.sku || v.skuId), {
+    message: 'Cần cung cấp sku hoặc skuId.',
+  })
+  .refine((v) => Boolean(v.reasonCode || v.reason), {
+    message: 'Cần cung cấp lý do điều chỉnh (reasonCode).',
+  });
+
+const TransferBodySchema = z
+  .object({
+    sku: z.string().trim().min(1).optional(),
+    skuId: z.string().trim().min(1).optional(),
+    fromWarehouseCode: z.string().trim().min(1),
+    toWarehouseCode: z.string().trim().min(1),
+    quantity: z.coerce.number().int().positive(),
+    note: z.string().max(600).optional(),
+    actorId: z.string().trim().max(128).optional(),
+    actorEmail: z.string().trim().max(255).optional(),
+  })
+  .refine((v) => Boolean(v.sku || v.skuId), {
+    message: 'Cần cung cấp sku hoặc skuId.',
+  });
+
+const CreateWarehouseBodySchema = z.object({
+  code: z.string().trim().min(2).max(40),
+  name: z.string().trim().min(2).max(160),
+  city: z.string().trim().min(1).max(120),
+  address: z.string().max(400).nullable().optional(),
+  isActive: z.boolean().optional(),
+  warehouseType: WarehouseTypeSchema.optional(),
+  type: WarehouseTypeSchema.optional(),
+  provinceCode: z.string().trim().max(32).optional(),
+  supports2hDelivery: z.boolean().optional(),
+  priority: z.coerce.number().int().optional(),
+});
+
+const UpdateWarehouseBodySchema = z.object({
+  name: z.string().trim().min(2).max(160).optional(),
+  city: z.string().trim().min(1).max(120).optional(),
+  address: z.string().max(400).nullable().optional(),
+  isActive: z.boolean().optional(),
+  warehouseType: WarehouseTypeSchema.optional(),
+  type: WarehouseTypeSchema.optional(),
+  provinceCode: z.string().trim().max(32).optional(),
+  supports2hDelivery: z.boolean().optional(),
+  priority: z.coerce.number().int().optional(),
+});
+
+const UpdateThresholdBodySchema = z
+  .object({
+    safetyThreshold: z.coerce.number().int().nonnegative().max(100_000).optional(),
+    lowStockThreshold: z.coerce.number().int().nonnegative().max(100_000).optional(),
+    threshold: z.coerce.number().int().nonnegative().max(100_000).optional(),
+    warehouseCode: z.string().trim().min(1).optional(),
+  })
+  .refine(
+    (v) =>
+      v.safetyThreshold !== undefined ||
+      v.lowStockThreshold !== undefined ||
+      v.threshold !== undefined,
+    { message: 'Cần cung cấp giá trị safetyThreshold.' },
+  );
+
+function readHeader(req: Request, key: string): string | null {
+  const raw = req.headers[key.toLowerCase()];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
 function timingSafeSecretEquals(a: string, b: string): boolean {
   const bufA = Buffer.from(a, 'utf8');
   const bufB = Buffer.from(b, 'utf8');
@@ -121,11 +208,24 @@ export class InventoryApiController {
   private assertInternalSecret(req: Request): void {
     const raw = req.headers['x-internal-secret'];
     const candidate = (Array.isArray(raw) ? raw[0] : raw)?.trim() ?? '';
-    if (!candidate || !timingSafeSecretEquals(candidate, this.config.internalServiceSecret)) {
+    const expected = this.config.internalServiceSecret;
+    if (!candidate || !expected || !timingSafeSecretEquals(candidate, expected)) {
       throw new ApiDomainException(
         HttpStatus.FORBIDDEN,
         ErrorCode.FORBIDDEN,
         'Thiếu hoặc sai mã xác thực nội bộ (x-internal-secret).',
+      );
+    }
+  }
+
+  private assertNotProductionTestRoute(routeName: string): void {
+    const runtimeEnv = (process.env.NODE_ENV ?? '').trim().toLowerCase();
+    const configEnv = (this.config.nodeEnv ?? '').trim().toLowerCase();
+    if (runtimeEnv === 'production' || configEnv === 'production') {
+      throw new ApiDomainException(
+        HttpStatus.FORBIDDEN,
+        ErrorCode.FORBIDDEN,
+        `Endpoint kiểm thử nội bộ (${routeName}) bị chặn trong môi trường production.`,
       );
     }
   }
@@ -214,6 +314,7 @@ export class InventoryApiController {
   @Post('internal/run-expire')
   @HttpCode(HttpStatus.OK)
   async runExpireSweep(@Req() req: Request): Promise<ApiResponse<ExpireSweepResult>> {
+    this.assertInternalSecret(req);
     const correlationId = getCorrelationIdFromRequest(req);
     const data = await this.inventoryService.runExpireSweep(correlationId);
     return createApiResponse(data, {
@@ -235,6 +336,8 @@ export class InventoryApiController {
       redisSyncedQty: number;
     }>
   > {
+    this.assertNotProductionTestRoute('internal/test-set-stock');
+    this.assertInternalSecret(req);
     const input = parseWithZod(TestSetStockSchema, body);
     const data = await this.inventoryService.testSetStock(input);
     return createApiResponse(data, {
@@ -256,6 +359,8 @@ export class InventoryApiController {
       expiresAt: string;
     }>
   > {
+    this.assertNotProductionTestRoute('internal/test-expire-reservation');
+    this.assertInternalSecret(req);
     const input = parseWithZod(TestExpireReservationSchema, body);
     const data = await this.inventoryService.testExpireReservation(input);
     return createApiResponse(data, {
@@ -301,6 +406,167 @@ export class InventoryApiController {
     const data = await this.inventoryService.rmaRestock(input, correlationId, traceparent);
     return createApiResponse(data, {
       correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('adjustments')
+  @HttpCode(HttpStatus.CREATED)
+  async createAdjustment(
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<InventoryAdjustmentResult>> {
+    const input = parseWithZod(AdjustmentBodySchema, body);
+    const correlationId = getCorrelationIdFromRequest(req);
+    const actorId = input.actorId ?? readHeader(req, 'x-user-id') ?? readHeader(req, 'x-actor-id');
+    const actorEmail = input.actorEmail ?? readHeader(req, 'x-user-email');
+
+    const data = await this.inventoryService.createAdjustment(
+      {
+        sku: (input.sku ?? input.skuId)!,
+        warehouseCode: input.warehouseCode,
+        deltaAvailable: input.deltaAvailable ?? input.deltaQty ?? 0,
+        deltaDamaged: input.deltaDamaged ?? 0,
+        reasonCode: (input.reasonCode ?? input.reason)!,
+        note: input.note,
+        actorId,
+        actorEmail,
+      },
+      correlationId,
+    );
+    return createApiResponse(data, {
+      correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('transfers')
+  @HttpCode(HttpStatus.CREATED)
+  async createTransfer(
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<InventoryTransferResult>> {
+    const input = parseWithZod(TransferBodySchema, body);
+    const correlationId = getCorrelationIdFromRequest(req);
+    const actorId = input.actorId ?? readHeader(req, 'x-user-id') ?? readHeader(req, 'x-actor-id');
+    const actorEmail = input.actorEmail ?? readHeader(req, 'x-user-email');
+
+    const data = await this.inventoryService.createTransfer({
+      sku: (input.sku ?? input.skuId)!,
+      fromWarehouseCode: input.fromWarehouseCode,
+      toWarehouseCode: input.toWarehouseCode,
+      quantity: input.quantity,
+      note: input.note,
+      actorId,
+      actorEmail,
+    });
+    return createApiResponse(data, {
+      correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Get('warehouses')
+  async listWarehouses(@Req() req: Request): Promise<ApiResponse<WarehouseAdminViewDto[]>> {
+    const data = await this.inventoryService.listAdminWarehouses();
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('warehouses')
+  @HttpCode(HttpStatus.CREATED)
+  async createWarehouse(
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<WarehouseAdminViewDto>> {
+    const input = parseWithZod(CreateWarehouseBodySchema, body);
+    const data = await this.inventoryService.createWarehouse({
+      code: input.code,
+      name: input.name,
+      city: input.city,
+      address: input.address,
+      isActive: input.isActive,
+      warehouseType: input.warehouseType ?? input.type,
+      provinceCode: input.provinceCode,
+      supports2hDelivery: input.supports2hDelivery,
+      priority: input.priority,
+    });
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Patch('warehouses/:code')
+  @HttpCode(HttpStatus.OK)
+  async updateWarehouse(
+    @Param('code') code: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<{ before: WarehouseAdminViewDto; after: WarehouseAdminViewDto }>> {
+    const input = parseWithZod(UpdateWarehouseBodySchema, body);
+    const data = await this.inventoryService.updateWarehouse(code, {
+      name: input.name,
+      city: input.city,
+      address: input.address,
+      isActive: input.isActive,
+      warehouseType: input.warehouseType ?? input.type,
+      provinceCode: input.provinceCode,
+      supports2hDelivery: input.supports2hDelivery,
+      priority: input.priority,
+    });
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Patch('stock/:sku/threshold')
+  @HttpCode(HttpStatus.OK)
+  async updateSafetyThreshold(
+    @Param('sku') sku: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<UpdateSafetyThresholdResult>> {
+    const input = parseWithZod(UpdateThresholdBodySchema, body);
+    const threshold = (input.safetyThreshold ?? input.lowStockThreshold ?? input.threshold)!;
+    const data = await this.inventoryService.updateSafetyThreshold({
+      sku,
+      safetyThreshold: threshold,
+      warehouseCode: input.warehouseCode,
+    });
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Get('ledger')
+  async listLedger(
+    @Query('sku') sku: string | undefined,
+    @Query('skuId') skuId: string | undefined,
+    @Query('warehouseCode') warehouseCode: string | undefined,
+    @Query('movementType') movementType: string | undefined,
+    @Query('reason') reason: string | undefined,
+    @Query('referenceId') referenceId: string | undefined,
+    @Query('page') page: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Req() req: Request,
+  ): Promise<ApiResponse<PaginatedLedgerResult>> {
+    const data = await this.inventoryService.listAdminLedger({
+      sku,
+      skuId,
+      warehouseCode,
+      movementType,
+      reason,
+      referenceId,
+      page: page ? Number.parseInt(page, 10) : undefined,
+      limit: limit ? Number.parseInt(limit, 10) : undefined,
+    });
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
       service: SERVICE_NAME,
     });
   }
@@ -356,18 +622,24 @@ export class InventoryApiController {
 
   @Get('admin/ledger')
   async listAdminLedger(
+    @Query('sku') sku: string | undefined,
     @Query('skuId') skuId: string | undefined,
     @Query('warehouseCode') warehouseCode: string | undefined,
+    @Query('movementType') movementType: string | undefined,
     @Query('reason') reason: string | undefined,
     @Query('referenceId') referenceId: string | undefined,
+    @Query('page') page: string | undefined,
     @Query('limit') limit: string | undefined,
     @Req() req: Request,
-  ): Promise<ApiResponse<LedgerAdminViewDto[]>> {
+  ): Promise<ApiResponse<PaginatedLedgerResult>> {
     const data = await this.inventoryService.listAdminLedger({
+      sku,
       skuId,
       warehouseCode,
+      movementType,
       reason,
       referenceId,
+      page: page ? Number.parseInt(page, 10) : undefined,
       limit: limit ? Number.parseInt(limit, 10) : undefined,
     });
     return createApiResponse(data, {

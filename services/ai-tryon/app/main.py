@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 import secrets
@@ -74,8 +75,9 @@ def get_or_create_traceparent(raw_header: str | None) -> tuple[str, str, str]:
 
 def _attach_runtime_state(app: FastAPI, settings: Settings) -> None:
     db = TryOnDatabase(
-        database_url=settings.tryon_database_url,
+        database_url=settings.resolved_tryon_database_url,
         sqlite_path=settings.tryon_sqlite_path,
+        infra_mode=settings.infra_mode,
     )
     minio = MinioStorageClient(
         endpoint_url=settings.minio_endpoint_url,
@@ -86,16 +88,41 @@ def _attach_runtime_state(app: FastAPI, settings: Settings) -> None:
         garments_bucket=settings.minio_bucket_garments,
         public_bucket=settings.minio_bucket_public,
     )
+    provider_candidate_kwargs: dict[str, Any] = {
+        "private_bucket": settings.minio_bucket_private_tryon,
+        "purge_ttl_minutes": settings.tryon_purge_ttl_minutes,
+        "fal_key": settings.fal_key,
+        "fal_vton_model": getattr(settings, "fal_vton_model", "fal-ai/cat-vton"),
+        "fal_catvton_url": getattr(
+            settings,
+            "resolved_fal_endpoint_url",
+            settings.fal_catvton_url,
+        ),
+        "fal_timeout_seconds": settings.fal_timeout_seconds,
+        "fashn_api_key": getattr(settings, "fashn_api_key", ""),
+        "fashn_api_url": getattr(settings, "fashn_api_url", "https://api.fashn.ai/v1/run"),
+        "hf_token": settings.hf_token,
+        "hf_vton_timeout_seconds": settings.hf_vton_timeout_seconds,
+        "hf_vton_enabled": settings.hf_vton_enabled,
+        "local_vton_endpoint": getattr(settings, "local_vton_endpoint", ""),
+        "total_timeout_seconds": getattr(settings, "tryon_total_timeout_seconds", 45.0),
+        "circuit_breaker_seconds": getattr(settings, "tryon_circuit_breaker_seconds", 180),
+        "tmp_dir": getattr(settings, "tryon_tmp_dir", None),
+        "models_dir": getattr(settings, "tryon_models_dir", None),
+        "settings": settings,
+    }
+    sig = inspect.signature(get_vton_provider)
+    accepts_var_kw = any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    )
+    filtered_kwargs = (
+        provider_candidate_kwargs
+        if accepts_var_kw
+        else {k: v for k, v in provider_candidate_kwargs.items() if k in sig.parameters}
+    )
     provider = get_vton_provider(
         settings.vton_provider,
-        private_bucket=settings.minio_bucket_private_tryon,
-        purge_ttl_minutes=settings.tryon_purge_ttl_minutes,
-        fal_key=settings.fal_key,
-        fal_catvton_url=settings.fal_catvton_url,
-        fal_timeout_seconds=settings.fal_timeout_seconds,
-        hf_token=settings.hf_token,
-        hf_vton_timeout_seconds=settings.hf_vton_timeout_seconds,
-        hf_vton_enabled=settings.hf_vton_enabled,
+        **filtered_kwargs,
     )
     normalizer = GarmentNormalizer()
     cache_quota = TryOnCacheQuota(
@@ -104,6 +131,7 @@ def _attach_runtime_state(app: FastAPI, settings: Settings) -> None:
         guest_ip_limit=settings.tryon_daily_quota_guest_ip,
         auth_ip_limit=settings.tryon_daily_quota_auth_ip,
         cache_ttl_seconds=settings.tryon_cache_ttl_seconds,
+        is_production=(settings.app_env.strip().lower() == "production"),
     )
     worker_consumer = TryOnWorkerConsumer(
         rabbitmq_url=settings.rabbitmq_url,
@@ -129,9 +157,13 @@ def _attach_runtime_state(app: FastAPI, settings: Settings) -> None:
         minio=minio,
         catalog_url=settings.catalog_service_url,
         vton_provider=settings.vton_provider,
+        provider=provider,
         fal_key=settings.fal_key,
-        fal_endpoint_url=settings.fal_catvton_url,
+        fal_endpoint_url=settings.resolved_fal_endpoint_url,
         fal_timeout_seconds=settings.fal_timeout_seconds,
+        hf_token=settings.hf_token,
+        hf_vton_enabled=settings.hf_vton_enabled,
+        hf_vton_timeout_seconds=settings.hf_vton_timeout_seconds,
     )
 
     app.state.settings = settings
@@ -157,7 +189,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await db.initialize()
     await seed_baseline_demand_signals(db)
     await minio.ensure_buckets()
-    worker.start()
+    await worker.start()
     if settings.tryon_enable_background_purge:
         auto_purge.start()
     try:
@@ -299,6 +331,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         t0 = time.perf_counter()
         cfg: Settings = request.app.state.settings
         db: TryOnDatabase = request.app.state.db
+        worker: TryOnWorkerConsumer = request.app.state.worker_consumer
         latency_ms = max(0, int(round((time.perf_counter() - t0) * 1000)))
         return {
             "status": "UP",
@@ -310,7 +343,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "provider": cfg.vton_provider,
             "providerType": request.app.state.provider.provider_type,
             "database": db.db_name,
+            "databaseDialect": db.database_dialect,
             "dbMode": db.db_mode,
+            "workerTransport": worker.worker_transport,
+            "rabbitmqConnected": worker.rabbitmq_connected,
+            "retryTopology": worker.topology.as_dict(),
             "correlationId": getattr(request.state, "correlation_id", ""),
             "traceparent": getattr(request.state, "traceparent", ""),
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -346,6 +383,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else:
             overall_status = "UP"
 
+        provider_obj = request.app.state.provider
+        circuit_breaker_snapshot: dict[str, Any] | None = None
+        provider_status_snapshot: dict[str, Any] | None = None
+        cb = getattr(provider_obj, "circuit_breaker", None)
+        if cb is not None and hasattr(cb, "status_snapshot"):
+            try:
+                circuit_breaker_snapshot = cb.status_snapshot()
+            except Exception:
+                circuit_breaker_snapshot = None
+        if hasattr(provider_obj, "status_snapshot"):
+            try:
+                provider_status_snapshot = provider_obj.status_snapshot()
+            except Exception:
+                provider_status_snapshot = None
+
         return {
             "status": overall_status,
             "ready": bool(provider_ok and db_ok),
@@ -353,17 +405,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "version": cfg.service_version,
             "port": cfg.ai_tryon_port,
             "latencyMs": total_latency_ms,
-            "provider": request.app.state.provider.name,
-            "providerType": request.app.state.provider.provider_type,
+            "provider": provider_obj.name,
+            "providerType": provider_obj.provider_type,
             "database": db.db_name,
+            "databaseDialect": db.database_dialect,
             "dbMode": db.db_mode,
+            "workerTransport": worker.worker_transport,
+            "rabbitmqConnected": worker.rabbitmq_connected,
             "checks": {
                 "database": {
                     "name": db.db_name,
                     "isolated": db.db_name == "tryon_db",
+                    "dialect": db.database_dialect,
                     "mode": db.db_mode,
+                    "fallbackReason": db.fallback_reason,
                     "status": "up" if db_ok else "down",
                     "latencyMs": db_latency_ms,
+                },
+                "rabbitmq": {
+                    "connected": worker.rabbitmq_connected,
+                    "workerTransport": worker.worker_transport,
+                    "status": "up" if worker.rabbitmq_connected else "degraded",
                 },
                 "redis": {
                     "status": "up" if redis_ok else "degraded",
@@ -373,12 +435,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "minio": {
                     "status": "up" if minio_ok else "degraded",
                     "endpoint": minio.endpoint_url,
+                    "privateBucket": minio.private_bucket,
                     "latencyMs": minio_latency_ms,
                 },
                 "vtonProvider": "ok" if provider_ok else "error",
+                "providerRouter": provider_status_snapshot,
+                "circuitBreaker": circuit_breaker_snapshot,
                 "preprocessing": "ok",
                 "autoPurge": purge.status_summary(),
                 "workerTopology": worker.topology.as_dict(),
+                "storageIsolation": {
+                    "tmpDir": getattr(cfg, "tryon_tmp_dir", ""),
+                    "modelsDir": getattr(cfg, "tryon_models_dir", ""),
+                },
             },
             "correlationId": getattr(request.state, "correlation_id", ""),
             "traceparent": getattr(request.state, "traceparent", ""),

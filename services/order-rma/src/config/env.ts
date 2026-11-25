@@ -43,6 +43,35 @@ export interface OrderRmaConfig {
   infra: {
     rabbitmqConfigured: boolean;
   };
+  shipping: {
+    originProvinceCode: string;
+    originProvinceName: string;
+    originDistrictCode: string;
+    originDistrictName: string;
+    originWardCode: string;
+    originWardName: string;
+    originAddress: string;
+    originPhone: string;
+    originName: string;
+    ghn: {
+      token: string | null;
+      shopId: string | null;
+      apiUrl: string;
+      webhookSecret: string;
+      fromDistrictId: number;
+      fromWardCode: string;
+    };
+    ghtk: {
+      token: string | null;
+      apiUrl: string;
+      webhookSecret: string;
+    };
+    ahamove: {
+      token: string | null;
+      apiUrl: string;
+      webhookSecret: string;
+    };
+  };
 }
 
 let envLoaded = false;
@@ -194,6 +223,46 @@ export function loadOrderRmaConfig(): OrderRmaConfig {
     },
     infra: {
       rabbitmqConfigured,
+    },
+    shipping: {
+      originProvinceCode: process.env.SHIPPING_ORIGIN_PROVINCE_CODE?.trim() || '01',
+      originProvinceName: process.env.SHIPPING_ORIGIN_PROVINCE_NAME?.trim() || 'Thành phố Hà Nội',
+      originDistrictCode: process.env.SHIPPING_ORIGIN_DISTRICT_CODE?.trim() || '001',
+      originDistrictName: process.env.SHIPPING_ORIGIN_DISTRICT_NAME?.trim() || 'Quận Ba Đình',
+      originWardCode: process.env.SHIPPING_ORIGIN_WARD_CODE?.trim() || '00013',
+      originWardName: process.env.SHIPPING_ORIGIN_WARD_NAME?.trim() || 'Phường Quán Thánh',
+      originAddress:
+        process.env.SHIPPING_ORIGIN_ADDRESS?.trim() ||
+        '18 Phố Phan Đình Phùng, Phường Quán Thánh, Quận Ba Đình, Hà Nội',
+      originPhone: process.env.SHIPPING_ORIGIN_PHONE?.trim() || '02438882026',
+      originName: process.env.SHIPPING_ORIGIN_NAME?.trim() || 'Tầm Xuân Fashion Atelier',
+      ghn: {
+        token: process.env.GHN_TOKEN?.trim() || null,
+        shopId: process.env.GHN_SHOP_ID?.trim() || null,
+        apiUrl: normalizeUrl(
+          process.env.GHN_API_URL,
+          'https://dev-online-gateway.ghn.vn/shiip/public-api',
+        ),
+        webhookSecret:
+          process.env.GHN_WEBHOOK_SECRET?.trim() || 'Atelier_GHN_Webhook_2026!',
+        fromDistrictId: Number.parseInt(process.env.GHN_FROM_DISTRICT_ID?.trim() || '1482', 10) || 1482,
+        fromWardCode: process.env.GHN_FROM_WARD_CODE?.trim() || '1A0107',
+      },
+      ghtk: {
+        token: process.env.GHTK_TOKEN?.trim() || null,
+        apiUrl: normalizeUrl(
+          process.env.GHTK_API_URL,
+          'https://services.giaohangtietkiem.vn',
+        ),
+        webhookSecret:
+          process.env.GHTK_WEBHOOK_SECRET?.trim() || 'Atelier_GHTK_Webhook_2026!',
+      },
+      ahamove: {
+        token: process.env.AHAMOVE_TOKEN?.trim() || null,
+        apiUrl: normalizeUrl(process.env.AHAMOVE_API_URL, 'https://apistg.ahamove.com'),
+        webhookSecret:
+          process.env.AHAMOVE_WEBHOOK_SECRET?.trim() || 'Atelier_AhaMove_Webhook_2026!',
+      },
     },
   };
 }

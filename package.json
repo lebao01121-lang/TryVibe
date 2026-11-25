@@ -13,8 +13,10 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:coverage": "vitest run --coverage",
     "format": "prettier --write .",
     "eval:ai": "pnpm --filter @atelier/ai-harness eval",
+    "eval:ai:live": "pnpm --filter @atelier/ai-harness eval:live",
     "infra:certs": "node infra/nginx/setup-certs.mjs",
     "infra:local-dev": "node scripts/local-infra-dev.mjs",
     "verify:phase0": "node scripts/verify-phase0.mjs",
@@ -26,18 +28,29 @@
     "verify:ui": "node scripts/verify-ui-atelier.mjs",
     "test:flash-sale": "node scripts/stress-flash-sale.mjs",
     "ai:export-sft": "node scripts/export-ai-preference-dataset.mjs",
+    "ai:build-model": "node scripts/build-ollama-custom-model.mjs",
     "db:seed": "node infra/seeds/seed-demo-data.mjs",
     "demo:ready": "node scripts/demo-ready.mjs",
     "start:all": "node scripts/start-all.mjs",
     "verify:all": "node scripts/verify-all.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/node": "^22.15.3",
+    "@vitest/coverage-v8": "^5.1.1",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
     "playwright-core": "^1.52.0",
     "prettier": "^3.5.3",
     "socket.io-client": "^4.8.1",
     "tsx": "^4.19.4",
     "turbo": "^2.5.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.74.0",
+    "vitest": "^5.1.1",
+    "yaml": "^2.9.1"
   }
 }

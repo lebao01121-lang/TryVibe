@@ -71,7 +71,7 @@ export function TwoFactorGate({
     );
     if (res.ok) {
       setInfoMessage(
-        `Đã gửi mã OTP 6 chữ số tới ${email} (kiểm tra hộp thư Mailpit :8025).`,
+        `Đã gửi mã OTP 6 chữ số tới ${email}. Kiểm tra hộp thư Gmail (nếu đã cấu hình SMTP_USER/SMTP_PASS) hoặc Mailpit cục bộ (http://localhost:8025).`,
       );
     } else {
       setErrorMessage(res.error?.message || 'Gửi Email OTP thất bại.');
@@ -126,8 +126,8 @@ export function TwoFactorGate({
       </h2>
       <p className="mt-2 text-xs leading-relaxed text-[#7A6A5B]">
         Tài khoản <strong>{email}</strong> yêu cầu nâng cấp phiên JWT lên{' '}
-        <code>mfaVerified: true</code> qua Email OTP (Mailpit) hoặc TOTP QR
-        Authenticator.
+        <code>mfaVerified: true</code> qua Email OTP (Gmail SMTP / Mailpit cục bộ{' '}
+        <code>http://localhost:8025</code>) hoặc TOTP QR Authenticator.
       </p>
 
       {/* Method Switcher */}
@@ -145,10 +145,10 @@ export function TwoFactorGate({
           }`}
         >
           <p className="font-semibold uppercase tracking-[0.14em]">
-            Email OTP (Mailpit)
+            Email OTP (SMTP / Mailpit)
           </p>
           <p className="mt-0.5 text-[11px] opacity-80">
-            Gửi mã 6 số qua SMTP :1025
+            Gmail SMTP thật hoặc Mailpit :8025 cục bộ
           </p>
         </button>
 

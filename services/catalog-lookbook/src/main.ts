@@ -1,6 +1,12 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { correlationIdMiddleware, createLogger } from '@atelier/observability';
+import {
+  correlationIdMiddleware,
+  createLogger,
+  createPrometheusHttpMiddleware,
+  createPrometheusMetricsRouteMiddleware,
+  initOpenTelemetry,
+} from '@atelier/observability';
 import { AppModule } from './app.module';
 import { CatalogHttpExceptionFilter } from './common/http-exception.filter';
 import { loadCatalogLookbookConfig, SERVICE_NAME } from './config/env';
@@ -8,12 +14,15 @@ import { loadCatalogLookbookConfig, SERVICE_NAME } from './config/env';
 async function bootstrap(): Promise<void> {
   const config = loadCatalogLookbookConfig();
   const logger = createLogger(config.serviceName);
+  initOpenTelemetry({ serviceName: 'catalog-lookbook', serviceVersion: '3.1.0' });
 
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn'],
   });
 
   app.use(correlationIdMiddleware);
+  app.use(createPrometheusHttpMiddleware('catalog-lookbook'));
+  app.use(createPrometheusMetricsRouteMiddleware());
   app.useGlobalFilters(new CatalogHttpExceptionFilter());
   app.enableShutdownHooks();
 

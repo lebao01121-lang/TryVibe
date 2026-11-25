@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -12,16 +13,19 @@ import {
 import type { Request } from 'express';
 import { z } from 'zod';
 import {
+  CancelPurchaseOrderDtoSchema,
   ConfirmPurchaseOrderBySupplierDtoSchema,
   createApiResponse,
   CreateGoodsReceiptDtoSchema,
-  CreatePurchaseOrderDtoSchema,
+  CreateSupplierDtoSchema,
   ErrorCode,
+  PurchaseOrderCreatedSource,
+  PurchaseOrderCreatedSourceSchema,
   PurchaseOrderStatusSchema,
+  RejectPurchaseOrderBySupplierDtoSchema,
+  SupplierStatusSchema,
   type ApiResponse,
   type GoodsReceiptDTO,
-  type SupplierDTO,
-  type SupplierPayableDTO,
 } from '@atelier/contracts';
 import {
   ApiDomainException,
@@ -34,15 +38,83 @@ import {
   ProcurementService,
   type GoodsReceiptExtendedDto,
   type PurchaseOrderExtendedDto,
+  type SupplierExtendedDto,
+  type SupplierPayableExtendedDto,
 } from '../services/procurement.service';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const FlexibleCreatePoSchema = CreatePurchaseOrderDtoSchema.extend({
-  status: PurchaseOrderStatusSchema.optional(),
-  expectedDeliveryDate: z.string().min(1).optional(),
-  notes: z.string().max(600).optional(),
+const FlexiblePoLineItemSchema = z
+  .object({
+    skuId: z.string().trim().min(1).optional(),
+    sku: z.string().trim().min(1).optional(),
+    skuCode: z.string().trim().min(1).optional(),
+    productName: z.string().max(255).optional(),
+    orderedQty: z.coerce.number().int().positive().max(100_000).optional(),
+    quantity: z.coerce.number().int().positive().max(100_000).optional(),
+    unitCostVnd: z.coerce.number().int().nonnegative(),
+  })
+  .refine((item) => Boolean(item.skuId || item.sku || item.skuCode), {
+    message: 'Mỗi dòng PO cần có sku hoặc skuId.',
+  })
+  .refine((item) => (item.orderedQty ?? item.quantity ?? 0) > 0, {
+    message: 'Mỗi dòng PO cần có số lượng đặt hàng (quantity / orderedQty) > 0.',
+  });
+
+const FlexibleCreatePoSchema = z
+  .object({
+    supplierId: z.string().trim().min(1),
+    warehouseCode: z.string().trim().min(1).default('CENTRAL_WH'),
+    expectedDeliveryDate: z.string().trim().min(1).optional(),
+    rationale: z.string().max(600).optional(),
+    note: z.string().max(600).optional(),
+    notes: z.string().max(600).optional(),
+    status: PurchaseOrderStatusSchema.optional(),
+    createdSource: PurchaseOrderCreatedSourceSchema.default(PurchaseOrderCreatedSource.USER),
+    items: z.array(FlexiblePoLineItemSchema).min(1).max(100).optional(),
+    // 100% backward compatibility for single-SKU callers
+    sku: z.string().trim().min(1).optional(),
+    skuId: z.string().trim().min(1).optional(),
+    skuCode: z.string().trim().min(1).optional(),
+    productName: z.string().max(255).optional(),
+    quantity: z.coerce.number().int().positive().max(100_000).optional(),
+    orderedQty: z.coerce.number().int().positive().max(100_000).optional(),
+    unitCostVnd: z.coerce.number().int().nonnegative().optional(),
+  })
+  .refine(
+    (v) =>
+      (Array.isArray(v.items) && v.items.length > 0) ||
+      Boolean((v.sku || v.skuId || v.skuCode) && (v.quantity || v.orderedQty)),
+    {
+      message: 'Cần cung cấp danh sách items[] (1..N SKU) hoặc thông tin SKU đơn lẻ (sku, quantity, unitCostVnd).',
+    },
+  );
+
+const FlexibleUpdateSupplierSchema = z.object({
+  code: z.string().trim().min(2).max(64).optional(),
+  name: z.string().trim().min(2).max(200).optional(),
+  contactName: z.string().trim().max(140).nullable().optional(),
+  contactEmail: z.string().trim().email().optional(),
+  contactPhone: z.string().trim().max(32).nullable().optional(),
+  address: z.string().trim().max(300).nullable().optional(),
+  leadTimeDays: z.coerce.number().int().positive().max(180).optional(),
+  paymentTermsDays: z.coerce.number().int().nonnegative().max(180).optional(),
+  isActive: z.boolean().optional(),
+  status: SupplierStatusSchema.optional(),
 });
+
+const FlexibleMarkPayablePaidSchema = z
+  .object({
+    bankReference: z.string().trim().min(2).max(160).optional(),
+    paymentReference: z.string().trim().min(2).max(160).optional(),
+    paidAt: z.string().trim().optional(),
+    note: z.string().max(500).optional(),
+    settlementNote: z.string().max(500).optional(),
+    actorId: z.string().trim().max(128).optional(),
+  })
+  .refine((v) => Boolean(v.bankReference || v.paymentReference), {
+    message: 'Cần nhập mã giao dịch chuyển khoản (bankReference).',
+  });
 
 const FlexibleAiDraftPoSchema = z.object({
   supplierId: z.string().min(1),
@@ -92,8 +164,49 @@ export class ProcurementController {
   // ============================================================================
 
   @Get('suppliers')
-  async listSuppliers(@Req() req: Request): Promise<ApiResponse<SupplierDTO[]>> {
-    const data = await this.procurementService.listSuppliers();
+  async listSuppliers(
+    @Query('status') status: string | undefined,
+    @Query('isActive') isActive: string | undefined,
+    @Query('q') q: string | undefined,
+    @Req() req: Request,
+  ): Promise<ApiResponse<SupplierExtendedDto[]>> {
+    const data = await this.procurementService.listSuppliers({
+      status,
+      isActive:
+        isActive === undefined
+          ? undefined
+          : isActive === 'true' || isActive === '1',
+      q,
+    });
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('suppliers')
+  @HttpCode(HttpStatus.CREATED)
+  async createSupplier(
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<SupplierExtendedDto>> {
+    const input = parseWithZod(CreateSupplierDtoSchema, body);
+    const data = await this.procurementService.createSupplier(input);
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Patch('suppliers/:id')
+  @HttpCode(HttpStatus.OK)
+  async updateSupplier(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<{ before: SupplierExtendedDto; after: SupplierExtendedDto }>> {
+    const input = parseWithZod(FlexibleUpdateSupplierSchema, body);
+    const data = await this.procurementService.updateSupplier(id, input);
     return createApiResponse(data, {
       correlationId: getCorrelationIdFromRequest(req),
       service: SERVICE_NAME,
@@ -140,11 +253,37 @@ export class ProcurementController {
     const correlationId = getCorrelationIdFromRequest(req);
     const actorId = readHeader(req, 'x-user-id') ?? readHeader(req, 'x-actor-id');
 
+    const normalizedItems =
+      input.items && input.items.length > 0
+        ? input.items.map((item) => ({
+            skuId: (item.skuId ?? item.sku ?? item.skuCode)!,
+            skuCode: item.skuCode ?? (item.sku && !UUID_REGEX.test(item.sku) ? item.sku : undefined),
+            productName: item.productName,
+            orderedQty: (item.orderedQty ?? item.quantity)!,
+            unitCostVnd: item.unitCostVnd,
+          }))
+        : [
+            {
+              skuId: (input.skuId ?? input.sku ?? input.skuCode)!,
+              skuCode:
+                input.skuCode ??
+                (input.sku && !UUID_REGEX.test(input.sku) ? input.sku : undefined),
+              productName: input.productName,
+              orderedQty: (input.orderedQty ?? input.quantity)!,
+              unitCostVnd: input.unitCostVnd ?? 0,
+            },
+          ];
+
     const data = await this.procurementService.createPurchaseOrder(
       {
-        ...input,
+        supplierId: input.supplierId,
+        warehouseCode: input.warehouseCode,
         expectedDeliveryDate: input.expectedDeliveryDate ?? '',
+        rationale: input.rationale,
         note: input.note ?? input.notes,
+        status: input.status,
+        createdSource: input.createdSource,
+        items: normalizedItems,
       },
       {
         forceAiDraft: false,
@@ -222,6 +361,38 @@ export class ProcurementController {
     });
   }
 
+  @Post('purchase-orders/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  async cancelPurchaseOrder(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<{ before: PurchaseOrderExtendedDto; after: PurchaseOrderExtendedDto }>> {
+    const input = parseWithZod(CancelPurchaseOrderDtoSchema, body);
+    const correlationId = getCorrelationIdFromRequest(req);
+    const actorId = input.actorId ?? readHeader(req, 'x-user-id') ?? readHeader(req, 'x-actor-id');
+
+    const data = await this.procurementService.cancelPurchaseOrder(
+      id,
+      { reason: input.reason, actorId },
+      { correlationId, traceparent: getTraceparentFromRequest(req) },
+    );
+    return createApiResponse(data, {
+      correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('purchase-orders/:id/reject')
+  @HttpCode(HttpStatus.OK)
+  async rejectPurchaseOrder(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<{ before: PurchaseOrderExtendedDto; after: PurchaseOrderExtendedDto }>> {
+    return this.handleRejectPurchaseOrder(id, body, req);
+  }
+
   @Get('goods-receipts')
   async listGoodsReceipts(
     @Query('supplierId') supplierId: string | undefined,
@@ -262,10 +433,37 @@ export class ProcurementController {
     @Query('poId') poId: string | undefined,
     @Query('status') status: string | undefined,
     @Req() req: Request,
-  ): Promise<ApiResponse<SupplierPayableDTO[]>> {
+  ): Promise<ApiResponse<SupplierPayableExtendedDto[]>> {
     const data = await this.procurementService.listPayables({ supplierId, poId, status });
     return createApiResponse(data, {
       correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('payables/:id/mark-paid')
+  @HttpCode(HttpStatus.OK)
+  async markPayablePaid(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<{ before: SupplierPayableExtendedDto; after: SupplierPayableExtendedDto }>> {
+    const input = parseWithZod(FlexibleMarkPayablePaidSchema, body);
+    const correlationId = getCorrelationIdFromRequest(req);
+    const actorId = input.actorId ?? readHeader(req, 'x-user-id') ?? readHeader(req, 'x-actor-id');
+
+    const data = await this.procurementService.markPayablePaid(
+      id,
+      {
+        bankReference: (input.bankReference ?? input.paymentReference)!,
+        paidAt: input.paidAt,
+        note: input.note ?? input.settlementNote,
+        actorId,
+      },
+      { correlationId, traceparent: getTraceparentFromRequest(req) },
+    );
+    return createApiResponse(data, {
+      correlationId,
       service: SERVICE_NAME,
     });
   }
@@ -322,6 +520,16 @@ export class ProcurementController {
     });
   }
 
+  @Post('partner/purchase-orders/:id/reject')
+  @HttpCode(HttpStatus.OK)
+  async rejectPartnerPurchaseOrder(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<{ before: PurchaseOrderExtendedDto; after: PurchaseOrderExtendedDto }>> {
+    return this.handleRejectPurchaseOrder(id, body, req);
+  }
+
   @Get('partner/goods-receipts')
   async listPartnerGoodsReceipts(@Req() req: Request): Promise<ApiResponse<GoodsReceiptDTO[]>> {
     const supplierId = this.requirePartnerSupplierId(req);
@@ -333,11 +541,60 @@ export class ProcurementController {
   }
 
   @Get('partner/payables')
-  async listPartnerPayables(@Req() req: Request): Promise<ApiResponse<SupplierPayableDTO[]>> {
+  async listPartnerPayables(@Req() req: Request): Promise<ApiResponse<SupplierPayableExtendedDto[]>> {
     const supplierId = this.requirePartnerSupplierId(req);
     const data = await this.procurementService.listPayables({ supplierId });
     return createApiResponse(data, {
       correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  private async handleRejectPurchaseOrder(
+    id: string,
+    body: unknown,
+    req: Request,
+  ): Promise<ApiResponse<{ before: PurchaseOrderExtendedDto; after: PurchaseOrderExtendedDto }>> {
+    const input = parseWithZod(RejectPurchaseOrderBySupplierDtoSchema, body);
+    const headerSupplierId = readHeader(req, 'x-supplier-id');
+    const bodySupplierId = input.supplierId?.trim() || null;
+
+    if (headerSupplierId && bodySupplierId && headerSupplierId !== bodySupplierId) {
+      throw new ApiDomainException(
+        HttpStatus.FORBIDDEN,
+        ErrorCode.FORBIDDEN,
+        'Thông tin định danh nhà cung cấp (supplierId) không khớp với phiên đăng nhập.',
+      );
+    }
+
+    const effectiveSupplierId = headerSupplierId ?? bodySupplierId;
+    if (!effectiveSupplierId || !UUID_REGEX.test(effectiveSupplierId)) {
+      throw new ApiDomainException(
+        HttpStatus.FORBIDDEN,
+        ErrorCode.FORBIDDEN,
+        'Thiếu thông tin định danh nhà cung cấp hợp lệ (supplierId / x-supplier-id).',
+      );
+    }
+
+    const correlationId = getCorrelationIdFromRequest(req);
+    const actorId = readHeader(req, 'x-user-id') ?? effectiveSupplierId;
+
+    const data = await this.procurementService.rejectPartnerPurchaseOrder(
+      effectiveSupplierId,
+      id,
+      {
+        reason: input.reason,
+        proposedDeliveryDate: input.proposedDeliveryDate ?? null,
+      },
+      {
+        actorId,
+        correlationId,
+        traceparent: getTraceparentFromRequest(req),
+      },
+    );
+
+    return createApiResponse(data, {
+      correlationId,
       service: SERVICE_NAME,
     });
   }

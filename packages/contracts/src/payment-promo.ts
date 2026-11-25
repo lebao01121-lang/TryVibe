@@ -21,15 +21,42 @@ export const PromoTypeSchema = z.enum([
 export const PromoStatus = {
   NHAP_AI: 'NHAP_AI',
   ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
   PAUSED: 'PAUSED',
   EXPIRED: 'EXPIRED',
+  ARCHIVED: 'ARCHIVED',
 } as const;
 export type PromoStatus = (typeof PromoStatus)[keyof typeof PromoStatus];
 export const PromoStatusSchema = z.enum([
   PromoStatus.NHAP_AI,
   PromoStatus.ACTIVE,
+  PromoStatus.INACTIVE,
   PromoStatus.PAUSED,
   PromoStatus.EXPIRED,
+  PromoStatus.ARCHIVED,
+]);
+
+export const PromoDiscountTypeInput = {
+  PERCENTAGE: 'PERCENTAGE',
+  FIXED_AMOUNT: 'FIXED_AMOUNT',
+  FREESHIP: 'FREESHIP',
+  PERCENT: 'PERCENT',
+  FIXED: 'FIXED',
+  OUTFIT_COMBO: 'OUTFIT_COMBO',
+  FLASH_SALE: 'FLASH_SALE',
+  CLEARANCE_ODD_SIZE: 'CLEARANCE_ODD_SIZE',
+} as const;
+export type PromoDiscountTypeInput =
+  (typeof PromoDiscountTypeInput)[keyof typeof PromoDiscountTypeInput];
+export const PromoDiscountTypeInputSchema = z.enum([
+  PromoDiscountTypeInput.PERCENTAGE,
+  PromoDiscountTypeInput.FIXED_AMOUNT,
+  PromoDiscountTypeInput.FREESHIP,
+  PromoDiscountTypeInput.PERCENT,
+  PromoDiscountTypeInput.FIXED,
+  PromoDiscountTypeInput.OUTFIT_COMBO,
+  PromoDiscountTypeInput.FLASH_SALE,
+  PromoDiscountTypeInput.CLEARANCE_ODD_SIZE,
 ]);
 
 export const PaymentProvider = {
@@ -162,11 +189,102 @@ export const PromotionDtoSchema = z.object({
   startsAt: z.string().nullable(),
   endsAt: z.string().nullable(),
   createdByActorType: z.enum(['USER', 'AI_COPILOT', 'SYSTEM']).default('USER'),
+  approvedBy: z.string().nullable().optional(),
+  approvedAt: z.string().nullable().optional(),
+  discountType: z.string().optional(),
+  discountValue: z.number().nonnegative().optional(),
+  usageLimit: z.number().int().nonnegative().optional(),
+  applicableSkus: z.array(z.string()).optional(),
+  applicableSpuIds: z.array(z.string()).optional(),
+  targetSizes: z.array(z.string()).optional(),
+  bonusTryonCredits: z.number().int().nonnegative().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type PromotionDTO = z.infer<typeof PromotionDtoSchema>;
 export type PromotionDto = PromotionDTO;
+
+export const CreatePromotionDtoSchema = z
+  .object({
+    code: z.string().trim().min(2).max(64),
+    name: z.string().trim().min(2).max(255).optional(),
+    title: z.string().trim().min(2).max(255).optional(),
+    description: z.string().max(1000).nullable().optional(),
+    discountType: PromoDiscountTypeInputSchema.optional(),
+    type: PromoDiscountTypeInputSchema.optional(),
+    promoType: PromoDiscountTypeInputSchema.optional(),
+    discountValue: z.coerce.number().min(0).optional(),
+    discountPercent: z.coerce.number().min(0).max(100).optional(),
+    discountAmountVnd: z.coerce.number().int().nonnegative().optional(),
+    maxDiscountVnd: z.coerce.number().int().nonnegative().nullable().optional(),
+    minOrderVnd: z.coerce.number().int().nonnegative().optional(),
+    usageLimit: z.coerce.number().int().positive().max(1_000_000).optional(),
+    maxUses: z.coerce.number().int().positive().max(1_000_000).optional(),
+    perUserLimit: z.coerce.number().int().positive().max(10_000).optional(),
+    startsAt: z.string().nullable().optional(),
+    endsAt: z.string().nullable().optional(),
+    applicableSkus: z.array(z.string().min(1)).optional(),
+    targetSkuCodes: z.array(z.string().min(1)).optional(),
+    applicableSpuIds: z.array(z.string().min(1)).optional(),
+    targetProductIds: z.array(z.string().min(1)).optional(),
+    targetSizes: z.array(z.string().trim().min(1)).optional(),
+    bonusTryonCredits: z.coerce.number().int().nonnegative().max(100).optional(),
+    status: PromoStatusSchema.optional(),
+    createdByActorType: z.enum(['USER', 'AI_COPILOT', 'SYSTEM']).optional(),
+  })
+  .refine((val) => Boolean(val.name || val.title), {
+    message: 'Either name or title is required',
+  });
+export type CreatePromotionDTO = z.infer<typeof CreatePromotionDtoSchema>;
+export type CreatePromotionDto = CreatePromotionDTO;
+
+export const UpdatePromotionDtoSchema = z.object({
+  code: z.string().trim().min(2).max(64).optional(),
+  name: z.string().trim().min(2).max(255).optional(),
+  title: z.string().trim().min(2).max(255).optional(),
+  description: z.string().max(1000).nullable().optional(),
+  discountType: PromoDiscountTypeInputSchema.optional(),
+  type: PromoDiscountTypeInputSchema.optional(),
+  promoType: PromoDiscountTypeInputSchema.optional(),
+  discountValue: z.coerce.number().min(0).optional(),
+  discountPercent: z.coerce.number().min(0).max(100).nullable().optional(),
+  discountAmountVnd: z.coerce.number().int().nonnegative().nullable().optional(),
+  maxDiscountVnd: z.coerce.number().int().nonnegative().nullable().optional(),
+  minOrderVnd: z.coerce.number().int().nonnegative().optional(),
+  usageLimit: z.coerce.number().int().positive().max(1_000_000).optional(),
+  maxUses: z.coerce.number().int().positive().max(1_000_000).optional(),
+  perUserLimit: z.coerce.number().int().positive().max(10_000).optional(),
+  startsAt: z.string().nullable().optional(),
+  endsAt: z.string().nullable().optional(),
+  applicableSkus: z.array(z.string().min(1)).optional(),
+  targetSkuCodes: z.array(z.string().min(1)).optional(),
+  applicableSpuIds: z.array(z.string().min(1)).optional(),
+  targetProductIds: z.array(z.string().min(1)).optional(),
+  targetSizes: z.array(z.string().trim().min(1)).optional(),
+  bonusTryonCredits: z.coerce.number().int().nonnegative().max(100).optional(),
+  status: PromoStatusSchema.optional(),
+  isActive: z.boolean().optional(),
+});
+export type UpdatePromotionDTO = z.infer<typeof UpdatePromotionDtoSchema>;
+export type UpdatePromotionDto = UpdatePromotionDTO;
+
+export const ApprovePromotionDraftDtoSchema = z
+  .object({
+    approvedBy: z.string().trim().min(1).max(180).optional(),
+    note: z.string().max(500).optional(),
+  })
+  .optional();
+export type ApprovePromotionDraftDTO = z.infer<typeof ApprovePromotionDraftDtoSchema>;
+export type ApprovePromotionDraftDto = ApprovePromotionDraftDTO;
+
+export const AdminPromotionsQuerySchema = z.object({
+  status: z.string().trim().optional(),
+  type: z.string().trim().optional(),
+  q: z.string().trim().optional(),
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+export type AdminPromotionsQuery = z.infer<typeof AdminPromotionsQuerySchema>;
 
 export const CreatePaymentIntentDtoSchema = z.object({
   orderId: z.string().min(1),
@@ -244,3 +362,80 @@ export const RefundResponseDtoSchema = z.object({
 });
 export type RefundResponseDTO = z.infer<typeof RefundResponseDtoSchema>;
 export type RefundResponseDto = RefundResponseDTO;
+
+export const PaymentRefundRecordDtoSchema = z.object({
+  id: z.string().min(1),
+  refundId: z.string().min(1),
+  orderId: z.string().min(1),
+  orderCode: z.string().min(1),
+  rmaId: z.string().nullable(),
+  amountVnd: z.number().int().nonnegative(),
+  status: PaymentTransactionStatusSchema,
+  provider: PaymentProviderSchema,
+  providerTxId: z.string().nullable(),
+  reason: z.string().nullable(),
+  refundedAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type PaymentRefundRecordDTO = z.infer<typeof PaymentRefundRecordDtoSchema>;
+export type PaymentRefundRecordDto = PaymentRefundRecordDTO;
+
+export const PaymentTransactionAdminDtoSchema = z.object({
+  id: z.string().min(1),
+  orderId: z.string().min(1),
+  orderCode: z.string().min(1),
+  provider: PaymentProviderSchema,
+  method: PaymentProviderSchema,
+  txType: z.enum(['CHARGE', 'REFUND']),
+  amountVnd: z.number().int().nonnegative(),
+  refundedAmountVnd: z.number().int().nonnegative(),
+  netRefundableVnd: z.number().int().nonnegative(),
+  status: PaymentTransactionStatusSchema,
+  providerTxId: z.string().nullable(),
+  idempotencyKey: z.string().min(1),
+  qrPayload: z.string().nullable(),
+  paymentUrl: z.string().nullable(),
+  signatureVerified: z.boolean(),
+  expiresAt: z.string().nullable(),
+  paidAt: z.string().nullable(),
+  createdAt: z.string(),
+  refunds: z.array(PaymentRefundRecordDtoSchema),
+});
+export type PaymentTransactionAdminDTO = z.infer<typeof PaymentTransactionAdminDtoSchema>;
+export type PaymentTransactionAdminDto = PaymentTransactionAdminDTO;
+
+export const PaymentWebhookLogDtoSchema = z.object({
+  id: z.string().min(1),
+  provider: PaymentProviderSchema,
+  providerEventId: z.string().min(1),
+  eventId: z.string().min(1),
+  orderCode: z.string().nullable(),
+  signatureValid: z.boolean(),
+  signatureHeader: z.string().nullable().optional(),
+  status: z.string().min(1),
+  payloadSummary: z.string().nullable().optional(),
+  rawPayload: z.record(z.unknown()).nullable().optional(),
+  receivedAt: z.string(),
+});
+export type PaymentWebhookLogDTO = z.infer<typeof PaymentWebhookLogDtoSchema>;
+export type PaymentWebhookLogDto = PaymentWebhookLogDTO;
+
+export const AdminPaymentTransactionsQuerySchema = z.object({
+  method: z.string().trim().optional(),
+  provider: z.string().trim().optional(),
+  status: z.string().trim().optional(),
+  orderCode: z.string().trim().optional(),
+  q: z.string().trim().optional(),
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+export type AdminPaymentTransactionsQuery = z.infer<typeof AdminPaymentTransactionsQuerySchema>;
+
+export const AdminPaymentWebhooksQuerySchema = z.object({
+  provider: z.string().trim().optional(),
+  orderCode: z.string().trim().optional(),
+  signatureValid: z.union([z.boolean(), z.string()]).optional(),
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+export type AdminPaymentWebhooksQuery = z.infer<typeof AdminPaymentWebhooksQuerySchema>;

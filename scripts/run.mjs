@@ -899,7 +899,7 @@ ${ANSI.bold}  [2] CÔNG CỤ VẬN HÀNH & GIÁM SÁT${ANSI.reset}
 ${ANSI.bold}  [3] TÀI KHOẢN ĐĂNG NHẬP NHANH — 6 VAI TRÒ RBAC (Mật khẩu: ${ANSI.brightYellow}Atelier@2026!${ANSI.reset}${ANSI.bold})${ANSI.reset}
       Vai trò              | Email đăng nhập           | 2FA Mailpit | Cổng
       ---------------------+---------------------------+-------------+-----------------
-      SUPER_ADMIN          | admin@atelier.local       | Bắt buộc    | :3001 Admin
+      SUPER_ADMIN          | lebao01121@gmail.com      | Bắt buộc    | :3001 Admin
       CATALOG_AI_OPERATOR  | operator@atelier.local    | Tùy chọn    | :3001 Admin
       WAREHOUSE_MANAGER    | warehouse@atelier.local   | Bắt buộc    | :3001 Admin
       ORDER_STAFF          | staff@atelier.local       | Tùy chọn    | :3001 Admin

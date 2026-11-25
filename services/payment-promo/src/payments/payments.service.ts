@@ -2,11 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import {
+  AdminPaymentTransactionsQuerySchema,
+  AdminPaymentWebhooksQuerySchema,
   ErrorCode,
   PaymentProvider,
   PaymentTransactionStatus,
-  RefundRequestDtoSchema,
+  type PagePagination,
   type PaymentIntentResponseDTO,
+  type PaymentRefundRecordDTO,
+  type PaymentTransactionAdminDTO,
+  type PaymentWebhookLogDTO,
   type RefundResponseDTO,
 } from '@atelier/contracts';
 import {
@@ -23,13 +28,21 @@ import {
 import { PaymentDbService } from '../db/payment-db.service';
 import { PaymentEventPublisherService } from '../messaging/payment-event-publisher.service';
 import {
-  buildMomoSandboxUrl,
-  buildVietQrPayload,
+  normalizeClientIp,
+  toSingleQueryValue,
+  type PaymentProviderMode,
+  type ProviderRefundResult,
+} from './adapters/adapter-types';
+import { MomoAdapter } from './adapters/momo.adapter';
+import { PayOsAdapter } from './adapters/payos.adapter';
+import { VnpayAdapter } from './adapters/vnpay.adapter';
+import {
+  buildRawVietQrSvgDataUrl,
   buildVietQrSvgDataUrl,
-  buildVnpaySandboxUrl,
   computeHmacSha256Hex,
   normalizeWebhookProviderParam,
   verifyHmacSha256Signature,
+  VIETQR_STANDARD,
 } from './payment-helpers';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -48,6 +61,7 @@ const ExtendedCreateIntentSchema = z.object({
   returnUrl: z.string().url().optional(),
   customerEmail: z.string().email().nullable().optional(),
   idempotencyKey: z.string().min(1).max(128).optional(),
+  clientIp: z.string().max(64).optional(),
 });
 
 const FlexibleWebhookBodySchema = z.object({
@@ -72,6 +86,101 @@ const FlexibleDevSimulateSchema = z.object({
   amountVnd: z.number().int().nonnegative().optional(),
   simulateLate: z.boolean().optional(),
 });
+
+const FlexibleRefundRequestSchema = z
+  .object({
+    transactionId: z.string().trim().min(1).optional(),
+    orderId: z.string().trim().min(1).optional(),
+    orderCode: z.string().trim().min(1).optional(),
+    amountVnd: z.coerce.number().int().positive(),
+    reason: z.string().trim().min(1).max(500),
+    rmaId: z.string().min(1).nullable().optional(),
+    idempotencyKey: z.string().min(1).optional(),
+  })
+  .refine((v) => Boolean(v.transactionId || v.orderId || v.orderCode), {
+    message: 'Cần cung cấp transactionId, orderId hoặc orderCode để hoàn tiền.',
+  });
+
+export interface RichPaymentIntentResponseDTO extends PaymentIntentResponseDTO {
+  qrPayload: string | null;
+  qrImageUrl: string | null;
+  qrSvgDataUrl: string | null;
+  rawQrSvgDataUrl: string | null;
+  rawQrPngDataUrl: string | null;
+  qrStandard: typeof VIETQR_STANDARD | null;
+  providerMode: PaymentProviderMode;
+  bankInfo?: {
+    bankBin: string;
+    accountNo: string;
+    accountName: string;
+  } | null;
+}
+
+export interface PaymentReturnVerificationDTO {
+  verified: boolean;
+  paid: boolean;
+  status: string;
+  orderCode: string | null;
+  provider: 'VIETQR' | 'VNPAY' | 'MOMO' | null;
+  amountVnd: number | null;
+  message: string;
+  responseCode: string | null;
+  transactionId: string | null;
+  orderStatus: string | null;
+}
+
+export interface VnpayIpnResponseDTO {
+  RspCode: string;
+  Message: string;
+}
+
+interface ProcessedWebhookRow {
+  provider: PaymentProvider;
+  provider_event_id: string;
+  order_code: string | null;
+  signature_valid: boolean | null;
+  signature_header: string | null;
+  status: string | null;
+  payload_summary: string | null;
+  raw_payload_jsonb: Record<string, unknown> | string | null;
+  received_at: Date | string;
+  tx_status?: string | null;
+  tx_raw_payload_jsonb?: Record<string, unknown> | string | null;
+}
+
+export interface AdminPaymentTransactionsListResult {
+  items: PaymentTransactionAdminDTO[];
+  pagination: PagePagination;
+  summary: {
+    totalCount: number;
+    totalChargedVnd: number;
+    totalRefundedVnd: number;
+    totalNetVnd: number;
+  };
+}
+
+export interface AdminPaymentWebhooksListResult {
+  items: PaymentWebhookLogDTO[];
+  pagination: PagePagination;
+}
+
+export interface RichRefundResponseDTO extends RefundResponseDTO {
+  refundTxId: string;
+  refundedAmountVnd: number;
+  netRefundableVnd: number;
+  providerMode?: PaymentProviderMode;
+  providerRefundId?: string | null;
+  before: {
+    status: PaymentTransactionStatus;
+    refundedAmountVnd: number;
+    netRefundableVnd: number;
+  };
+  after: {
+    status: PaymentTransactionStatus;
+    refundedAmountVnd: number;
+    netRefundableVnd: number;
+  };
+}
 
 interface PaymentTransactionRow {
   id: string;
@@ -157,12 +266,66 @@ function parseJsonRecord(
   }
   if (typeof raw === 'string') {
     try {
-      return JSON.parse(raw) as Record<string, unknown>;
+      const parsed = JSON.parse(raw) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
     } catch {
       return null;
     }
   }
   return raw;
+}
+
+function maskSignature(signature: string | null | undefined): string | null {
+  if (!signature || signature.trim().length === 0) {
+    return null;
+  }
+  const s = signature.trim();
+  if (s.length <= 18) {
+    return `${s.slice(0, 6)}...`;
+  }
+  return `${s.slice(0, 12)}...${s.slice(-6)}`;
+}
+
+function describeVnpayResponseCode(code: string): string {
+  switch (code) {
+    case '00':
+      return 'Giao dịch VNPay đã được xác thực thành công.';
+    case '24':
+      return 'Bạn đã hủy giao dịch thanh toán trên cổng VNPay.';
+    case '11':
+      return 'Phiên thanh toán VNPay đã hết hạn chờ thanh toán.';
+    case '51':
+      return 'Tài khoản không đủ số dư để thực hiện giao dịch VNPay.';
+    case '65':
+      return 'Tài khoản đã vượt quá hạn mức giao dịch trong ngày.';
+    case '75':
+      return 'Ngân hàng thanh toán đang bảo trì.';
+    case '97':
+      return 'Chữ ký xác thực VNPay (HMAC-SHA512) không hợp lệ.';
+    default:
+      return `Giao dịch VNPay chưa thành công (mã phản hồi ${code || 'UNKNOWN'}).`;
+  }
+}
+
+function describeMomoResultCode(code: string, fallbackMsg?: string): string {
+  if (code === '0') {
+    return 'Giao dịch ví MoMo đã được xác thực thành công.';
+  }
+  if (code === '1006') {
+    return 'Bạn đã từ chối hoặc hủy xác nhận thanh toán trên ví MoMo.';
+  }
+  if (code === '1005') {
+    return 'Phiên thanh toán MoMo đã hết hạn.';
+  }
+  if (code === '1001') {
+    return 'Tài khoản ví MoMo không đủ số dư để thanh toán.';
+  }
+  if (fallbackMsg && fallbackMsg.trim()) {
+    return fallbackMsg.trim();
+  }
+  return `Giao dịch MoMo chưa thành công (mã kết quả ${code || 'UNKNOWN'}).`;
 }
 
 @Injectable()
@@ -173,20 +336,66 @@ export class PaymentsService {
     @Inject(PAYMENT_CONFIG_TOKEN) private readonly config: PaymentPromoConfig,
     private readonly db: PaymentDbService,
     private readonly eventPublisher: PaymentEventPublisherService,
+    private readonly payosAdapter: PayOsAdapter,
+    private readonly vnpayAdapter: VnpayAdapter,
+    private readonly momoAdapter: MomoAdapter,
   ) {}
 
-  private mapTransactionToIntentDto(row: PaymentTransactionRow): PaymentIntentResponseDTO {
+  private mapTransactionToIntentDto(
+    row: PaymentTransactionRow,
+  ): RichPaymentIntentResponseDTO {
     const qrPayload = row.qr_payload ?? null;
     const rawMeta = parseJsonRecord(row.raw_payload_jsonb);
-    let vietQrImageUrl =
-      typeof rawMeta?.vietQrImageUrl === 'string' ? rawMeta.vietQrImageUrl : null;
-    if (!vietQrImageUrl && row.provider === PaymentProvider.VIETQR && qrPayload) {
-      vietQrImageUrl = buildVietQrSvgDataUrl(
-        row.order_code,
-        Number(row.amount_vnd),
-        qrPayload,
-      );
+
+    let qrSvgDataUrl =
+      typeof rawMeta?.qrSvgDataUrl === 'string'
+        ? rawMeta.qrSvgDataUrl
+        : typeof rawMeta?.vietQrImageUrl === 'string'
+          ? rawMeta.vietQrImageUrl
+          : null;
+    let rawQrSvgDataUrl =
+      typeof rawMeta?.rawQrSvgDataUrl === 'string' ? rawMeta.rawQrSvgDataUrl : null;
+    const rawQrPngDataUrl =
+      typeof rawMeta?.rawQrPngDataUrl === 'string' ? rawMeta.rawQrPngDataUrl : null;
+
+    if (row.provider === PaymentProvider.VIETQR && qrPayload) {
+      if (!qrSvgDataUrl) {
+        qrSvgDataUrl = buildVietQrSvgDataUrl(
+          row.order_code,
+          Number(row.amount_vnd),
+          qrPayload,
+        );
+      }
+      if (!rawQrSvgDataUrl) {
+        rawQrSvgDataUrl = buildRawVietQrSvgDataUrl(qrPayload);
+      }
     }
+
+    const providerMode: PaymentProviderMode =
+      rawMeta?.providerMode === 'LIVE' ? 'LIVE' : 'SANDBOX_LOCAL';
+    const qrStandard =
+      rawMeta?.qrStandard === VIETQR_STANDARD ||
+      (row.provider === PaymentProvider.VIETQR && Boolean(qrPayload))
+        ? VIETQR_STANDARD
+        : null;
+
+    const bankInfoRaw =
+      rawMeta?.bankInfo && typeof rawMeta.bankInfo === 'object'
+        ? (rawMeta.bankInfo as Record<string, unknown>)
+        : null;
+    const bankInfo =
+      bankInfoRaw &&
+      typeof bankInfoRaw.bankBin === 'string' &&
+      typeof bankInfoRaw.accountNo === 'string' &&
+      typeof bankInfoRaw.accountName === 'string'
+        ? {
+            bankBin: bankInfoRaw.bankBin,
+            accountNo: bankInfoRaw.accountNo,
+            accountName: bankInfoRaw.accountName,
+          }
+        : row.provider === PaymentProvider.VIETQR
+          ? { ...this.config.vietqr }
+          : null;
 
     return {
       transactionId: row.id,
@@ -195,7 +404,15 @@ export class PaymentsService {
       provider: row.provider,
       paymentUrl: row.payment_url ?? null,
       vietQrPayload: qrPayload,
-      vietQrImageUrl,
+      vietQrImageUrl: qrSvgDataUrl,
+      qrPayload,
+      qrImageUrl: qrSvgDataUrl,
+      qrSvgDataUrl,
+      rawQrSvgDataUrl,
+      rawQrPngDataUrl,
+      qrStandard,
+      providerMode,
+      bankInfo,
       amountVnd: Number(row.amount_vnd),
       expiresAt: toIso(row.expires_at ?? new Date(Date.now() + 15 * 60 * 1000)),
     };
@@ -224,7 +441,8 @@ export class PaymentsService {
   async createPaymentIntent(
     rawBody: unknown,
     idempotencyHeader: string | null,
-  ): Promise<PaymentIntentResponseDTO> {
+    clientIp?: string | null,
+  ): Promise<RichPaymentIntentResponseDTO> {
     const parsed = ExtendedCreateIntentSchema.safeParse(rawBody);
     if (!parsed.success) {
       throw new PaymentApiException(
@@ -258,47 +476,96 @@ export class PaymentsService {
 
     const txId = randomUUID();
     const expiresAt = input.expiresAt ?? new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    const returnUrl =
-      input.returnUrl ??
-      `${this.config.storefrontPublicUrl}/don-hang/${encodeURIComponent(input.orderCode)}`;
+    const defaultStorefrontReturnUrl = `${this.config.storefrontPublicUrl}/thanh-toan/ket-qua`;
+    const resolvedIp = normalizeClientIp(input.clientIp ?? clientIp);
 
     let qrPayload: string | null = null;
-    let vietQrImageUrl: string | null = null;
+    let qrSvgDataUrl: string | null = null;
+    let rawQrSvgDataUrl: string | null = null;
+    let rawQrPngDataUrl: string | null = null;
+    let qrStandard: typeof VIETQR_STANDARD | null = null;
     let paymentUrl: string | null = null;
+    let providerTxId: string | null = null;
+    let providerMode: PaymentProviderMode = 'SANDBOX_LOCAL';
+    let returnUrl = input.returnUrl ?? defaultStorefrontReturnUrl;
+    const providerMeta: Record<string, unknown> = {};
 
     if (input.provider === PaymentProvider.VIETQR) {
-      qrPayload = buildVietQrPayload(input.orderCode, input.amountVnd);
-      vietQrImageUrl = buildVietQrSvgDataUrl(input.orderCode, input.amountVnd, qrPayload);
+      returnUrl =
+        input.returnUrl ??
+        `${defaultStorefrontReturnUrl}?provider=PAYOS&orderCode=${encodeURIComponent(input.orderCode)}`;
+      const payosResult = await this.payosAdapter.createPaymentIntent({
+        orderCode: input.orderCode,
+        amountVnd: input.amountVnd,
+        returnUrl,
+        expiresAt,
+      });
+      qrPayload = payosResult.qrPayload;
+      qrSvgDataUrl = payosResult.qrSvgDataUrl;
+      rawQrSvgDataUrl = payosResult.rawQrSvgDataUrl;
+      rawQrPngDataUrl = payosResult.rawQrPngDataUrl;
+      qrStandard = payosResult.qrStandard;
+      paymentUrl = payosResult.paymentUrl;
+      providerTxId = payosResult.providerTxId;
+      providerMode = payosResult.mode;
+      providerMeta.payosOrderCode = payosResult.payosOrderCode;
+      providerMeta.checkoutUrl = payosResult.checkoutUrl;
+      providerMeta.bankInfo = payosResult.bankInfo;
+      providerMeta.qrModuleCount = payosResult.qrModuleCount;
+      providerMeta.qrQuietZoneModules = payosResult.qrQuietZoneModules;
     } else if (input.provider === PaymentProvider.VNPAY) {
-      paymentUrl = buildVnpaySandboxUrl(
-        input.orderCode,
-        input.amountVnd,
+      returnUrl = input.returnUrl ?? this.config.vnpay.returnUrl;
+      const vnpayResult = this.vnpayAdapter.createPayment({
+        orderCode: input.orderCode,
+        amountVnd: input.amountVnd,
         returnUrl,
-        this.config.webhookSecrets.VNPAY,
-      );
+        clientIp: resolvedIp,
+        expiresAt,
+      });
+      paymentUrl = vnpayResult.paymentUrl;
+      providerMode = vnpayResult.mode;
+      providerMeta.vnpCreateDate = vnpayResult.createDate;
+      providerMeta.vnpExpireDate = vnpayResult.expireDate;
+      providerMeta.vnpTmnCode = this.config.vnpay.tmnCode;
+      providerMeta.clientIp = resolvedIp;
     } else if (input.provider === PaymentProvider.MOMO) {
-      paymentUrl = buildMomoSandboxUrl(
-        input.orderCode,
-        input.amountVnd,
-        returnUrl,
-        this.config.webhookSecrets.MOMO,
-      );
+      returnUrl = input.returnUrl ?? this.config.momo.redirectUrl;
+      const momoResult = await this.momoAdapter.createPayment({
+        orderCode: input.orderCode,
+        amountVnd: input.amountVnd,
+        redirectUrl: returnUrl,
+      });
+      paymentUrl = momoResult.paymentUrl;
+      qrPayload = momoResult.qrPayload;
+      providerMode = momoResult.mode;
+      providerMeta.momoRequestId = momoResult.requestId;
+      providerMeta.momoPartnerCode = this.config.momo.partnerCode;
+    } else {
+      returnUrl =
+        input.returnUrl ??
+        `${this.config.storefrontPublicUrl}/don-hang/${encodeURIComponent(input.orderCode)}`;
+      providerMode = 'SANDBOX_LOCAL';
     }
 
-    const rawMeta = {
+    const rawMeta: Record<string, unknown> = {
       returnUrl,
       customerEmail: input.customerEmail ?? null,
-      ...(vietQrImageUrl ? { vietQrImageUrl } : {}),
+      providerMode,
+      ...(qrStandard ? { qrStandard } : {}),
+      ...(qrSvgDataUrl ? { vietQrImageUrl: qrSvgDataUrl, qrSvgDataUrl } : {}),
+      ...(rawQrSvgDataUrl ? { rawQrSvgDataUrl } : {}),
+      ...(rawQrPngDataUrl ? { rawQrPngDataUrl } : {}),
+      ...providerMeta,
     };
 
     const inserted = await this.db.query<PaymentTransactionRow>(
       `
       INSERT INTO payment_transactions (
         id, order_id, order_code, provider, tx_type, amount_vnd,
-        status, idempotency_key, qr_payload, payment_url,
+        status, provider_tx_id, idempotency_key, qr_payload, payment_url,
         signature_verified, raw_payload_jsonb, expires_at
       )
-      VALUES ($1, $2, $3, $4, 'CHARGE', $5, 'PENDING', $6, $7, $8, FALSE, $9::jsonb, $10)
+      VALUES ($1, $2, $3, $4, 'CHARGE', $5, 'PENDING', $6, $7, $8, $9, FALSE, $10::jsonb, $11)
       ON CONFLICT (idempotency_key) DO NOTHING
       RETURNING *
       `,
@@ -308,6 +575,7 @@ export class PaymentsService {
         input.orderCode,
         input.provider,
         input.amountVnd,
+        providerTxId,
         idempotencyKey,
         qrPayload,
         paymentUrl,
@@ -333,6 +601,341 @@ export class PaymentsService {
       );
     }
     return this.mapTransactionToIntentDto(replayRes.rows[0]);
+  }
+
+  private async logInvalidSignatureWebhook(params: {
+    provider: 'VIETQR' | 'VNPAY' | 'MOMO';
+    orderCode: string | null;
+    eventIdHint: string;
+    signatureHeader: string | null;
+    summary: string;
+    rawPayload: Record<string, unknown>;
+  }): Promise<void> {
+    const failedEventId = `invalid:${randomUUID().slice(0, 8)}:${params.eventIdHint.slice(0, 80)}`;
+    await this.db
+      .query(
+        `
+        INSERT INTO processed_webhooks (
+          provider, provider_event_id, order_code, signature_valid,
+          signature_header, status, payload_summary, raw_payload_jsonb
+        )
+        VALUES ($1, $2, $3, FALSE, $4, 'SIGNATURE_INVALID', $5, $6::jsonb)
+        ON CONFLICT (provider, provider_event_id) DO NOTHING
+        `,
+        [
+          params.provider,
+          failedEventId,
+          params.orderCode ? params.orderCode.slice(0, 32) : null,
+          maskSignature(params.signatureHeader),
+          params.summary,
+          JSON.stringify(params.rawPayload),
+        ],
+      )
+      .catch(() => undefined);
+  }
+
+  private async findChargeTransaction(lookup: {
+    orderCode?: string | null;
+    orderId?: string | null;
+    payosOrderCode?: string | null;
+    providerTxId?: string | null;
+  }): Promise<PaymentTransactionRow | null> {
+    if (lookup.orderCode && lookup.orderCode.trim()) {
+      const res = await this.db.query<PaymentTransactionRow>(
+        `
+        SELECT * FROM payment_transactions
+        WHERE order_code = $1 AND tx_type = 'CHARGE'
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [lookup.orderCode.trim()],
+      );
+      if (res.rows[0]) {
+        return res.rows[0];
+      }
+    }
+
+    if (lookup.orderId && UUID_REGEX.test(lookup.orderId.trim())) {
+      const res = await this.db.query<PaymentTransactionRow>(
+        `
+        SELECT * FROM payment_transactions
+        WHERE order_id = $1 AND tx_type = 'CHARGE'
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [lookup.orderId.trim()],
+      );
+      if (res.rows[0]) {
+        return res.rows[0];
+      }
+    }
+
+    if (lookup.payosOrderCode && lookup.payosOrderCode.trim()) {
+      const res = await this.db.query<PaymentTransactionRow>(
+        `
+        SELECT * FROM payment_transactions
+        WHERE raw_payload_jsonb->>'payosOrderCode' = $1 AND tx_type = 'CHARGE'
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [lookup.payosOrderCode.trim()],
+      );
+      if (res.rows[0]) {
+        return res.rows[0];
+      }
+    }
+
+    if (lookup.providerTxId && lookup.providerTxId.trim()) {
+      const res = await this.db.query<PaymentTransactionRow>(
+        `
+        SELECT * FROM payment_transactions
+        WHERE provider_tx_id = $1 AND tx_type = 'CHARGE'
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [lookup.providerTxId.trim()],
+      );
+      if (res.rows[0]) {
+        return res.rows[0];
+      }
+    }
+
+    return null;
+  }
+
+  private async settleVerifiedProviderCallback(params: {
+    provider: 'VIETQR' | 'VNPAY' | 'MOMO';
+    providerEventId: string;
+    chargeTx: PaymentTransactionRow;
+    providerTxId: string;
+    amountVnd: number;
+    nextTxStatus: PaymentTransactionStatus;
+    paidAt: string;
+    signatureHeader: string | null;
+    rawPayloadObj: Record<string, unknown>;
+    correlationId: string;
+    traceparent?: string;
+  }): Promise<WebhookProcessResult> {
+    const {
+      provider,
+      providerEventId,
+      chargeTx,
+      providerTxId,
+      amountVnd,
+      nextTxStatus,
+      paidAt,
+      signatureHeader,
+      rawPayloadObj,
+      correlationId,
+      traceparent,
+    } = params;
+
+    const alreadySettled =
+      chargeTx.status === PaymentTransactionStatus.SUCCEEDED ||
+      chargeTx.status === PaymentTransactionStatus.LATE_SUCCEEDED ||
+      chargeTx.status === PaymentTransactionStatus.REFUNDED;
+
+    const payloadSummary = `${provider} ${nextTxStatus} · ${chargeTx.order_code} · ${amountVnd.toLocaleString('vi-VN')}₫`;
+
+    // ACID Webhook Idempotency + State Commit inside one transaction
+    const txOutcome = await this.db.transaction(async (txDb) => {
+      const dedupRes = await txDb.query<{ provider_event_id: string }>(
+        `
+        INSERT INTO processed_webhooks (
+          provider, provider_event_id, order_code, signature_valid,
+          signature_header, status, payload_summary, raw_payload_jsonb
+        )
+        VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7::jsonb)
+        ON CONFLICT (provider, provider_event_id) DO NOTHING
+        RETURNING provider_event_id
+        `,
+        [
+          provider,
+          providerEventId,
+          chargeTx.order_code,
+          maskSignature(signatureHeader),
+          nextTxStatus,
+          payloadSummary,
+          JSON.stringify(rawPayloadObj),
+        ],
+      );
+
+      if (dedupRes.rows.length === 0) {
+        return { processed: false, shouldNotify: false };
+      }
+
+      if (alreadySettled && nextTxStatus === PaymentTransactionStatus.SUCCEEDED) {
+        return { processed: false, shouldNotify: false };
+      }
+
+      const nextPaidAt =
+        nextTxStatus === PaymentTransactionStatus.SUCCEEDED ? paidAt : null;
+
+      await txDb.query(
+        `
+        UPDATE payment_transactions
+        SET
+          status = $2,
+          signature_verified = TRUE,
+          provider_tx_id = COALESCE($3, provider_tx_id),
+          raw_payload_jsonb = COALESCE(raw_payload_jsonb, '{}'::jsonb) || $4::jsonb,
+          paid_at = COALESCE($5::timestamptz, paid_at)
+        WHERE id = $1
+        `,
+        [
+          chargeTx.id,
+          nextTxStatus,
+          providerTxId,
+          JSON.stringify({
+            ...rawPayloadObj,
+            lastCallbackReceivedAt: new Date().toISOString(),
+          }),
+          nextPaidAt,
+        ],
+      );
+
+      if (nextTxStatus === PaymentTransactionStatus.SUCCEEDED) {
+        await txDb.query(
+          `
+          UPDATE voucher_redemptions
+          SET status = 'REDEEMED'
+          WHERE order_id = $1 AND status = 'LOCKED'
+          `,
+          [chargeTx.order_id],
+        );
+
+        await txDb.query(
+          `
+          INSERT INTO outbox_events (id, event_name, payload_jsonb, published)
+          VALUES ($1, 'payment.succeeded', $2::jsonb, FALSE)
+          `,
+          [
+            randomUUID(),
+            JSON.stringify({
+              eventId: `${provider}:${providerEventId}`,
+              paymentId: chargeTx.id,
+              orderId: chargeTx.order_id,
+              orderCode: chargeTx.order_code,
+              provider,
+              providerTransactionId: providerTxId,
+              amountVnd,
+              paidAt,
+            }),
+          ],
+        );
+      }
+
+      return {
+        processed: true,
+        shouldNotify: nextTxStatus === PaymentTransactionStatus.SUCCEEDED,
+      };
+    });
+
+    if (!txOutcome.processed) {
+      return {
+        ok: true,
+        deduplicated: true,
+        processed: false,
+        provider,
+        providerEventId,
+        transactionId: chargeTx.id,
+        orderId: chargeTx.order_id,
+        orderCode: chargeTx.order_code,
+        amountVnd,
+        status: chargeTx.status,
+      };
+    }
+
+    let downstreamOrderStatus: string | null = null;
+    if (txOutcome.shouldNotify) {
+      const canonicalEventId = `${provider}:${providerEventId}`;
+      downstreamOrderStatus = await this.notifyOrderRmaPaymentSucceeded(
+        {
+          eventId: canonicalEventId,
+          orderId: chargeTx.order_id,
+          orderCode: chargeTx.order_code,
+          paymentId: chargeTx.id,
+          provider,
+          providerTransactionId: providerTxId,
+          amountVnd,
+          paidAt,
+        },
+        correlationId,
+        traceparent,
+      );
+
+      if (downstreamOrderStatus === 'LATE_PAYMENT_NEEDS_REFUND') {
+        await this.db.query(
+          `
+          UPDATE payment_transactions
+          SET status = 'LATE_SUCCEEDED'
+          WHERE id = $1
+          `,
+          [chargeTx.id],
+        );
+        await this.db.query(
+          `
+          INSERT INTO outbox_events (id, event_name, payload_jsonb, published)
+          VALUES ($1, 'payment.late.detected', $2::jsonb, FALSE)
+          `,
+          [
+            randomUUID(),
+            JSON.stringify({
+              paymentId: chargeTx.id,
+              orderId: chargeTx.order_id,
+              orderCode: chargeTx.order_code,
+              provider,
+              providerTransactionId: providerTxId,
+              amountVnd,
+              detectedAt: new Date().toISOString(),
+              recommendedAction: 'AUTO_REFUND_REVIEW',
+            }),
+          ],
+        );
+        await this.eventPublisher.publishPaymentLateDetected(
+          {
+            paymentId: chargeTx.id,
+            orderId: chargeTx.order_id,
+            provider,
+            providerTransactionId: providerTxId,
+            amountVnd,
+            detectedAt: new Date().toISOString(),
+            recommendedAction: 'AUTO_REFUND_REVIEW',
+          },
+          correlationId,
+        );
+      } else {
+        await this.eventPublisher.publishPaymentSucceeded(
+          {
+            paymentId: chargeTx.id,
+            orderId: chargeTx.order_id,
+            provider,
+            providerTransactionId: providerTxId,
+            amountVnd,
+            paidAt,
+          },
+          correlationId,
+          canonicalEventId,
+        );
+      }
+    }
+
+    return {
+      ok: true,
+      deduplicated: false,
+      processed: true,
+      provider,
+      providerEventId,
+      transactionId: chargeTx.id,
+      orderId: chargeTx.order_id,
+      orderCode: chargeTx.order_code,
+      amountVnd,
+      status:
+        downstreamOrderStatus === 'LATE_PAYMENT_NEEDS_REFUND'
+          ? PaymentTransactionStatus.LATE_SUCCEEDED
+          : nextTxStatus,
+      orderStatus: downstreamOrderStatus,
+    };
   }
 
   private async notifyOrderRmaPaymentSucceeded(
@@ -421,7 +1024,25 @@ export class PaymentsService {
     // (a) Strict HMAC-SHA256 verification using crypto.timingSafeEqual
     const secret = this.config.webhookSecrets[provider];
     const signatureValid = verifyHmacSha256Signature(rawBodyString, signatureHeader, secret);
+
     if (!signatureValid) {
+      const rawObj =
+        bodyObj && typeof bodyObj === 'object' && !Array.isArray(bodyObj)
+          ? (bodyObj as Record<string, unknown>)
+          : {};
+      const failedOrderCode =
+        typeof rawObj.orderCode === 'string' && rawObj.orderCode.trim()
+          ? rawObj.orderCode.trim()
+          : null;
+      await this.logInvalidSignatureWebhook({
+        provider,
+        orderCode: failedOrderCode,
+        eventIdHint: String(rawObj.providerEventId ?? rawObj.eventId ?? 'unknown'),
+        signatureHeader: signatureHeader ?? null,
+        summary: `HMAC-SHA256 verification failed for ${provider}${failedOrderCode ? ` (${failedOrderCode})` : ''}`,
+        rawPayload: rawObj,
+      });
+
       throw new PaymentApiException(
         HttpStatus.UNAUTHORIZED,
         ErrorCode.PAYMENT_SIGNATURE_INVALID,
@@ -458,30 +1079,10 @@ export class PaymentsService {
       );
     }
 
-    // (b) Match CHARGE transaction and strictly verify exact amountVnd
-    const txRes = input.orderCode
-      ? await this.db.query<PaymentTransactionRow>(
-          `
-          SELECT * FROM payment_transactions
-          WHERE order_code = $1 AND tx_type = 'CHARGE'
-          ORDER BY created_at DESC
-          LIMIT 1
-          `,
-          [input.orderCode],
-        )
-      : UUID_REGEX.test(input.orderId ?? '')
-        ? await this.db.query<PaymentTransactionRow>(
-            `
-            SELECT * FROM payment_transactions
-            WHERE order_id = $1 AND tx_type = 'CHARGE'
-            ORDER BY created_at DESC
-            LIMIT 1
-            `,
-            [input.orderId],
-          )
-        : { rows: [] as PaymentTransactionRow[] };
-
-    const chargeTx = txRes.rows[0];
+    const chargeTx = await this.findChargeTransaction({
+      orderCode: input.orderCode,
+      orderId: input.orderId,
+    });
     if (!chargeTx) {
       throw new PaymentApiException(
         HttpStatus.NOT_FOUND,
@@ -511,183 +1112,736 @@ export class PaymentsService {
         ? PaymentTransactionStatus.FAILED
         : PaymentTransactionStatus.SUCCEEDED;
 
-    // (c) & (d) ACID Webhook Idempotency + State Commit inside one transaction
-    const processed = await this.db.transaction(async (txDb) => {
-      const dedupRes = await txDb.query<{ provider_event_id: string }>(
-        `
-        INSERT INTO processed_webhooks (provider, provider_event_id, order_code)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (provider, provider_event_id) DO NOTHING
-        RETURNING provider_event_id
-        `,
-        [provider, providerEventId, chargeTx.order_code],
-      );
+    const rawObj =
+      bodyObj && typeof bodyObj === 'object' && !Array.isArray(bodyObj)
+        ? (bodyObj as Record<string, unknown>)
+        : {};
 
-      if (dedupRes.rows.length === 0) {
-        return false;
-      }
-
-      const nextPaidAt =
-        nextTxStatus === PaymentTransactionStatus.SUCCEEDED ? paidAt : null;
-
-      await txDb.query(
-        `
-        UPDATE payment_transactions
-        SET
-          status = $2,
-          signature_verified = TRUE,
-          provider_tx_id = $3,
-          raw_payload_jsonb = $4::jsonb,
-          paid_at = COALESCE($5::timestamptz, paid_at)
-        WHERE id = $1
-        `,
-        [
-          chargeTx.id,
-          nextTxStatus,
-          providerTxId,
-          JSON.stringify(bodyObj ?? {}),
-          nextPaidAt,
-        ],
-      );
-
-      if (nextTxStatus === PaymentTransactionStatus.SUCCEEDED) {
-        await txDb.query(
-          `
-          UPDATE voucher_redemptions
-          SET status = 'REDEEMED'
-          WHERE order_id = $1 AND status = 'LOCKED'
-          `,
-          [chargeTx.order_id],
-        );
-
-        await txDb.query(
-          `
-          INSERT INTO outbox_events (id, event_name, payload_jsonb, published)
-          VALUES ($1, 'payment.succeeded', $2::jsonb, FALSE)
-          `,
-          [
-            randomUUID(),
-            JSON.stringify({
-              eventId: `${provider}:${providerEventId}`,
-              paymentId: chargeTx.id,
-              orderId: chargeTx.order_id,
-              orderCode: chargeTx.order_code,
-              provider,
-              providerTransactionId: providerTxId,
-              amountVnd: expectedAmountVnd,
-              paidAt,
-            }),
-          ],
-        );
-      }
-
-      return true;
+    return this.settleVerifiedProviderCallback({
+      provider,
+      providerEventId,
+      chargeTx,
+      providerTxId,
+      amountVnd: expectedAmountVnd,
+      nextTxStatus,
+      paidAt,
+      signatureHeader: signatureHeader ?? null,
+      rawPayloadObj: rawObj,
+      correlationId,
+      traceparent,
     });
+  }
 
-    if (!processed) {
-      return {
-        ok: true,
-        deduplicated: true,
-        processed: false,
-        provider,
-        providerEventId,
-        transactionId: chargeTx.id,
-        orderId: chargeTx.order_id,
-        orderCode: chargeTx.order_code,
-        amountVnd: expectedAmountVnd,
-        status: chargeTx.status,
-      };
+  /**
+   * Official VNPay v2.1.0 IPN handler (GET or POST).
+   * Returns VNPay canonical `{ RspCode, Message }` response codes (`00`, `01`, `02`, `04`, `97`).
+   */
+  async handleVnpayIpn(
+    rawParams: Record<string, unknown>,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<VnpayIpnResponseDTO> {
+    const orderCode = toSingleQueryValue(rawParams.vnp_TxnRef).trim();
+    const secureHash = toSingleQueryValue(rawParams.vnp_SecureHash).trim();
+
+    if (!this.vnpayAdapter.verifySignature(rawParams)) {
+      await this.logInvalidSignatureWebhook({
+        provider: PaymentProvider.VNPAY,
+        orderCode: orderCode || null,
+        eventIdHint: toSingleQueryValue(rawParams.vnp_TransactionNo) || orderCode || 'vnpay-ipn',
+        signatureHeader: secureHash || null,
+        summary: `VNPay IPN HMAC-SHA512 checksum invalid${orderCode ? ` (${orderCode})` : ''}`,
+        rawPayload: rawParams,
+      });
+      return { RspCode: '97', Message: 'Invalid Checksum' };
     }
 
-    let downstreamOrderStatus: string | null = null;
-    if (nextTxStatus === PaymentTransactionStatus.SUCCEEDED) {
-      const canonicalEventId = `${provider}:${providerEventId}`;
-      downstreamOrderStatus = await this.notifyOrderRmaPaymentSucceeded(
-        {
-          eventId: canonicalEventId,
-          orderId: chargeTx.order_id,
-          orderCode: chargeTx.order_code,
-          paymentId: chargeTx.id,
-          provider,
-          providerTransactionId: providerTxId,
-          amountVnd: expectedAmountVnd,
-          paidAt,
-        },
-        correlationId,
-        traceparent,
-      );
+    if (!orderCode) {
+      return { RspCode: '01', Message: 'Order not Found' };
+    }
 
-      if (downstreamOrderStatus === 'LATE_PAYMENT_NEEDS_REFUND') {
-        await this.db.query(
-          `
-          UPDATE payment_transactions
-          SET status = 'LATE_SUCCEEDED'
-          WHERE id = $1
-          `,
-          [chargeTx.id],
-        );
-        await this.db.query(
-          `
-          INSERT INTO outbox_events (id, event_name, payload_jsonb, published)
-          VALUES ($1, 'payment.late.detected', $2::jsonb, FALSE)
-          `,
-          [
-            randomUUID(),
-            JSON.stringify({
-              paymentId: chargeTx.id,
-              orderId: chargeTx.order_id,
-              orderCode: chargeTx.order_code,
-              provider,
-              providerTransactionId: providerTxId,
-              amountVnd: expectedAmountVnd,
-              detectedAt: new Date().toISOString(),
-              recommendedAction: 'AUTO_REFUND_REVIEW',
-            }),
-          ],
-        );
-        await this.eventPublisher.publishPaymentLateDetected(
-          {
-            paymentId: chargeTx.id,
-            orderId: chargeTx.order_id,
-            provider,
-            providerTransactionId: providerTxId,
-            amountVnd: expectedAmountVnd,
-            detectedAt: new Date().toISOString(),
-            recommendedAction: 'AUTO_REFUND_REVIEW',
-          },
+    const chargeTx = await this.findChargeTransaction({ orderCode });
+    if (!chargeTx) {
+      return { RspCode: '01', Message: 'Order not Found' };
+    }
+
+    const rawVnpAmount = Number(toSingleQueryValue(rawParams.vnp_Amount));
+    const expectedAmountVnd = Number(chargeTx.amount_vnd);
+    if (
+      !Number.isFinite(rawVnpAmount) ||
+      Math.round(rawVnpAmount) !== expectedAmountVnd * 100
+    ) {
+      return { RspCode: '04', Message: 'Invalid amount' };
+    }
+
+    if (
+      chargeTx.status === PaymentTransactionStatus.SUCCEEDED ||
+      chargeTx.status === PaymentTransactionStatus.LATE_SUCCEEDED ||
+      chargeTx.status === PaymentTransactionStatus.REFUNDED
+    ) {
+      return { RspCode: '02', Message: 'Order already confirmed' };
+    }
+
+    const responseCode = toSingleQueryValue(rawParams.vnp_ResponseCode).trim();
+    const transactionStatus = toSingleQueryValue(rawParams.vnp_TransactionStatus).trim();
+    const transactionNo = toSingleQueryValue(rawParams.vnp_TransactionNo).trim();
+    const payDate = toSingleQueryValue(rawParams.vnp_PayDate).trim();
+
+    const isPaid =
+      responseCode === '00' &&
+      (transactionStatus === '' || transactionStatus === '00');
+    const providerEventId = transactionNo
+      ? `vnpay:${transactionNo}`
+      : `vnpay:${orderCode}:${payDate || responseCode || 'ipn'}`;
+
+    const result = await this.settleVerifiedProviderCallback({
+      provider: PaymentProvider.VNPAY,
+      providerEventId,
+      chargeTx,
+      providerTxId: transactionNo || providerEventId,
+      amountVnd: expectedAmountVnd,
+      nextTxStatus: isPaid
+        ? PaymentTransactionStatus.SUCCEEDED
+        : PaymentTransactionStatus.FAILED,
+      paidAt: new Date().toISOString(),
+      signatureHeader: secureHash || null,
+      rawPayloadObj: {
+        ...rawParams,
+        vnp_PayDate: payDate || undefined,
+      },
+      correlationId,
+      traceparent,
+    });
+
+    if (result.deduplicated) {
+      return { RspCode: '02', Message: 'Order already confirmed' };
+    }
+
+    return { RspCode: '00', Message: 'Confirm Success' };
+  }
+
+  /**
+   * Official MoMo v2 IPN webhook handler (HMAC-SHA256 verified + deduplicated).
+   */
+  async handleMomoIpn(
+    rawBody: unknown,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<WebhookProcessResult & { resultCode: number; message: string }> {
+    const bodyRec =
+      rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
+        ? (rawBody as Record<string, unknown>)
+        : {};
+    const orderCode = toSingleQueryValue(bodyRec.orderId).trim();
+    const signature = toSingleQueryValue(bodyRec.signature).trim();
+
+    if (!this.momoAdapter.verifyIpnSignature(bodyRec)) {
+      await this.logInvalidSignatureWebhook({
+        provider: PaymentProvider.MOMO,
+        orderCode: orderCode || null,
+        eventIdHint:
+          toSingleQueryValue(bodyRec.transId) ||
+          toSingleQueryValue(bodyRec.requestId) ||
+          orderCode ||
+          'momo-ipn',
+        signatureHeader: signature || null,
+        summary: `MoMo IPN HMAC-SHA256 signature invalid${orderCode ? ` (${orderCode})` : ''}`,
+        rawPayload: bodyRec,
+      });
+      throw new PaymentApiException(
+        HttpStatus.UNAUTHORIZED,
+        ErrorCode.PAYMENT_SIGNATURE_INVALID,
+        'Chữ ký HMAC-SHA256 của MoMo IPN không hợp lệ. / Invalid MoMo IPN HMAC-SHA256 signature.',
+        { provider: PaymentProvider.MOMO },
+      );
+    }
+
+    if (!orderCode) {
+      throw new PaymentApiException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Thiếu orderId trong MoMo IPN. / Missing orderId in MoMo IPN.',
+      );
+    }
+
+    const chargeTx = await this.findChargeTransaction({ orderCode });
+    if (!chargeTx) {
+      throw new PaymentApiException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy giao dịch MoMo cho đơn hàng "${orderCode}". / Payment transaction not found.`,
+      );
+    }
+
+    const receivedAmountVnd = Math.round(Number(toSingleQueryValue(bodyRec.amount)));
+    const expectedAmountVnd = Number(chargeTx.amount_vnd);
+    if (!Number.isFinite(receivedAmountVnd) || receivedAmountVnd !== expectedAmountVnd) {
+      throw new PaymentApiException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.PAYMENT_AMOUNT_MISMATCH,
+        `Số tiền MoMo IPN (${receivedAmountVnd.toLocaleString('vi-VN')}₫) không khớp đơn hàng (${expectedAmountVnd.toLocaleString('vi-VN')}₫). / MoMo IPN amount mismatch.`,
+        {
+          orderCode: chargeTx.order_code,
+          expectedAmountVnd,
+          receivedAmountVnd,
+        },
+      );
+    }
+
+    const resultCode = Number(toSingleQueryValue(bodyRec.resultCode));
+    const transId = toSingleQueryValue(bodyRec.transId).trim();
+    const requestId = toSingleQueryValue(bodyRec.requestId).trim();
+    const isPaid = resultCode === 0;
+    const providerEventId = transId
+      ? `momo:${transId}`
+      : `momo:${requestId || orderCode}`;
+
+    const result = await this.settleVerifiedProviderCallback({
+      provider: PaymentProvider.MOMO,
+      providerEventId,
+      chargeTx,
+      providerTxId: transId || providerEventId,
+      amountVnd: expectedAmountVnd,
+      nextTxStatus: isPaid
+        ? PaymentTransactionStatus.SUCCEEDED
+        : PaymentTransactionStatus.FAILED,
+      paidAt: new Date().toISOString(),
+      signatureHeader: signature || null,
+      rawPayloadObj: {
+        ...bodyRec,
+        momoTransId: transId || undefined,
+      },
+      correlationId,
+      traceparent,
+    });
+
+    return {
+      ...result,
+      resultCode: 0,
+      message: 'Success',
+    };
+  }
+
+  /**
+   * Official PayOS v2 Webhook handler (HMAC-SHA256 verified over sorted `data` fields).
+   */
+  async handlePayOsWebhook(
+    rawBody: unknown,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<WebhookProcessResult> {
+    const bodyRec =
+      rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
+        ? (rawBody as Record<string, unknown>)
+        : {};
+    const dataRec =
+      bodyRec.data && typeof bodyRec.data === 'object' && !Array.isArray(bodyRec.data)
+        ? (bodyRec.data as Record<string, unknown>)
+        : null;
+
+    const rawPayosOrderCode = dataRec ? toSingleQueryValue(dataRec.orderCode).trim() : '';
+    const signature = toSingleQueryValue(bodyRec.signature).trim();
+
+    if (!dataRec || !this.payosAdapter.verifyWebhookSignature(bodyRec)) {
+      await this.logInvalidSignatureWebhook({
+        provider: PaymentProvider.VIETQR,
+        orderCode: rawPayosOrderCode || null,
+        eventIdHint:
+          (dataRec && toSingleQueryValue(dataRec.reference)) ||
+          rawPayosOrderCode ||
+          'payos-webhook',
+        signatureHeader: signature || null,
+        summary: `PayOS webhook HMAC-SHA256 signature invalid${rawPayosOrderCode ? ` (${rawPayosOrderCode})` : ''}`,
+        rawPayload: bodyRec,
+      });
+      throw new PaymentApiException(
+        HttpStatus.UNAUTHORIZED,
+        ErrorCode.PAYMENT_SIGNATURE_INVALID,
+        'Chữ ký HMAC-SHA256 của webhook PayOS không hợp lệ. / Invalid PayOS webhook HMAC-SHA256 signature.',
+        { provider: PaymentProvider.VIETQR },
+      );
+    }
+
+    const description = toSingleQueryValue(dataRec.description).trim();
+    const descMatch = /TAMXUAN\s+([A-Za-z0-9_-]+)/i.exec(description);
+    const paymentLinkId = toSingleQueryValue(dataRec.paymentLinkId).trim();
+
+    const chargeTx = await this.findChargeTransaction({
+      orderCode: rawPayosOrderCode || descMatch?.[1] || null,
+      payosOrderCode: rawPayosOrderCode || null,
+      providerTxId: paymentLinkId || null,
+    });
+
+    if (!chargeTx && descMatch?.[1]) {
+      // Fallback search by extracted description order code
+      const descTx = await this.findChargeTransaction({ orderCode: descMatch[1] });
+      if (descTx) {
+        return this.finalizePayOsWebhook(
+          descTx,
+          bodyRec,
+          dataRec,
+          signature,
           correlationId,
-        );
-      } else {
-        await this.eventPublisher.publishPaymentSucceeded(
-          {
-            paymentId: chargeTx.id,
-            orderId: chargeTx.order_id,
-            provider,
-            providerTransactionId: providerTxId,
-            amountVnd: expectedAmountVnd,
-            paidAt,
-          },
-          correlationId,
-          canonicalEventId,
+          traceparent,
         );
       }
+    }
+
+    if (!chargeTx) {
+      throw new PaymentApiException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy giao dịch VietQR/PayOS cho mã "${rawPayosOrderCode || paymentLinkId}". / Payment transaction not found.`,
+      );
+    }
+
+    return this.finalizePayOsWebhook(
+      chargeTx,
+      bodyRec,
+      dataRec,
+      signature,
+      correlationId,
+      traceparent,
+    );
+  }
+
+  private async finalizePayOsWebhook(
+    chargeTx: PaymentTransactionRow,
+    bodyRec: Record<string, unknown>,
+    dataRec: Record<string, unknown>,
+    signature: string,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<WebhookProcessResult> {
+    const receivedAmountVnd = Math.round(Number(toSingleQueryValue(dataRec.amount)));
+    const expectedAmountVnd = Number(chargeTx.amount_vnd);
+    if (!Number.isFinite(receivedAmountVnd) || receivedAmountVnd !== expectedAmountVnd) {
+      throw new PaymentApiException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.PAYMENT_AMOUNT_MISMATCH,
+        `Số tiền PayOS (${receivedAmountVnd.toLocaleString('vi-VN')}₫) không khớp đơn hàng (${expectedAmountVnd.toLocaleString('vi-VN')}₫). / PayOS webhook amount mismatch.`,
+        {
+          orderCode: chargeTx.order_code,
+          expectedAmountVnd,
+          receivedAmountVnd,
+        },
+      );
+    }
+
+    const reference = toSingleQueryValue(dataRec.reference).trim();
+    const paymentLinkId = toSingleQueryValue(dataRec.paymentLinkId).trim();
+    const payosCode = toSingleQueryValue(bodyRec.code || '00').trim();
+    const dataCode = toSingleQueryValue(dataRec.code || '00').trim();
+    const isPaid =
+      payosCode === '00' && dataCode === '00' && bodyRec.success !== false;
+
+    const providerEventId = `payos:${reference || paymentLinkId || toSingleQueryValue(dataRec.orderCode)}`;
+
+    return this.settleVerifiedProviderCallback({
+      provider: PaymentProvider.VIETQR,
+      providerEventId,
+      chargeTx,
+      providerTxId: reference || paymentLinkId || providerEventId,
+      amountVnd: expectedAmountVnd,
+      nextTxStatus: isPaid
+        ? PaymentTransactionStatus.SUCCEEDED
+        : PaymentTransactionStatus.FAILED,
+      paidAt: new Date().toISOString(),
+      signatureHeader: signature || null,
+      rawPayloadObj: bodyRec,
+      correlationId,
+      traceparent,
+    });
+  }
+
+  /**
+   * Verifies Return URL query params from VNPay, MoMo, or PayOS/VietQR,
+   * syncs verified payment status idempotently, and returns structured UI status.
+   */
+  async handlePaymentReturn(
+    rawQuery: Record<string, unknown>,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<PaymentReturnVerificationDTO> {
+    const hasVnpay =
+      Boolean(toSingleQueryValue(rawQuery.vnp_TxnRef)) ||
+      Boolean(toSingleQueryValue(rawQuery.vnp_SecureHash)) ||
+      Boolean(toSingleQueryValue(rawQuery.vnp_ResponseCode));
+
+    const hasMomo =
+      Boolean(toSingleQueryValue(rawQuery.partnerCode)) ||
+      (Boolean(toSingleQueryValue(rawQuery.orderId)) &&
+        toSingleQueryValue(rawQuery.resultCode) !== '');
+
+    if (hasVnpay) {
+      return this.verifyVnpayReturn(rawQuery, correlationId, traceparent);
+    }
+    if (hasMomo) {
+      return this.verifyMomoReturn(rawQuery, correlationId, traceparent);
+    }
+
+    const payosOrderCode = toSingleQueryValue(rawQuery.orderCode).trim();
+    const payosLinkId = toSingleQueryValue(rawQuery.id).trim();
+    if (payosOrderCode || payosLinkId) {
+      return this.verifyPayOsReturn(rawQuery, correlationId, traceparent);
     }
 
     return {
-      ok: true,
-      deduplicated: false,
-      processed: true,
-      provider,
+      verified: false,
+      paid: false,
+      status: 'INVALID_REQUEST',
+      orderCode: null,
+      provider: null,
+      amountVnd: null,
+      message: 'Không tìm thấy tham số xác thực kết quả thanh toán từ cổng giao dịch.',
+      responseCode: 'MISSING_PARAMS',
+      transactionId: null,
+      orderStatus: null,
+    };
+  }
+
+  private async verifyVnpayReturn(
+    rawQuery: Record<string, unknown>,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<PaymentReturnVerificationDTO> {
+    const orderCode = toSingleQueryValue(rawQuery.vnp_TxnRef).trim() || null;
+    const responseCode = toSingleQueryValue(rawQuery.vnp_ResponseCode).trim() || null;
+    const transactionStatus = toSingleQueryValue(rawQuery.vnp_TransactionStatus).trim();
+    const transactionNo = toSingleQueryValue(rawQuery.vnp_TransactionNo).trim();
+    const payDate = toSingleQueryValue(rawQuery.vnp_PayDate).trim();
+    const rawAmount = Number(toSingleQueryValue(rawQuery.vnp_Amount));
+    const parsedAmountVnd =
+      Number.isFinite(rawAmount) && rawAmount > 0 ? Math.round(rawAmount / 100) : null;
+
+    const sigValid = this.vnpayAdapter.verifySignature(rawQuery);
+    if (!sigValid) {
+      return {
+        verified: false,
+        paid: false,
+        status: 'SIGNATURE_INVALID',
+        orderCode,
+        provider: PaymentProvider.VNPAY,
+        amountVnd: parsedAmountVnd,
+        message: 'Chữ ký xác thực VNPay (HMAC-SHA512) không hợp lệ. Vui lòng không tin cậy liên kết này.',
+        responseCode: responseCode ?? '97',
+        transactionId: null,
+        orderStatus: null,
+      };
+    }
+
+    const chargeTx = orderCode
+      ? await this.findChargeTransaction({ orderCode })
+      : null;
+
+    if (!chargeTx) {
+      return {
+        verified: true,
+        paid: false,
+        status: 'NOT_FOUND',
+        orderCode,
+        provider: PaymentProvider.VNPAY,
+        amountVnd: parsedAmountVnd,
+        message: `Không tìm thấy giao dịch VNPay tương ứng với đơn hàng ${orderCode ?? ''}.`,
+        responseCode: responseCode ?? '01',
+        transactionId: null,
+        orderStatus: null,
+      };
+    }
+
+    const expectedAmountVnd = Number(chargeTx.amount_vnd);
+    if (parsedAmountVnd !== null && parsedAmountVnd !== expectedAmountVnd) {
+      return {
+        verified: false,
+        paid: false,
+        status: 'AMOUNT_MISMATCH',
+        orderCode: chargeTx.order_code,
+        provider: PaymentProvider.VNPAY,
+        amountVnd: parsedAmountVnd,
+        message: 'Số tiền phản hồi từ VNPay không khớp với giá trị đơn hàng.',
+        responseCode: '04',
+        transactionId: chargeTx.id,
+        orderStatus: null,
+      };
+    }
+
+    const isPaid =
+      responseCode === '00' &&
+      (transactionStatus === '' || transactionStatus === '00');
+
+    const providerEventId = transactionNo
+      ? `vnpay:${transactionNo}`
+      : `vnpay:${chargeTx.order_code}:${payDate || responseCode || 'return'}`;
+
+    const settled = await this.settleVerifiedProviderCallback({
+      provider: PaymentProvider.VNPAY,
       providerEventId,
-      transactionId: chargeTx.id,
-      orderId: chargeTx.order_id,
-      orderCode: chargeTx.order_code,
+      chargeTx,
+      providerTxId: transactionNo || providerEventId,
       amountVnd: expectedAmountVnd,
-      status:
-        downstreamOrderStatus === 'LATE_PAYMENT_NEEDS_REFUND'
-          ? PaymentTransactionStatus.LATE_SUCCEEDED
-          : nextTxStatus,
-      orderStatus: downstreamOrderStatus,
+      nextTxStatus: isPaid
+        ? PaymentTransactionStatus.SUCCEEDED
+        : PaymentTransactionStatus.FAILED,
+      paidAt: new Date().toISOString(),
+      signatureHeader: toSingleQueryValue(rawQuery.vnp_SecureHash) || null,
+      rawPayloadObj: rawQuery,
+      correlationId,
+      traceparent,
+    });
+
+    const finalPaid =
+      isPaid ||
+      settled.status === PaymentTransactionStatus.SUCCEEDED ||
+      settled.status === PaymentTransactionStatus.LATE_SUCCEEDED;
+
+    return {
+      verified: true,
+      paid: finalPaid,
+      status: finalPaid
+        ? settled.status
+        : responseCode === '24'
+          ? 'CANCELLED'
+          : 'FAILED',
+      orderCode: chargeTx.order_code,
+      provider: PaymentProvider.VNPAY,
+      amountVnd: expectedAmountVnd,
+      message: describeVnpayResponseCode(responseCode ?? ''),
+      responseCode,
+      transactionId: chargeTx.id,
+      orderStatus: settled.orderStatus ?? null,
+    };
+  }
+
+  private async verifyMomoReturn(
+    rawQuery: Record<string, unknown>,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<PaymentReturnVerificationDTO> {
+    const orderCode = toSingleQueryValue(rawQuery.orderId).trim() || null;
+    const resultCode = toSingleQueryValue(rawQuery.resultCode).trim();
+    const transId = toSingleQueryValue(rawQuery.transId).trim();
+    const requestId = toSingleQueryValue(rawQuery.requestId).trim();
+    const momoMsg = toSingleQueryValue(rawQuery.message).trim();
+    const rawAmount = Number(toSingleQueryValue(rawQuery.amount));
+    const parsedAmountVnd =
+      Number.isFinite(rawAmount) && rawAmount > 0 ? Math.round(rawAmount) : null;
+
+    const sigValid = this.momoAdapter.verifyIpnSignature(rawQuery);
+    if (!sigValid) {
+      return {
+        verified: false,
+        paid: false,
+        status: 'SIGNATURE_INVALID',
+        orderCode,
+        provider: PaymentProvider.MOMO,
+        amountVnd: parsedAmountVnd,
+        message: 'Chữ ký xác thực MoMo (HMAC-SHA256) không hợp lệ. Giao dịch không được xác nhận.',
+        responseCode: resultCode || 'INVALID_SIGNATURE',
+        transactionId: null,
+        orderStatus: null,
+      };
+    }
+
+    const chargeTx = orderCode
+      ? await this.findChargeTransaction({ orderCode })
+      : null;
+
+    if (!chargeTx) {
+      return {
+        verified: true,
+        paid: false,
+        status: 'NOT_FOUND',
+        orderCode,
+        provider: PaymentProvider.MOMO,
+        amountVnd: parsedAmountVnd,
+        message: `Không tìm thấy giao dịch MoMo cho đơn hàng ${orderCode ?? ''}.`,
+        responseCode: resultCode || '404',
+        transactionId: null,
+        orderStatus: null,
+      };
+    }
+
+    const expectedAmountVnd = Number(chargeTx.amount_vnd);
+    if (parsedAmountVnd !== null && parsedAmountVnd !== expectedAmountVnd) {
+      return {
+        verified: false,
+        paid: false,
+        status: 'AMOUNT_MISMATCH',
+        orderCode: chargeTx.order_code,
+        provider: PaymentProvider.MOMO,
+        amountVnd: parsedAmountVnd,
+        message: 'Số tiền phản hồi từ MoMo không khớp với giá trị đơn hàng.',
+        responseCode: 'AMOUNT_MISMATCH',
+        transactionId: chargeTx.id,
+        orderStatus: null,
+      };
+    }
+
+    const isPaid = resultCode === '0';
+    const providerEventId = transId
+      ? `momo:${transId}`
+      : `momo:${requestId || chargeTx.order_code}`;
+
+    const settled = await this.settleVerifiedProviderCallback({
+      provider: PaymentProvider.MOMO,
+      providerEventId,
+      chargeTx,
+      providerTxId: transId || providerEventId,
+      amountVnd: expectedAmountVnd,
+      nextTxStatus: isPaid
+        ? PaymentTransactionStatus.SUCCEEDED
+        : PaymentTransactionStatus.FAILED,
+      paidAt: new Date().toISOString(),
+      signatureHeader: toSingleQueryValue(rawQuery.signature) || null,
+      rawPayloadObj: {
+        ...rawQuery,
+        momoTransId: transId || undefined,
+      },
+      correlationId,
+      traceparent,
+    });
+
+    const finalPaid =
+      isPaid ||
+      settled.status === PaymentTransactionStatus.SUCCEEDED ||
+      settled.status === PaymentTransactionStatus.LATE_SUCCEEDED;
+
+    return {
+      verified: true,
+      paid: finalPaid,
+      status: finalPaid
+        ? settled.status
+        : resultCode === '1006'
+          ? 'CANCELLED'
+          : 'FAILED',
+      orderCode: chargeTx.order_code,
+      provider: PaymentProvider.MOMO,
+      amountVnd: expectedAmountVnd,
+      message: describeMomoResultCode(resultCode, momoMsg),
+      responseCode: resultCode || null,
+      transactionId: chargeTx.id,
+      orderStatus: settled.orderStatus ?? null,
+    };
+  }
+
+  private async verifyPayOsReturn(
+    rawQuery: Record<string, unknown>,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<PaymentReturnVerificationDTO> {
+    const orderCodeParam = toSingleQueryValue(rawQuery.orderCode).trim();
+    const linkIdParam = toSingleQueryValue(rawQuery.id).trim();
+    const statusParam = toSingleQueryValue(rawQuery.status).trim().toUpperCase();
+    const cancelParam = toSingleQueryValue(rawQuery.cancel).trim().toLowerCase();
+    const codeParam = toSingleQueryValue(rawQuery.code).trim() || null;
+
+    const chargeTx = await this.findChargeTransaction({
+      orderCode: orderCodeParam || null,
+      payosOrderCode: orderCodeParam || null,
+      providerTxId: linkIdParam || null,
+    });
+
+    if (!chargeTx) {
+      return {
+        verified: false,
+        paid: false,
+        status: 'NOT_FOUND',
+        orderCode: orderCodeParam || null,
+        provider: PaymentProvider.VIETQR,
+        amountVnd: null,
+        message: 'Không tìm thấy giao dịch VietQR / PayOS tương ứng.',
+        responseCode: codeParam ?? '404',
+        transactionId: null,
+        orderStatus: null,
+      };
+    }
+
+    const amountVnd = Number(chargeTx.amount_vnd);
+
+    if (
+      chargeTx.status === PaymentTransactionStatus.SUCCEEDED ||
+      chargeTx.status === PaymentTransactionStatus.LATE_SUCCEEDED
+    ) {
+      return {
+        verified: true,
+        paid: true,
+        status: chargeTx.status,
+        orderCode: chargeTx.order_code,
+        provider: PaymentProvider.VIETQR,
+        amountVnd,
+        message: 'Thanh toán VietQR / PayOS đã được đối soát thành công.',
+        responseCode: codeParam ?? '00',
+        transactionId: chargeTx.id,
+        orderStatus: null,
+      };
+    }
+
+    // If PayOS live API is configured, verify server-to-server instead of trusting query params
+    if (this.payosAdapter.isLiveConfigured && chargeTx.status === PaymentTransactionStatus.PENDING) {
+      const rawMeta = parseJsonRecord(chargeTx.raw_payload_jsonb);
+      const lookupId =
+        chargeTx.provider_tx_id ||
+        linkIdParam ||
+        (rawMeta?.payosOrderCode ? String(rawMeta.payosOrderCode) : '');
+      if (lookupId) {
+        const liveStatus = await this.payosAdapter.fetchLivePaymentStatus(lookupId);
+        if (liveStatus.ok && liveStatus.status === 'PAID' && liveStatus.amountPaid >= amountVnd) {
+          const settled = await this.settleVerifiedProviderCallback({
+            provider: PaymentProvider.VIETQR,
+            providerEventId: `payos:${lookupId}`,
+            chargeTx,
+            providerTxId: lookupId,
+            amountVnd,
+            nextTxStatus: PaymentTransactionStatus.SUCCEEDED,
+            paidAt: new Date().toISOString(),
+            signatureHeader: null,
+            rawPayloadObj: liveStatus.rawResponse ?? rawQuery,
+            correlationId,
+            traceparent,
+          });
+          return {
+            verified: true,
+            paid: true,
+            status: settled.status,
+            orderCode: chargeTx.order_code,
+            provider: PaymentProvider.VIETQR,
+            amountVnd,
+            message: 'Thanh toán PayOS đã được xác thực trực tiếp từ máy chủ PayOS.',
+            responseCode: '00',
+            transactionId: chargeTx.id,
+            orderStatus: settled.orderStatus ?? null,
+          };
+        }
+      }
+    }
+
+    if (cancelParam === 'true' || statusParam === 'CANCELLED') {
+      return {
+        verified: true,
+        paid: false,
+        status: 'CANCELLED',
+        orderCode: chargeTx.order_code,
+        provider: PaymentProvider.VIETQR,
+        amountVnd,
+        message: 'Bạn đã hủy thao tác thanh toán VietQR / PayOS.',
+        responseCode: codeParam ?? 'CANCELLED',
+        transactionId: chargeTx.id,
+        orderStatus: null,
+      };
+    }
+
+    return {
+      verified: true,
+      paid: false,
+      status: chargeTx.status,
+      orderCode: chargeTx.order_code,
+      provider: PaymentProvider.VIETQR,
+      amountVnd,
+      message:
+        'Giao dịch đang chờ đối soát tự động từ ngân hàng. Vui lòng đợi vài giây hoặc kiểm tra lại.',
+      responseCode: codeParam ?? 'PENDING',
+      transactionId: chargeTx.id,
+      orderStatus: null,
     };
   }
 
@@ -723,29 +1877,10 @@ export class PaymentsService {
       );
     }
 
-    const txRes = input.orderCode
-      ? await this.db.query<PaymentTransactionRow>(
-          `
-          SELECT * FROM payment_transactions
-          WHERE order_code = $1 AND tx_type = 'CHARGE'
-          ORDER BY created_at DESC
-          LIMIT 1
-          `,
-          [input.orderCode],
-        )
-      : UUID_REGEX.test(input.orderId ?? '')
-        ? await this.db.query<PaymentTransactionRow>(
-            `
-            SELECT * FROM payment_transactions
-            WHERE order_id = $1 AND tx_type = 'CHARGE'
-            ORDER BY created_at DESC
-            LIMIT 1
-            `,
-            [input.orderId],
-          )
-        : { rows: [] as PaymentTransactionRow[] };
-
-    const chargeTx = txRes.rows[0];
+    const chargeTx = await this.findChargeTransaction({
+      orderCode: input.orderCode,
+      orderId: input.orderId,
+    });
     if (!chargeTx) {
       throw new PaymentApiException(
         HttpStatus.NOT_FOUND,
@@ -793,11 +1928,72 @@ export class PaymentsService {
     };
   }
 
+  private async executeProviderRefund(
+    originalCharge: PaymentTransactionRow,
+    amountVnd: number,
+    isFullRefund: boolean,
+    reason: string,
+    clientIp?: string | null,
+  ): Promise<ProviderRefundResult> {
+    const rawMeta = parseJsonRecord(originalCharge.raw_payload_jsonb);
+
+    if (originalCharge.provider === PaymentProvider.VNPAY) {
+      const txDate =
+        typeof rawMeta?.vnp_PayDate === 'string' && rawMeta.vnp_PayDate.trim()
+          ? rawMeta.vnp_PayDate.trim()
+          : typeof rawMeta?.vnpCreateDate === 'string' && rawMeta.vnpCreateDate.trim()
+            ? rawMeta.vnpCreateDate.trim()
+            : null;
+      return this.vnpayAdapter.refundTransaction({
+        orderCode: originalCharge.order_code,
+        amountVnd,
+        isFullRefund,
+        transactionDate: txDate,
+        providerTransactionNo: originalCharge.provider_tx_id,
+        reason,
+        clientIp,
+      });
+    }
+
+    if (originalCharge.provider === PaymentProvider.MOMO) {
+      const transId =
+        (typeof rawMeta?.momoTransId === 'string' && rawMeta.momoTransId.trim()) ||
+        originalCharge.provider_tx_id ||
+        '0';
+      return this.momoAdapter.refundTransaction({
+        orderCode: originalCharge.order_code,
+        amountVnd,
+        transId,
+        reason,
+      });
+    }
+
+    if (originalCharge.provider === PaymentProvider.VIETQR) {
+      return this.payosAdapter.refundTransaction({
+        orderCode: originalCharge.order_code,
+        amountVnd,
+        reason,
+        chargeStatus: originalCharge.status,
+        paymentLinkId: originalCharge.provider_tx_id,
+      });
+    }
+
+    return {
+      ok: true,
+      mode: 'SANDBOX_LOCAL',
+      providerRefundId: `COD-REF-${randomUUID().slice(0, 8).toUpperCase()}`,
+      providerCode: '00',
+      message: 'Hoàn tiền COD nội bộ đã được ghi nhận.',
+      rawResponse: { provider: 'COD', orderCode: originalCharge.order_code, amountVnd },
+    };
+  }
+
   async createRefund(
     rawBody: unknown,
     idempotencyHeader: string | null,
-  ): Promise<RefundResponseDTO> {
-    const parsed = RefundRequestDtoSchema.safeParse(rawBody);
+    clientIp?: string | null,
+  ): Promise<RichRefundResponseDTO> {
+    const parsed = FlexibleRefundRequestSchema.safeParse(rawBody);
     if (!parsed.success) {
       throw new PaymentApiException(
         HttpStatus.BAD_REQUEST,
@@ -808,63 +2004,133 @@ export class PaymentsService {
     }
 
     const input = parsed.data;
-    if (!UUID_REGEX.test(input.orderId)) {
+    if (input.orderId && !UUID_REGEX.test(input.orderId)) {
       throw new PaymentApiException(
         HttpStatus.BAD_REQUEST,
         ErrorCode.VALIDATION_ERROR,
         'orderId phải là UUID hợp lệ. / orderId must be a valid UUID.',
       );
     }
-
-    const idempotencyKey =
-      input.idempotencyKey?.trim() ||
-      idempotencyHeader?.trim() ||
-      `refund:${input.orderId}:${input.rmaId ?? 'order'}:${input.amountVnd}`;
-
-    // Idempotent replay
-    const existingRefundRes = await this.db.query<PaymentTransactionRow>(
-      `
-      SELECT * FROM payment_transactions
-      WHERE idempotency_key = $1 AND tx_type = 'REFUND'
-      LIMIT 1
-      `,
-      [idempotencyKey],
-    );
-    const existingRefund = existingRefundRes.rows[0];
-    if (existingRefund) {
-      const rawMeta = parseJsonRecord(existingRefund.raw_payload_jsonb);
-      return {
-        refundId: existingRefund.id,
-        orderId: existingRefund.order_id,
-        orderCode: existingRefund.order_code,
-        rmaId: typeof rawMeta?.rmaId === 'string' ? rawMeta.rmaId : (input.rmaId ?? null),
-        amountVnd: Number(existingRefund.amount_vnd),
-        status: 'COMPLETED',
-        provider: existingRefund.provider,
-        idempotentReplay: true,
-        refundedAt: toIso(existingRefund.paid_at ?? existingRefund.created_at),
-      };
+    if (input.transactionId && !UUID_REGEX.test(input.transactionId)) {
+      throw new PaymentApiException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'transactionId phải là UUID hợp lệ. / transactionId must be a valid UUID.',
+      );
     }
 
-    const chargeRes = await this.db.query<PaymentTransactionRow>(
-      `
-      SELECT * FROM payment_transactions
-      WHERE (order_id = $1 OR order_code = $2) AND tx_type = 'CHARGE'
-      ORDER BY created_at DESC
-      LIMIT 1
-      `,
-      [input.orderId, input.orderCode],
-    );
+    let chargeRes: { rows: PaymentTransactionRow[] };
+    if (input.transactionId) {
+      chargeRes = await this.db.query<PaymentTransactionRow>(
+        `
+        SELECT * FROM payment_transactions
+        WHERE id = $1::uuid AND tx_type = 'CHARGE'
+        LIMIT 1
+        `,
+        [input.transactionId],
+      );
+    } else if (input.orderId && input.orderCode) {
+      chargeRes = await this.db.query<PaymentTransactionRow>(
+        `
+        SELECT * FROM payment_transactions
+        WHERE (order_id = $1::uuid OR order_code = $2) AND tx_type = 'CHARGE'
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [input.orderId, input.orderCode],
+      );
+    } else if (input.orderId) {
+      chargeRes = await this.db.query<PaymentTransactionRow>(
+        `
+        SELECT * FROM payment_transactions
+        WHERE order_id = $1::uuid AND tx_type = 'CHARGE'
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [input.orderId],
+      );
+    } else {
+      chargeRes = await this.db.query<PaymentTransactionRow>(
+        `
+        SELECT * FROM payment_transactions
+        WHERE order_code = $1 AND tx_type = 'CHARGE'
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [input.orderCode!],
+      );
+    }
+
     const originalCharge = chargeRes.rows[0];
     if (!originalCharge) {
       throw new PaymentApiException(
         HttpStatus.NOT_FOUND,
         ErrorCode.NOT_FOUND,
-        `Không tìm thấy giao dịch gốc cho đơn "${input.orderCode}". / Original charge transaction not found.`,
+        `Không tìm thấy giao dịch gốc cho đơn "${input.orderCode ?? input.orderId ?? input.transactionId}". / Original charge transaction not found.`,
       );
     }
 
+    const idempotencyKey =
+      input.idempotencyKey?.trim() ||
+      idempotencyHeader?.trim() ||
+      `refund:${originalCharge.order_id}:${input.rmaId ?? 'order'}:${input.amountVnd}:${Date.now()}`;
+
     const originalAmountVnd = Number(originalCharge.amount_vnd);
+
+    // Idempotent replay when explicit key or header was supplied (only replay SUCCEEDED refunds)
+    const hasExplicitIdempotency = Boolean(input.idempotencyKey?.trim() || idempotencyHeader?.trim());
+    if (hasExplicitIdempotency) {
+      const existingRefundRes = await this.db.query<PaymentTransactionRow>(
+        `
+        SELECT * FROM payment_transactions
+        WHERE idempotency_key = $1 AND tx_type = 'REFUND' AND status = 'SUCCEEDED'
+        LIMIT 1
+        `,
+        [idempotencyKey],
+      );
+      const existingRefund = existingRefundRes.rows[0];
+      if (existingRefund) {
+        const refundedSumRes = await this.db.query<{ refunded_total: string | number | bigint }>(
+          `
+          SELECT COALESCE(SUM(amount_vnd), 0) AS refunded_total
+          FROM payment_transactions
+          WHERE order_id = $1 AND tx_type = 'REFUND' AND status = 'SUCCEEDED'
+          `,
+          [originalCharge.order_id],
+        );
+        const totalRefundedNow = Number(refundedSumRes.rows[0]?.refunded_total ?? 0);
+        const netNow = Math.max(0, originalAmountVnd - totalRefundedNow);
+        const rawMeta = parseJsonRecord(existingRefund.raw_payload_jsonb);
+        return {
+          refundId: existingRefund.id,
+          refundTxId: existingRefund.id,
+          orderId: existingRefund.order_id,
+          orderCode: existingRefund.order_code,
+          rmaId: typeof rawMeta?.rmaId === 'string' ? rawMeta.rmaId : (input.rmaId ?? null),
+          amountVnd: Number(existingRefund.amount_vnd),
+          status: 'COMPLETED',
+          provider: existingRefund.provider,
+          providerMode:
+            rawMeta?.providerMode === 'LIVE' ? 'LIVE' : 'SANDBOX_LOCAL',
+          providerRefundId: existingRefund.provider_tx_id,
+          idempotentReplay: true,
+          refundedAt: toIso(existingRefund.paid_at ?? existingRefund.created_at),
+          refundedAmountVnd: totalRefundedNow,
+          netRefundableVnd: netNow,
+          before: {
+            status: originalCharge.status,
+            refundedAmountVnd: totalRefundedNow,
+            netRefundableVnd: netNow,
+          },
+          after: {
+            status: originalCharge.status,
+            refundedAmountVnd: totalRefundedNow,
+            netRefundableVnd: netNow,
+          },
+        };
+      }
+    }
+
     const refundedSumRes = await this.db.query<{ refunded_total: string | number | bigint }>(
       `
       SELECT COALESCE(SUM(amount_vnd), 0) AS refunded_total
@@ -874,15 +2140,17 @@ export class PaymentsService {
       [originalCharge.order_id],
     );
     const alreadyRefundedVnd = Number(refundedSumRes.rows[0]?.refunded_total ?? 0);
+    const netRefundableBefore = Math.max(0, originalAmountVnd - alreadyRefundedVnd);
 
-    if (input.amountVnd > originalAmountVnd || alreadyRefundedVnd + input.amountVnd > originalAmountVnd) {
+    if (input.amountVnd <= 0 || input.amountVnd > netRefundableBefore) {
       throw new PaymentApiException(
         HttpStatus.BAD_REQUEST,
-        ErrorCode.VALIDATION_ERROR,
-        `Số tiền hoàn (${input.amountVnd.toLocaleString('vi-VN')}₫) vượt quá số dư có thể hoàn (${Math.max(0, originalAmountVnd - alreadyRefundedVnd).toLocaleString('vi-VN')}₫). / Refund exceeds refundable charge balance.`,
+        ErrorCode.REFUND_EXCEEDS_BALANCE,
+        `Số tiền hoàn (${input.amountVnd.toLocaleString('vi-VN')}₫) vượt quá số dư có thể hoàn (${netRefundableBefore.toLocaleString('vi-VN')}₫). / Refund exceeds net refundable balance.`,
         {
           originalAmountVnd,
           alreadyRefundedVnd,
+          netRefundableVnd: netRefundableBefore,
           requestedRefundVnd: input.amountVnd,
         },
       );
@@ -890,7 +2158,71 @@ export class PaymentsService {
 
     const refundId = randomUUID();
     const refundedAt = new Date().toISOString();
-    const isFullRefund = alreadyRefundedVnd + input.amountVnd >= originalAmountVnd;
+    const nextRefundedTotal = alreadyRefundedVnd + input.amountVnd;
+    const netRefundableAfter = Math.max(0, originalAmountVnd - nextRefundedTotal);
+    const isFullRefund = nextRefundedTotal >= originalAmountVnd;
+    const nextChargeStatus = isFullRefund
+      ? PaymentTransactionStatus.REFUNDED
+      : originalCharge.status;
+
+    // Invoke real provider adapter BEFORE recording refund as SUCCEEDED
+    const providerRefund = await this.executeProviderRefund(
+      originalCharge,
+      input.amountVnd,
+      isFullRefund,
+      input.reason,
+      clientIp,
+    );
+
+    if (!providerRefund.ok) {
+      const failedIdemKey = `failed:${refundId.slice(0, 8)}:${idempotencyKey}`.slice(0, 128);
+      await this.db
+        .query(
+          `
+          INSERT INTO payment_transactions (
+            id, order_id, order_code, provider, tx_type, amount_vnd,
+            status, provider_tx_id, idempotency_key, signature_verified,
+            raw_payload_jsonb, paid_at
+          )
+          VALUES ($1, $2, $3, $4, 'REFUND', $5, 'FAILED', NULL, $6, FALSE, $7::jsonb, NULL)
+          ON CONFLICT (idempotency_key) DO NOTHING
+          `,
+          [
+            refundId,
+            originalCharge.order_id,
+            originalCharge.order_code,
+            originalCharge.provider,
+            input.amountVnd,
+            failedIdemKey,
+            JSON.stringify({
+              reason: input.reason,
+              rmaId: input.rmaId ?? null,
+              originalChargeId: originalCharge.id,
+              fullRefund: isFullRefund,
+              providerMode: providerRefund.mode,
+              providerCode: providerRefund.providerCode,
+              providerMessage: providerRefund.message,
+              rawProviderResponse: providerRefund.rawResponse ?? null,
+            }),
+          ],
+        )
+        .catch(() => undefined);
+
+      throw new PaymentApiException(
+        HttpStatus.BAD_GATEWAY,
+        ErrorCode.DEPENDENCY_UNAVAILABLE,
+        `Cổng thanh toán ${originalCharge.provider} từ chối hoàn tiền (${providerRefund.providerCode}): ${providerRefund.message}`,
+        {
+          refundId,
+          provider: originalCharge.provider,
+          providerCode: providerRefund.providerCode,
+          providerMessage: providerRefund.message,
+        },
+      );
+    }
+
+    const providerRefundTxId =
+      providerRefund.providerRefundId ?? `REF-${refundId.slice(0, 8).toUpperCase()}`;
 
     await this.db.transaction(async (txDb) => {
       await txDb.query(
@@ -908,13 +2240,17 @@ export class PaymentsService {
           originalCharge.order_code,
           originalCharge.provider,
           input.amountVnd,
-          `REF-${refundId.slice(0, 8).toUpperCase()}`,
+          providerRefundTxId,
           idempotencyKey,
           JSON.stringify({
             reason: input.reason,
             rmaId: input.rmaId ?? null,
             originalChargeId: originalCharge.id,
             fullRefund: isFullRefund,
+            providerMode: providerRefund.mode,
+            providerCode: providerRefund.providerCode,
+            providerMessage: providerRefund.message,
+            rawProviderResponse: providerRefund.rawResponse ?? null,
           }),
           refundedAt,
         ],
@@ -934,14 +2270,304 @@ export class PaymentsService {
 
     return {
       refundId,
+      refundTxId: refundId,
       orderId: originalCharge.order_id,
       orderCode: originalCharge.order_code,
       rmaId: input.rmaId ?? null,
       amountVnd: input.amountVnd,
       status: 'COMPLETED',
       provider: originalCharge.provider,
+      providerMode: providerRefund.mode,
+      providerRefundId: providerRefundTxId,
       idempotentReplay: false,
       refundedAt,
+      refundedAmountVnd: nextRefundedTotal,
+      netRefundableVnd: netRefundableAfter,
+      before: {
+        status: originalCharge.status,
+        refundedAmountVnd: alreadyRefundedVnd,
+        netRefundableVnd: netRefundableBefore,
+      },
+      after: {
+        status: nextChargeStatus,
+        refundedAmountVnd: nextRefundedTotal,
+        netRefundableVnd: netRefundableAfter,
+      },
+    };
+  }
+
+  async listAdminTransactions(
+    rawQuery: Record<string, unknown>,
+  ): Promise<AdminPaymentTransactionsListResult> {
+    const parsed = AdminPaymentTransactionsQuerySchema.safeParse(rawQuery);
+    const query = parsed.success ? parsed.data : {};
+
+    const clauses: string[] = [`tx_type = 'CHARGE'`];
+    const params: unknown[] = [];
+
+    const methodFilter = (query.method ?? query.provider)?.trim().toUpperCase();
+    if (methodFilter && methodFilter !== 'ALL') {
+      params.push(methodFilter);
+      clauses.push(`provider = $${params.length}`);
+    }
+
+    const statusFilter = query.status?.trim().toUpperCase();
+    if (statusFilter && statusFilter !== 'ALL') {
+      params.push(statusFilter);
+      clauses.push(`status = $${params.length}`);
+    }
+
+    if (query.orderCode && query.orderCode.trim().length > 0) {
+      params.push(`%${query.orderCode.trim()}%`);
+      clauses.push(`order_code ILIKE $${params.length}`);
+    }
+
+    if (query.q && query.q.trim().length > 0) {
+      params.push(`%${query.q.trim()}%`);
+      clauses.push(
+        `(order_code ILIKE $${params.length} OR COALESCE(provider_tx_id, '') ILIKE $${params.length} OR idempotency_key ILIKE $${params.length})`,
+      );
+    }
+
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(200, Math.max(1, query.limit ?? 20));
+    const offset = (page - 1) * limit;
+    const whereSql = `WHERE ${clauses.join(' AND ')}`;
+
+    const [countRes, chargesRes, summaryRes] = await Promise.all([
+      this.db.query<{ total: string | number }>(
+        `SELECT COUNT(*)::int AS total FROM payment_transactions ${whereSql}`,
+        params,
+      ),
+      this.db.query<PaymentTransactionRow>(
+        `
+        SELECT *
+        FROM payment_transactions
+        ${whereSql}
+        ORDER BY created_at DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+        `,
+        [...params, limit, offset],
+      ),
+      this.db.query<{
+        total_count: string | number;
+        total_charged_vnd: string | number | bigint;
+        total_refunded_vnd: string | number | bigint;
+      }>(
+        `
+        SELECT
+          COUNT(*) FILTER (WHERE tx_type = 'CHARGE')::int AS total_count,
+          COALESCE(SUM(amount_vnd) FILTER (WHERE tx_type = 'CHARGE' AND status IN ('SUCCEEDED', 'LATE_SUCCEEDED', 'REFUNDED')), 0) AS total_charged_vnd,
+          COALESCE(SUM(amount_vnd) FILTER (WHERE tx_type = 'REFUND' AND status = 'SUCCEEDED'), 0) AS total_refunded_vnd
+        FROM payment_transactions
+        `,
+      ),
+    ]);
+
+    const orderIds = Array.from(new Set(chargesRes.rows.map((r) => r.order_id)));
+    const refundsByOrderId = new Map<string, PaymentRefundRecordDTO[]>();
+
+    if (orderIds.length > 0) {
+      const refundsRes = await this.db.query<PaymentTransactionRow>(
+        `
+        SELECT *
+        FROM payment_transactions
+        WHERE order_id = ANY($1::uuid[]) AND tx_type = 'REFUND'
+        ORDER BY created_at DESC
+        `,
+        [orderIds],
+      );
+
+      for (const refundRow of refundsRes.rows) {
+        const meta = parseJsonRecord(refundRow.raw_payload_jsonb);
+        const record: PaymentRefundRecordDTO = {
+          id: refundRow.id,
+          refundId: refundRow.id,
+          orderId: refundRow.order_id,
+          orderCode: refundRow.order_code,
+          rmaId: typeof meta?.rmaId === 'string' ? meta.rmaId : null,
+          amountVnd: Number(refundRow.amount_vnd),
+          status: refundRow.status,
+          provider: refundRow.provider,
+          providerTxId: refundRow.provider_tx_id ?? null,
+          reason: typeof meta?.reason === 'string' ? meta.reason : null,
+          refundedAt: refundRow.paid_at ? toIso(refundRow.paid_at) : null,
+          createdAt: toIso(refundRow.created_at),
+        };
+        const list = refundsByOrderId.get(refundRow.order_id) ?? [];
+        list.push(record);
+        refundsByOrderId.set(refundRow.order_id, list);
+      }
+    }
+
+    const items: PaymentTransactionAdminDTO[] = chargesRes.rows.map((row) => {
+      const amountVnd = Number(row.amount_vnd);
+      const refunds = refundsByOrderId.get(row.order_id) ?? [];
+      const refundedAmountVnd = refunds
+        .filter((r) => r.status === PaymentTransactionStatus.SUCCEEDED)
+        .reduce((sum, r) => sum + r.amountVnd, 0);
+      const netRefundableVnd = Math.max(0, amountVnd - refundedAmountVnd);
+
+      return {
+        id: row.id,
+        orderId: row.order_id,
+        orderCode: row.order_code,
+        provider: row.provider,
+        method: row.provider,
+        txType: row.tx_type,
+        amountVnd,
+        refundedAmountVnd,
+        netRefundableVnd,
+        status: row.status,
+        providerTxId: row.provider_tx_id ?? null,
+        idempotencyKey: row.idempotency_key,
+        qrPayload: row.qr_payload ?? null,
+        paymentUrl: row.payment_url ?? null,
+        signatureVerified: Boolean(row.signature_verified),
+        expiresAt: row.expires_at ? toIso(row.expires_at) : null,
+        paidAt: row.paid_at ? toIso(row.paid_at) : null,
+        createdAt: toIso(row.created_at),
+        refunds,
+      };
+    });
+
+    const total = Number(countRes.rows[0]?.total ?? 0);
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+    const sumRow = summaryRes.rows[0];
+    const totalChargedVnd = Number(sumRow?.total_charged_vnd ?? 0);
+    const totalRefundedVnd = Number(sumRow?.total_refunded_vnd ?? 0);
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+      summary: {
+        totalCount: Number(sumRow?.total_count ?? 0),
+        totalChargedVnd,
+        totalRefundedVnd,
+        totalNetVnd: Math.max(0, totalChargedVnd - totalRefundedVnd),
+      },
+    };
+  }
+
+  async listWebhookLogs(
+    rawQuery: Record<string, unknown>,
+  ): Promise<AdminPaymentWebhooksListResult> {
+    const parsed = AdminPaymentWebhooksQuerySchema.safeParse(rawQuery);
+    const query = parsed.success ? parsed.data : {};
+
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+
+    if (
+      query.provider &&
+      query.provider.trim().length > 0 &&
+      query.provider.trim().toUpperCase() !== 'ALL'
+    ) {
+      params.push(query.provider.trim().toUpperCase());
+      clauses.push(`w.provider = $${params.length}`);
+    }
+
+    if (query.orderCode && query.orderCode.trim().length > 0) {
+      params.push(`%${query.orderCode.trim()}%`);
+      clauses.push(`COALESCE(w.order_code, '') ILIKE $${params.length}`);
+    }
+
+    if (query.signatureValid !== undefined && query.signatureValid !== '') {
+      const normalized =
+        typeof query.signatureValid === 'boolean'
+          ? query.signatureValid
+          : String(query.signatureValid).trim().toLowerCase() === 'true'
+            ? true
+            : String(query.signatureValid).trim().toLowerCase() === 'false'
+              ? false
+              : undefined;
+      if (normalized !== undefined) {
+        params.push(normalized);
+        clauses.push(`COALESCE(w.signature_valid, TRUE) = $${params.length}`);
+      }
+    }
+
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(200, Math.max(1, query.limit ?? 20));
+    const offset = (page - 1) * limit;
+    const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+
+    const [countRes, rowsRes] = await Promise.all([
+      this.db.query<{ total: string | number }>(
+        `SELECT COUNT(*)::int AS total FROM processed_webhooks w ${whereSql}`,
+        params,
+      ),
+      this.db.query<ProcessedWebhookRow>(
+        `
+        SELECT
+          w.provider,
+          w.provider_event_id,
+          w.order_code,
+          w.signature_valid,
+          w.signature_header,
+          w.status,
+          w.payload_summary,
+          w.raw_payload_jsonb,
+          w.received_at,
+          tx.status AS tx_status,
+          tx.raw_payload_jsonb AS tx_raw_payload_jsonb
+        FROM processed_webhooks w
+        LEFT JOIN LATERAL (
+          SELECT status, raw_payload_jsonb
+          FROM payment_transactions pt
+          WHERE pt.order_code = w.order_code AND pt.tx_type = 'CHARGE'
+          ORDER BY pt.created_at DESC
+          LIMIT 1
+        ) tx ON TRUE
+        ${whereSql}
+        ORDER BY w.received_at DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+        `,
+        [...params, limit, offset],
+      ),
+    ]);
+
+    const items: PaymentWebhookLogDTO[] = rowsRes.rows.map((row) => {
+      const rawPayload =
+        parseJsonRecord(row.raw_payload_jsonb) ?? parseJsonRecord(row.tx_raw_payload_jsonb);
+      const signatureValid = row.signature_valid !== false;
+      const status =
+        row.status || row.tx_status || (signatureValid ? 'PROCESSED' : 'SIGNATURE_INVALID');
+      const payloadSummary =
+        row.payload_summary ||
+        `${row.provider} ${status}${row.order_code ? ` · ${row.order_code}` : ''}`;
+
+      return {
+        id: `${row.provider}:${row.provider_event_id}`,
+        provider: row.provider,
+        providerEventId: row.provider_event_id,
+        eventId: row.provider_event_id,
+        orderCode: row.order_code ?? null,
+        signatureValid,
+        signatureHeader: row.signature_header ?? null,
+        status,
+        payloadSummary,
+        rawPayload,
+        receivedAt: toIso(row.received_at),
+      };
+    });
+
+    const total = Number(countRes.rows[0]?.total ?? 0);
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
     };
   }
 

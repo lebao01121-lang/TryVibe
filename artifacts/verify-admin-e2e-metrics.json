@@ -1,0 +1,247 @@
+{
+  "suite": "verify-admin-e2e",
+  "portalUrl": "http://127.0.0.1:3001",
+  "bffUrl": "http://127.0.0.1:4000",
+  "mailpitUrl": "http://127.0.0.1:8025",
+  "startedAt": "2026-11-25T04:54:41.814Z",
+  "finishedAt": "2026-11-25T04:55:11.703Z",
+  "checks": {
+    "PREFLIGHT": {
+      "title": "Live Admin (:3001), BFF (:4000/health) & Mailpit (:8025) ready",
+      "status": "PASS",
+      "elapsedMs": 21.8,
+      "details": {
+        "adminStatus": 200,
+        "bffStatus": 200,
+        "mailpitStatus": 200
+      }
+    },
+    "CHECK 1": {
+      "title": "Strict 403 Portal Isolation for CUSTOMER & SUPPLIER (UI AdminRoleGuard + BFF /api/v1/admin/*)",
+      "status": "PASS",
+      "elapsedMs": 1140.7,
+      "details": {
+        "CUSTOMER": {
+          "email": "customer@atelier.local",
+          "uiBlockedByAdminRoleGuard": true,
+          "operationalSidebarTabsExposed": 0,
+          "copilotExposed": false,
+          "bffOverviewStatus": 403,
+          "bffProductsStatus": 403,
+          "pageErrors": 0
+        },
+        "SUPPLIER": {
+          "email": "supplier-a@atelier.local",
+          "uiBlockedByAdminRoleGuard": true,
+          "operationalSidebarTabsExposed": 0,
+          "copilotExposed": false,
+          "bffOverviewStatus": 403,
+          "bffProductsStatus": 403,
+          "pageErrors": 0
+        }
+      }
+    },
+    "CHECK 2": {
+      "title": "SUPER_ADMIN Login + Real TwoFactorGate Email OTP via Mailpit (:8025)",
+      "status": "PASS",
+      "elapsedMs": 679.8,
+      "details": {
+        "email": "lebao01121@gmail.com",
+        "pre2faSidebarHidden": true,
+        "pre2faCopilotBlocked": true,
+        "emailOtpSendHttpStatus": 200,
+        "twoFactorMethodUsed": "EMAIL_OTP_MAILPIT",
+        "mailpitMessageId": "8a1096c7-1bc4-4c12-bfce-d4b6c5e257b6",
+        "otpDigits": 6,
+        "twoFactorUnlocked": true,
+        "copilotAccessibleAfter2fa": true,
+        "pageErrors": 0
+      }
+    },
+    "CHECK 3": {
+      "title": "Layer 5 Cost-Price Redaction on Browser UI & Network JSON (CATALOG_AI_OPERATOR & ORDER_STAFF)",
+      "status": "PASS",
+      "elapsedMs": 2412.3,
+      "details": {
+        "CATALOG_AI_OPERATOR": {
+          "email": "operator@atelier.local",
+          "productsResponsesChecked": 2,
+          "biResponsesChecked": 1,
+          "costDataRedacted": true,
+          "layer5BannerVisible": true,
+          "productCostLeaks": 0,
+          "biCostLeaks": 0,
+          "pageErrors": 0
+        },
+        "ORDER_STAFF": {
+          "email": "staff@atelier.local",
+          "productsResponsesChecked": 2,
+          "biResponsesChecked": 1,
+          "costDataRedacted": true,
+          "layer5BannerVisible": true,
+          "productCostLeaks": 0,
+          "biCostLeaks": 0,
+          "pageErrors": 0
+        }
+      }
+    },
+    "CHECK 4": {
+      "title": "Full 17-Tab Admin Sidebar Walkthrough (0 pageerror, 0 overflow) + McpCopilotDrawer HITL Draft & 1-Click Approval",
+      "status": "PASS",
+      "elapsedMs": 24991.9,
+      "details": {
+        "tabsWalked": 17,
+        "allTabsOverflowZero": true,
+        "tabs": [
+          {
+            "key": "dashboard",
+            "label": "Tổng quan hệ thống",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "orders",
+            "label": "Đơn hàng & RMA",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "payments",
+            "label": "Giao dịch & Hoàn tiền",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "inventory",
+            "label": "Tồn kho & Giữ chỗ",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "procurement",
+            "label": "Thu mua B2B · PO & GRN",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "catalog",
+            "label": "Sản phẩm SPU/SKU",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "categories",
+            "label": "Danh mục & Bảng Size",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "promotions",
+            "label": "Khuyến mãi & Voucher",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "media",
+            "label": "Media & Anchor 3D",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "campaign",
+            "label": "Chiến dịch & CMS",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "customers",
+            "label": "Khách hàng & Kiểm duyệt",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "iam",
+            "label": "Nhân sự & IAM",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "lookbook",
+            "label": "AI Lookbook Studio",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "tryon-hub",
+            "label": "Phòng Thử Đồ & Tín hiệu",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "rag-kb",
+            "label": "Tri thức AI (RAG)",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "ops",
+            "label": "AI Ops, Health & DLQ",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          },
+          {
+            "key": "reports",
+            "label": "Phân tích BI & Đối soát",
+            "scrollWidth": 1440,
+            "clientWidth": 1440,
+            "overflowPx": 0,
+            "pageErrors": 0
+          }
+        ],
+        "copilotHitl": {
+          "drawerOpenedPost2fa": true,
+          "draftStatusVerified": "NHAP_AI",
+          "approvedCardType": "PO_DRAFT_CREATED",
+          "approvalHttpStatus": 200,
+          "approvalConfirmationText": "Đã duyệt gửi Đối tác (CHO_NCC_XAC_NHAN)"
+        },
+        "pageErrors": 0
+      }
+    }
+  },
+  "passed": 5,
+  "failed": 0,
+  "totalPageErrors": 0
+}

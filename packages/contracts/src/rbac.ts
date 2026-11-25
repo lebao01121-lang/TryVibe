@@ -212,6 +212,16 @@ export const RESTRICTED_COST_FIELDS = [
   'giaNhap',
   'gia_nhap',
   'cogs',
+  'cogsVnd',
+  'cogs_vnd',
+  'totalCogsVnd',
+  'total_cogs_vnd',
+  'grossMarginVnd',
+  'gross_margin_vnd',
+  'grossMarginPct',
+  'gross_margin_pct',
+  'unitCostVnd',
+  'unit_cost_vnd',
 ] as const;
 
 export function canReadCostPrice(roles: readonly Role[] | Role): boolean {

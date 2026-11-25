@@ -50,6 +50,15 @@ export const CATALOG_PRODUCT_SLUGS = [
   'quan-culottes-linen-huu-co',
   'ao-khoac-tweed-det-thu-cong',
   'ao-polo-det-kim-bong-ai-cap',
+  // Stage 3 extended catalog apparel slugs
+  'ao-len-cashmere-co-lo',
+  'ao-so-mi-lua-to-tam-bao-loc',
+  'ao-dai-cach-tan-gam-lua',
+  'dam-midi-linen-phoi-dai',
+  'quan-ong-suong-wool-blend',
+  'ao-khoac-tweed-nut-dong',
+  'chan-vay-lua-vat-cheo',
+  'trench-coat-kaki-co-dien',
 ] as const;
 
 type CatalogProductSlug = (typeof CATALOG_PRODUCT_SLUGS)[number];
@@ -796,6 +805,465 @@ const SEED_REVIEWS: readonly SeedReviewBlueprint[] = [
       '1m82 · 78kg · Mặc size XL — Dáng cao mặc XL chiều dài thân áo vừa vặn, sợi cotton Ai Cập mịn mát và giữ phom cổ tốt sau nhiều lần giặt.',
     daysAgo: 18,
   },
+
+  // Stage 3 additive verified fit reviews (indices 54..87) — non-destructive INSERT WHERE NOT EXISTS
+  // 13. Áo Len Cashmere Cổ Lọ — 5 reviews: 4 TRUE_TO_SIZE (80%), 1 RUNS_LARGE (20%)
+  {
+    slug: 'ao-len-cashmere-co-lo',
+    variantIdx: 0,
+    sizePurchased: 'S',
+    reviewerName: 'Nguyễn Minh Thư',
+    heightCm: 157,
+    weightKg: 46,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m57 · 46kg · Mặc size S — Len cashmere Mông Cổ mềm mịn chạm cổ không hề dặm ngứa, độ co giãn tốt nên mặc S chuẩn vai và ấm nhẹ.',
+    daysAgo: 2,
+  },
+  {
+    slug: 'ao-len-cashmere-co-lo',
+    variantIdx: 1,
+    sizePurchased: 'S',
+    reviewerName: 'Trần Ngọc Mai',
+    heightCm: 160,
+    weightKg: 50,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m60 · 50kg · Mặc size S — Tông cacao đậm mặc phối trong blazer linen cực kỳ sang, phần cổ lọ đứng mềm vừa phải không bị bó.',
+    daysAgo: 4,
+  },
+  {
+    slug: 'ao-len-cashmere-co-lo',
+    variantIdx: 0,
+    sizePurchased: 'M',
+    reviewerName: 'Lê Bảo Ngọc',
+    heightCm: 164,
+    weightKg: 54,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m64 · 54kg · Mặc size M — Màu kem cashmere ngoài đời còn đẹp hơn ảnh, sợi dệt mịn và chuẩn bảng size của xưởng.',
+    daysAgo: 7,
+  },
+  {
+    slug: 'ao-len-cashmere-co-lo',
+    variantIdx: 1,
+    sizePurchased: 'L',
+    reviewerName: 'Phạm Thu Giang',
+    heightCm: 168,
+    weightKg: 60,
+    rating: 5,
+    fitFeedback: FitFeedback.RUNS_LARGE,
+    comment:
+      '1m68 · 60kg · Mặc size L — Len có độ giãn đàn hồi tốt nên mặc size L hơi rộng nhẹ phần eo, ai thích mặc gọn bên trong áo khoác giữ nguyên M là đẹp.',
+    daysAgo: 11,
+  },
+  {
+    slug: 'ao-len-cashmere-co-lo',
+    variantIdx: 0,
+    sizePurchased: 'XL',
+    reviewerName: 'Hoàng Gia Khánh',
+    heightCm: 173,
+    weightKg: 68,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m73 · 68kg · Mặc size XL — Chiều dài tay áo và thân áo rất cân đối, chất len nhẹ mà giữ nhiệt cực tốt cho thời tiết Hà Nội.',
+    daysAgo: 15,
+  },
+
+  // 14. Áo Sơ Mi Lụa Tơ Tằm Bảo Lộc — 5 reviews: 4 RUNS_SMALL (80%), 1 TRUE_TO_SIZE (20%)
+  {
+    slug: 'ao-so-mi-lua-to-tam-bao-loc',
+    variantIdx: 0,
+    sizePurchased: 'S',
+    reviewerName: 'Đỗ Phương Anh',
+    heightCm: 156,
+    weightKg: 46,
+    rating: 5,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m56 · 46kg · Mặc size S — Lụa Bảo Lộc ánh ngọc tự nhiên rất đẳng cấp nhưng vải không co giãn và phần vai hơi ôm nhẹ, ai thích thoải mái nên nhích lên 1 size.',
+    daysAgo: 2,
+  },
+  {
+    slug: 'ao-so-mi-lua-to-tam-bao-loc',
+    variantIdx: 0,
+    sizePurchased: 'S',
+    reviewerName: 'Vũ Khánh Huyền',
+    heightCm: 160,
+    weightKg: 50,
+    rating: 4,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m60 · 50kg · Mặc size S — Đường may lộn giấu chỉ rất tinh xảo, nhưng vòng ngực và nách hơi sát khi cử động tay, mình đổi lên M mặc đẹp hơn hẳn.',
+    daysAgo: 5,
+  },
+  {
+    slug: 'ao-so-mi-lua-to-tam-bao-loc',
+    variantIdx: 1,
+    sizePurchased: 'M',
+    reviewerName: 'Bùi Hải Anh',
+    heightCm: 164,
+    weightKg: 55,
+    rating: 5,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m64 · 55kg · Mặc size M — Vải lụa dày dặn mát da, phom cắt chiết nhẹ nên hơi ôm phần ngực so với sơ mi dáng suông thông thường.',
+    daysAgo: 9,
+  },
+  {
+    slug: 'ao-so-mi-lua-to-tam-bao-loc',
+    variantIdx: 1,
+    sizePurchased: 'L',
+    reviewerName: 'Ngô Minh Hằng',
+    heightCm: 169,
+    weightKg: 62,
+    rating: 4,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m69 · 62kg · Mặc size L — Màu champagne cực sang nhưng cầu vai dựng gọn chuẩn rập couture, khuyên chị em vai ngang tăng thêm 1 cỡ.',
+    daysAgo: 14,
+  },
+  {
+    slug: 'ao-so-mi-lua-to-tam-bao-loc',
+    variantIdx: 0,
+    sizePurchased: 'XL',
+    reviewerName: 'Trịnh Thanh Thảo',
+    heightCm: 173,
+    weightKg: 68,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m73 · 68kg · Mặc size XL — Mình chủ động chọn XL theo tư vấn cố vấn size AI và mặc rất vừa vai, cổ tay khuy ngọc trai rất tinh tế.',
+    daysAgo: 19,
+  },
+
+  // 15. Áo Dài Cách Tân Gấm Lụa — 4 reviews: 3 RUNS_SMALL (75%), 1 TRUE_TO_SIZE (25%)
+  {
+    slug: 'ao-dai-cach-tan-gam-lua',
+    variantIdx: 0,
+    sizePurchased: 'S',
+    reviewerName: 'Nguyễn Linh Chi',
+    heightCm: 158,
+    weightKg: 48,
+    rating: 5,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m58 · 48kg · Mặc size S — Gấm lụa dệt nổi sang trọng nhưng vòng eo chiết sát tôn dáng, ai muốn ngồi tiệc thoải mái nên chọn lên M.',
+    daysAgo: 3,
+  },
+  {
+    slug: 'ao-dai-cach-tan-gam-lua',
+    variantIdx: 0,
+    sizePurchased: 'M',
+    reviewerName: 'Lê Kiều Oanh',
+    heightCm: 163,
+    weightKg: 53,
+    rating: 4,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m63 · 53kg · Mặc size M — Đường ráp tay raglan mềm mại, duy vải gấm không co giãn nên phần chân ngực hơi ôm nhẹ.',
+    daysAgo: 8,
+  },
+  {
+    slug: 'ao-dai-cach-tan-gam-lua',
+    variantIdx: 1,
+    sizePurchased: 'L',
+    reviewerName: 'Phạm Lan Anh',
+    heightCm: 167,
+    weightKg: 59,
+    rating: 5,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m67 · 59kg · Mặc size L — Lên ảnh cực kỳ quý phái, phom hơi nhỏ ở eo trên nên đặt nhích 1 size sẽ vừa vặn nhất.',
+    daysAgo: 13,
+  },
+  {
+    slug: 'ao-dai-cach-tan-gam-lua',
+    variantIdx: 1,
+    sizePurchased: 'M',
+    reviewerName: 'Trần Thúy Quỳnh',
+    heightCm: 161,
+    weightKg: 50,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m61 · 50kg · Mặc size M — Chọn lên M theo gợi ý AI mặc vừa in từng đường chiết eo, rất hài lòng.',
+    daysAgo: 21,
+  },
+
+  // 16. Đầm Midi Linen Phối Đai — 4 reviews: 3 TRUE_TO_SIZE (75%), 1 RUNS_SMALL (25%)
+  {
+    slug: 'dam-midi-linen-phoi-dai',
+    variantIdx: 0,
+    sizePurchased: 'S',
+    reviewerName: 'Hoàng Ngọc Diệp',
+    heightCm: 159,
+    weightKg: 49,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m59 · 49kg · Mặc size S — Linen thoáng nhẹ, có đai rút eo linh hoạt nên mặc rất tôn dáng và thoải mái.',
+    daysAgo: 4,
+  },
+  {
+    slug: 'dam-midi-linen-phoi-dai',
+    variantIdx: 0,
+    sizePurchased: 'M',
+    reviewerName: 'Vũ Thu Phương',
+    heightCm: 164,
+    weightKg: 54,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m64 · 54kg · Mặc size M — Chuẩn size, chiều dài midi thanh lịch đi làm hay du lịch resort đều đẹp.',
+    daysAgo: 10,
+  },
+  {
+    slug: 'dam-midi-linen-phoi-dai',
+    variantIdx: 1,
+    sizePurchased: 'M',
+    reviewerName: 'Đặng Quỳnh Chi',
+    heightCm: 165,
+    weightKg: 56,
+    rating: 4,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m65 · 56kg · Mặc size M — Vải linen nguyên chất không co giãn nên phần vai hơi khít nhẹ nếu cử động mạnh.',
+    daysAgo: 16,
+  },
+  {
+    slug: 'dam-midi-linen-phoi-dai',
+    variantIdx: 1,
+    sizePurchased: 'L',
+    reviewerName: 'Nguyễn Thùy Trang',
+    heightCm: 170,
+    weightKg: 63,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m70 · 63kg · Mặc size L — Dáng chuẩn xưởng, lót trong mềm mát không bị mỏng.',
+    daysAgo: 22,
+  },
+
+  // 17. Quần Ống Suông Wool Blend — 4 reviews: 3 TRUE_TO_SIZE (75%), 1 RUNS_LARGE (25%)
+  {
+    slug: 'quan-ong-suong-wool-blend',
+    variantIdx: 0,
+    sizePurchased: 'S',
+    reviewerName: 'Lý Minh Châu',
+    heightCm: 160,
+    weightKg: 49,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m60 · 49kg · Mặc size S — Wool pha mịn rủ đứng ly, mặc chuẩn vòng eo và kéo dài chân rõ rệt.',
+    daysAgo: 5,
+  },
+  {
+    slug: 'quan-ong-suong-wool-blend',
+    variantIdx: 0,
+    sizePurchased: 'M',
+    reviewerName: 'Phan Thanh Mai',
+    heightCm: 165,
+    weightKg: 55,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m65 · 55kg · Mặc size M — Chuẩn phom công sở cao cấp, ngồi cả ngày không bị nhăn gối.',
+    daysAgo: 12,
+  },
+  {
+    slug: 'quan-ong-suong-wool-blend',
+    variantIdx: 1,
+    sizePurchased: 'L',
+    reviewerName: 'Đỗ Hải Yến',
+    heightCm: 171,
+    weightKg: 64,
+    rating: 4,
+    fitFeedback: FitFeedback.RUNS_LARGE,
+    comment:
+      '1m71 · 64kg · Mặc size L — Ống quần suông rộng rãi, phần eo hơi dư nhẹ khoảng 1cm.',
+    daysAgo: 18,
+  },
+  {
+    slug: 'quan-ong-suong-wool-blend',
+    variantIdx: 1,
+    sizePurchased: 'XL',
+    reviewerName: 'Trần Hoàng Anh',
+    heightCm: 174,
+    weightKg: 69,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m74 · 69kg · Mặc size XL — Rất vừa hông và chiều dài chạm mu bàn chân đẹp.',
+    daysAgo: 24,
+  },
+
+  // 18. Áo Khoác Tweed Nút Đồng — 4 reviews: 3 RUNS_SMALL (75%), 1 TRUE_TO_SIZE (25%)
+  {
+    slug: 'ao-khoac-tweed-nut-dong',
+    variantIdx: 0,
+    sizePurchased: 'S',
+    reviewerName: 'Nguyễn Bảo Trân',
+    heightCm: 158,
+    weightKg: 48,
+    rating: 5,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m58 · 48kg · Mặc size S — Vải tweed dệt nổi và nút đồng khắc thủ công cực sang, nhưng phom vai hơi ôm nếu mặc thêm áo len bên trong.',
+    daysAgo: 3,
+  },
+  {
+    slug: 'ao-khoac-tweed-nut-dong',
+    variantIdx: 0,
+    sizePurchased: 'M',
+    reviewerName: 'Lê Diễm Quỳnh',
+    heightCm: 163,
+    weightKg: 53,
+    rating: 4,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m63 · 53kg · Mặc size M — Áo dày dặn không co giãn nên hơi kích nhẹ ở bắp tay, khuyên tăng 1 size khi phối layer mùa đông.',
+    daysAgo: 9,
+  },
+  {
+    slug: 'ao-khoac-tweed-nut-dong',
+    variantIdx: 1,
+    sizePurchased: 'L',
+    reviewerName: 'Vũ Thu Hà',
+    heightCm: 168,
+    weightKg: 60,
+    rating: 5,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m68 · 60kg · Mặc size L — Dựng phom rất chuẩn couture, phần ngực cài khuy hơi gọn nên chọn nhích cỡ sẽ thoải mái hơn.',
+    daysAgo: 15,
+  },
+  {
+    slug: 'ao-khoac-tweed-nut-dong',
+    variantIdx: 1,
+    sizePurchased: 'XL',
+    reviewerName: 'Phạm Quỳnh Nga',
+    heightCm: 173,
+    weightKg: 68,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m73 · 68kg · Mặc size XL — Mình mặc khoác ngoài áo cổ lọ cashmere rất vừa vai, cực kỳ ưng ý.',
+    daysAgo: 21,
+  },
+
+  // 19. Chân Váy Lụa Vạt Chéo — 4 reviews: 2 RUNS_SMALL (50%), 2 TRUE_TO_SIZE (50%)
+  {
+    slug: 'chan-vay-lua-vat-cheo',
+    variantIdx: 0,
+    sizePurchased: 'S',
+    reviewerName: 'Trần Khánh Ngọc',
+    heightCm: 160,
+    weightKg: 49,
+    rating: 5,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m60 · 49kg · Mặc size S — Vạt chéo bay đẹp, nhưng cạp khóa lụa ôm sát vòng eo trên.',
+    daysAgo: 4,
+  },
+  {
+    slug: 'chan-vay-lua-vat-cheo',
+    variantIdx: 0,
+    sizePurchased: 'M',
+    reviewerName: 'Nguyễn Minh Khuê',
+    heightCm: 164,
+    weightKg: 54,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m64 · 54kg · Mặc size M — Chuẩn size, độ rủ của lụa rất dịu mắt.',
+    daysAgo: 11,
+  },
+  {
+    slug: 'chan-vay-lua-vat-cheo',
+    variantIdx: 1,
+    sizePurchased: 'M',
+    reviewerName: 'Lê Thảo Nguyên',
+    heightCm: 166,
+    weightKg: 56,
+    rating: 4,
+    fitFeedback: FitFeedback.RUNS_SMALL,
+    comment:
+      '1m66 · 56kg · Mặc size M — Phần hông hơi ôm nhẹ khi ngồi, ai hông đầy nên tăng lên L.',
+    daysAgo: 17,
+  },
+  {
+    slug: 'chan-vay-lua-vat-cheo',
+    variantIdx: 1,
+    sizePurchased: 'L',
+    reviewerName: 'Hoàng Lan Chi',
+    heightCm: 170,
+    weightKg: 62,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m70 · 62kg · Mặc size L — Mặc tôn đường cong nhẹ nhàng, lót lụa bên trong êm da.',
+    daysAgo: 25,
+  },
+
+  // 20. Trench Coat Kaki Cổ Điển — 4 reviews: 3 RUNS_LARGE (75%), 1 TRUE_TO_SIZE (25%)
+  {
+    slug: 'trench-coat-kaki-co-dien',
+    variantIdx: 0,
+    sizePurchased: 'S',
+    reviewerName: 'Đặng Phương Linh',
+    heightCm: 161,
+    weightKg: 50,
+    rating: 5,
+    fitFeedback: FitFeedback.RUNS_LARGE,
+    comment:
+      '1m61 · 50kg · Mặc size S — Dáng trench phóng khoáng kiểu Paris nên hơi rộng vai nhẹ để khoác ngoài áo len dày.',
+    daysAgo: 3,
+  },
+  {
+    slug: 'trench-coat-kaki-co-dien',
+    variantIdx: 0,
+    sizePurchased: 'M',
+    reviewerName: 'Nguyễn Hữu Minh',
+    heightCm: 172,
+    weightKg: 66,
+    rating: 5,
+    fitFeedback: FitFeedback.RUNS_LARGE,
+    comment:
+      '1m72 · 66kg · Mặc size M — Vải kaki dày trượt nước tốt, phom hơi rộng nên mặc M rất vừa mắt.',
+    daysAgo: 9,
+  },
+  {
+    slug: 'trench-coat-kaki-co-dien',
+    variantIdx: 1,
+    sizePurchased: 'L',
+    reviewerName: 'Trần Anh Tuấn',
+    heightCm: 176,
+    weightKg: 72,
+    rating: 5,
+    fitFeedback: FitFeedback.RUNS_LARGE,
+    comment:
+      '1m76 · 72kg · Mặc size L — Form rộng rãi đúng tinh thần trench cổ điển, thắt đai eo vào cực lịch lãm.',
+    daysAgo: 16,
+  },
+  {
+    slug: 'trench-coat-kaki-co-dien',
+    variantIdx: 1,
+    sizePurchased: 'S',
+    reviewerName: 'Bùi Ngọc Ánh',
+    heightCm: 165,
+    weightKg: 55,
+    rating: 5,
+    fitFeedback: FitFeedback.TRUE_TO_SIZE,
+    comment:
+      '1m65 · 55kg · Mặc size S — Lùi xuống S theo gợi ý cố vấn AI và mặc vừa vai chuẩn không cần chỉnh.',
+    daysAgo: 23,
+  },
 ];
 
 interface SeedNotificationLogBlueprint {
@@ -851,61 +1319,65 @@ export async function runNotifyReviewSeed(db: AtelierDbClient): Promise<NotifySe
   );
   const existingReviews = Number(existingReviewsRes.rows[0]?.count ?? 0);
 
+  // Non-destructive additive seed: ALWAYS check each deterministic seed ID via
+  // INSERT ... WHERE NOT EXISTS + ON CONFLICT DO NOTHING so new Vietnamese reviews
+  // are safely appended without ever modifying or deleting existing user reviews.
   let reviewsInserted = 0;
-  if (existingReviews < SEED_REVIEWS.length) {
-    const nowMs = Date.now();
-    for (let idx = 0; idx < SEED_REVIEWS.length; idx += 1) {
-      const item = SEED_REVIEWS[idx];
-      const reviewId = notifyDeterministicUuid(`review:${item.slug}:${idx}`);
-      const orderId = notifyDeterministicUuid(`order:${item.slug}:${idx}`);
-      const orderItemId = notifyDeterministicUuid(`order-item:${item.slug}:${idx}`);
-      const userId = notifyDeterministicUuid(`reviewer:${item.reviewerName}`);
-      const productId = catalogDeterministicUuid(`product:${item.slug}`);
-      const skuId = catalogDeterministicUuid(
-        `sku:${item.slug}:${item.variantIdx}:${item.sizePurchased}`,
-      );
-      const sentimentScore = computeVietnameseSentimentScore(item.rating, item.comment);
-      const sentimentLabel = deriveSentimentLabelFromScore(sentimentScore);
-      const createdAt = new Date(nowMs - item.daysAgo * 24 * 60 * 60 * 1000).toISOString();
+  const nowMs = Date.now();
+  for (let idx = 0; idx < SEED_REVIEWS.length; idx += 1) {
+    const item = SEED_REVIEWS[idx];
+    const reviewId = notifyDeterministicUuid(`review:${item.slug}:${idx}`);
+    const orderId = notifyDeterministicUuid(`order:${item.slug}:${idx}`);
+    const orderItemId = notifyDeterministicUuid(`order-item:${item.slug}:${idx}`);
+    const userId = notifyDeterministicUuid(`reviewer:${item.reviewerName}`);
+    const productId = catalogDeterministicUuid(`product:${item.slug}`);
+    const skuId = catalogDeterministicUuid(
+      `sku:${item.slug}:${item.variantIdx}:${item.sizePurchased}`,
+    );
+    const sentimentScore = computeVietnameseSentimentScore(item.rating, item.comment);
+    const sentimentLabel = deriveSentimentLabelFromScore(sentimentScore);
+    const createdAt = new Date(nowMs - item.daysAgo * 24 * 60 * 60 * 1000).toISOString();
 
-      const ins = await db.query<{ id: string }>(
-        `INSERT INTO product_reviews (
-           id, order_id, order_item_id, product_id, sku_id, user_id,
-           reviewer_name, rating, fit_feedback, reviewer_height_cm,
-           reviewer_weight_kg, size_purchased, comment, photo_urls_jsonb,
-           sentiment_score, sentiment_label, moderation_status, created_at
-         ) VALUES (
-           $1, $2, $3, $4, $5, $6,
-           $7, $8, $9, $10,
-           $11, $12, $13, $14::jsonb,
-           $15, $16, $17, $18
-         )
-         ON CONFLICT DO NOTHING
-         RETURNING id`,
-        [
-          reviewId,
-          orderId,
-          orderItemId,
-          productId,
-          skuId,
-          userId,
-          item.reviewerName,
-          item.rating,
-          item.fitFeedback,
-          item.heightCm,
-          item.weightKg,
-          item.sizePurchased,
-          item.comment,
-          JSON.stringify([]),
-          sentimentScore,
-          sentimentLabel,
-          ReviewModerationStatus.APPROVED,
-          createdAt,
-        ],
-      );
-      if (ins.rows.length > 0) {
-        reviewsInserted += 1;
-      }
+    const ins = await db.query<{ id: string }>(
+      `INSERT INTO product_reviews (
+         id, order_id, order_item_id, product_id, sku_id, user_id,
+         reviewer_name, rating, fit_feedback, reviewer_height_cm,
+         reviewer_weight_kg, size_purchased, comment, photo_urls_jsonb,
+         sentiment_score, sentiment_label, moderation_status, created_at
+       )
+       SELECT
+         $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::uuid,
+         $7, $8, $9, $10,
+         $11, $12, $13, $14::jsonb,
+         $15, $16, $17, $18
+       WHERE NOT EXISTS (
+         SELECT 1 FROM product_reviews WHERE id = $1::uuid OR order_item_id = $3::uuid
+       )
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [
+        reviewId,
+        orderId,
+        orderItemId,
+        productId,
+        skuId,
+        userId,
+        item.reviewerName,
+        item.rating,
+        item.fitFeedback,
+        item.heightCm,
+        item.weightKg,
+        item.sizePurchased,
+        item.comment,
+        JSON.stringify([]),
+        sentimentScore,
+        sentimentLabel,
+        ReviewModerationStatus.APPROVED,
+        createdAt,
+      ],
+    );
+    if (ins.rows.length > 0) {
+      reviewsInserted += 1;
     }
   }
 

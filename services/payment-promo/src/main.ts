@@ -5,6 +5,9 @@ import { HTTP_HEADERS } from '@atelier/contracts';
 import {
   correlationIdMiddleware,
   createLogger,
+  createPrometheusHttpMiddleware,
+  createPrometheusMetricsRouteMiddleware,
+  initOpenTelemetry,
   TRACEPARENT_HEADER,
 } from '@atelier/observability';
 import { AppModule } from './app.module';
@@ -17,6 +20,7 @@ import {
 async function bootstrap(): Promise<void> {
   const config = loadPaymentPromoConfig();
   const logger = createLogger(config.serviceName);
+  initOpenTelemetry({ serviceName: 'payment-promo', serviceVersion: '3.1.0' });
 
   // rawBody: true captures exact raw UTF-8 request bytes onto req.rawBody for HMAC-SHA256 webhook verification
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -27,6 +31,8 @@ async function bootstrap(): Promise<void> {
   app.useBodyParser('json', { limit: '2mb' });
   app.useBodyParser('urlencoded', { extended: true, limit: '2mb' });
   app.use(correlationIdMiddleware);
+  app.use(createPrometheusHttpMiddleware('payment-promo'));
+  app.use(createPrometheusMetricsRouteMiddleware());
 
   app.enableCors({
     origin: (

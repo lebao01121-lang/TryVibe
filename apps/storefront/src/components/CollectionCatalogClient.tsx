@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   SizeCode,
   type CustomerBodyProfileDto,
@@ -19,6 +19,8 @@ import {
   getPrimaryVariantImage,
 } from '@/lib/catalog-data';
 
+const BODY_PROFILE_STORAGE_KEY = 'atelier_body_profile_v1';
+
 const SIZE_FILTER_OPTIONS = [
   SizeCode.XS,
   SizeCode.S,
@@ -27,6 +29,83 @@ const SIZE_FILTER_OPTIONS = [
   SizeCode.XL,
   SizeCode.XXL,
 ] as const;
+
+const QUICK_MY_SIZES = ['XS', 'S', 'M', 'L', 'XL'] as const;
+
+interface StoredBodyProfile {
+  heightCm?: number;
+  weightKg?: number;
+  bustCm?: number;
+  waistCm?: number;
+  hipCm?: number;
+  fitPreference?: string;
+  recommendedSize?: string;
+  updatedAt?: number;
+}
+
+function readStoredBodyProfile(): StoredBodyProfile | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(BODY_PROFILE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as StoredBodyProfile | null;
+      if (parsed && typeof parsed === 'object') {
+        return {
+          ...parsed,
+          recommendedSize:
+            typeof parsed.recommendedSize === 'string' &&
+            parsed.recommendedSize.trim()
+              ? parsed.recommendedSize.trim().toUpperCase()
+              : undefined,
+        };
+      }
+    }
+    const sessionSize = window.sessionStorage.getItem(
+      'atelier_last_recommended_size',
+    );
+    if (sessionSize && sessionSize.trim()) {
+      return { recommendedSize: sessionSize.trim().toUpperCase() };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveBodyProfileSize(
+  recommendedSize: string,
+  base?: StoredBodyProfile | null,
+): StoredBodyProfile {
+  const normalized = recommendedSize.trim().toUpperCase();
+  const nextProfile: StoredBodyProfile = {
+    ...(base ?? {}),
+    fitPreference: base?.fitPreference || 'TRUE_TO_SIZE',
+    recommendedSize: normalized,
+    updatedAt: Date.now(),
+  };
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(
+        BODY_PROFILE_STORAGE_KEY,
+        JSON.stringify(nextProfile),
+      );
+      window.sessionStorage.setItem('atelier_last_recommended_size', normalized);
+      window.dispatchEvent(
+        new CustomEvent('atelier:body-profile-updated', { detail: nextProfile }),
+      );
+    } catch {
+      // Ignore private browsing storage errors
+    }
+  }
+  return nextProfile;
+}
+
+function hasInStockSize(product: ProductSpuDto, targetSize: string): boolean {
+  const want = targetSize.trim().toUpperCase();
+  return product.variants.some((variant) =>
+    variant.skus.some((sku) => sku.sizeCode.toUpperCase() === want && sku.inStock),
+  );
+}
 
 export interface CollectionCatalogClientProps {
   initialCategorySlug?: string;
@@ -49,7 +128,12 @@ export function CollectionCatalogClient({
   const searchParams = useSearchParams();
 
   const q = searchParams.get('q') ?? '';
-  const size = searchParams.get('size') ?? '';
+  const categoryQuery =
+    searchParams.get('category') ?? searchParams.get('categorySlug') ?? '';
+  const activeCategorySlug = categoryQuery || initialCategorySlug || '';
+  const mySize = (searchParams.get('mySize') ?? '').trim().toUpperCase();
+  const size = (searchParams.get('size') ?? '').trim().toUpperCase();
+  const effectiveSize = mySize || size;
   const color = searchParams.get('color') ?? '';
   const occasion = searchParams.get('occasion') ?? initialOccasionSlug ?? '';
   const season = searchParams.get('season') ?? initialSeasonSlug ?? '';
@@ -61,21 +145,95 @@ export function CollectionCatalogClient({
   const [searchInput, setSearchInput] = useState(q);
   const [products, setProducts] = useState<ProductSpuDto[]>(initialProducts);
   const [loading, setLoading] = useState(false);
-  const [mySizeActive, setMySizeActive] = useState(false);
+  const [lastQueryMs, setLastQueryMs] = useState<number | null>(null);
+  const [savedProfile, setSavedProfile] = useState<StoredBodyProfile | null>(null);
   const [mySizeStatus, setMySizeStatus] = useState<string | null>(null);
+  const [showQuickSizePicker, setShowQuickSizePicker] = useState(false);
+
+  const initialQuerySignature = useMemo(
+    () =>
+      JSON.stringify({
+        activeCategorySlug,
+        q,
+        mySize,
+        size,
+        color,
+        occasion,
+        season,
+        minPrice,
+        maxPrice,
+        isTryonEnabled,
+        sort,
+      }),
+    [
+      activeCategorySlug,
+      q,
+      mySize,
+      size,
+      color,
+      occasion,
+      season,
+      minPrice,
+      maxPrice,
+      isTryonEnabled,
+      sort,
+    ],
+  );
+  const ssrSignatureRef = useRef<string>(initialQuerySignature);
 
   useEffect(() => {
     setSearchInput(q);
   }, [q]);
 
+  // Read shared body profile from localStorage (`atelier_body_profile_v1`) & listen for updates
   useEffect(() => {
+    setSavedProfile(readStoredBodyProfile());
+
+    const onProfileUpdated = (event: Event) => {
+      const custom = event as CustomEvent<StoredBodyProfile | undefined>;
+      if (custom.detail && typeof custom.detail === 'object') {
+        setSavedProfile(custom.detail);
+      } else {
+        setSavedProfile(readStoredBodyProfile());
+      }
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === BODY_PROFILE_STORAGE_KEY) {
+        setSavedProfile(readStoredBodyProfile());
+      }
+    };
+
+    window.addEventListener('atelier:body-profile-updated', onProfileUpdated);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('atelier:body-profile-updated', onProfileUpdated);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Skip redundant fetch on initial SSR hydration when URL params match SSR props
+    if (ssrSignatureRef.current === initialQuerySignature) {
+      ssrSignatureRef.current = '__hydrated__';
+      setProducts(initialProducts);
+      return;
+    }
+
     let cancelled = false;
     const loadFiltered = async () => {
       setLoading(true);
+      const startedAt = performance.now();
       const params = new URLSearchParams();
-      if (initialCategorySlug) params.set('categorySlug', initialCategorySlug);
+      if (activeCategorySlug) params.set('categorySlug', activeCategorySlug);
       if (q) params.set('q', q);
-      if (size) params.set('size', size);
+      if (mySize) {
+        params.set('size', mySize);
+        params.set('inStockSize', mySize);
+        params.set('inStockOnly', 'true');
+      } else if (size) {
+        params.set('size', size);
+      }
       if (color) params.set('color', color);
       if (occasion) params.set('occasion', occasion);
       if (season) params.set('season', season);
@@ -91,8 +249,17 @@ export function CollectionCatalogClient({
       );
 
       if (!cancelled) {
+        const elapsed = Math.max(1, Math.round(performance.now() - startedAt));
+        setLastQueryMs(elapsed);
         if (res.ok && res.data) {
-          setProducts(extractProductArray(res.data));
+          let list = extractProductArray(res.data);
+          if (mySize) {
+            list = list.filter((p) => hasInStockSize(p, mySize));
+          }
+          if (isTryonEnabled === 'true') {
+            list = list.filter((p) => p.isTryonEnabled);
+          }
+          setProducts(list);
         }
         setLoading(false);
       }
@@ -103,8 +270,11 @@ export function CollectionCatalogClient({
       cancelled = true;
     };
   }, [
-    initialCategorySlug,
+    initialQuerySignature,
+    initialProducts,
+    activeCategorySlug,
     q,
+    mySize,
     size,
     color,
     occasion,
@@ -115,99 +285,169 @@ export function CollectionCatalogClient({
     sort,
   ]);
 
-  const updateFilter = (key: string, value: string) => {
+  const updateFilters = useCallback(
+    (patch: Record<string, string>) => {
+      const next = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(patch)) {
+        const trimmed = value.trim();
+        if (trimmed) {
+          next.set(key, trimmed);
+        } else {
+          next.delete(key);
+        }
+      }
+      const routeSlug =
+        initialCategorySlug || initialOccasionSlug || initialSeasonSlug;
+      const base = routeSlug ? `/bo-suu-tap/${routeSlug}` : '/bo-suu-tap';
+      const qs = next.toString();
+      router.replace(qs ? `${base}?${qs}` : base, { scroll: false });
+    },
+    [initialCategorySlug, initialOccasionSlug, initialSeasonSlug, router, searchParams],
+  );
+
+  const updateFilter = useCallback(
+    (key: string, value: string) => {
+      updateFilters({ [key]: value });
+    },
+    [updateFilters],
+  );
+
+  const buildCategoryHref = (slug?: string) => {
     const next = new URLSearchParams(searchParams.toString());
-    if (value) {
-      next.set(key, value);
-    } else {
-      next.delete(key);
-    }
-    const routeSlug =
-      initialCategorySlug || initialOccasionSlug || initialSeasonSlug;
-    const base = routeSlug ? `/bo-suu-tap/${routeSlug}` : '/bo-suu-tap';
+    next.delete('category');
+    next.delete('categorySlug');
     const qs = next.toString();
-    router.push(qs ? `${base}?${qs}` : base);
+    const base = slug ? `/bo-suu-tap/${slug}` : '/bo-suu-tap';
+    return qs ? `${base}?${qs}` : base;
+  };
+
+  const handleApplyQuickMySize = (chosenSize: string) => {
+    const normalized = chosenSize.trim().toUpperCase();
+    const updated = saveBodyProfileSize(normalized, savedProfile);
+    setSavedProfile(updated);
+    setShowQuickSizePicker(false);
+    setMySizeStatus(
+      `Đã lưu Size ${normalized} vào hồ sơ vóc dáng và đang lọc các thiết kế còn hàng cỡ ${normalized}.`,
+    );
+    updateFilters({ mySize: normalized, size: '' });
   };
 
   const handleToggleMySize = async () => {
-    if (mySizeActive) {
-      setMySizeActive(false);
+    if (mySize) {
       setMySizeStatus(null);
-      updateFilter('size', '');
+      setShowQuickSizePicker(false);
+      updateFilters({ mySize: '', size: '' });
       return;
     }
 
+    // 1. Check shared localStorage `atelier_body_profile_v1` first
+    const profile = readStoredBodyProfile();
+    if (profile?.recommendedSize) {
+      setSavedProfile(profile);
+      setShowQuickSizePicker(false);
+      const bodyMeta =
+        profile.heightCm && profile.weightKg
+          ? ` (từ hồ sơ ${Math.round(profile.heightCm)}cm · ${Math.round(profile.weightKg)}kg)`
+          : '';
+      setMySizeStatus(
+        `Đang lọc sản phẩm còn hàng theo Size ${profile.recommendedSize}${bodyMeta}.`,
+      );
+      updateFilters({ mySize: profile.recommendedSize, size: '' });
+      return;
+    }
+
+    // 2. If profile has height & weight without recommendedSize yet, calculate live
+    const referenceProduct = products[0] ?? initialProducts[0];
+    if (profile?.heightCm && profile?.weightKg && referenceProduct) {
+      setMySizeStatus('Đang tính kích cỡ phù hợp từ hồ sơ số đo của bạn...');
+      const recRes = await apiFetch<SizeRecommendResponse>(
+        '/bff/v1/storefront/size-recommend',
+        {
+          method: 'POST',
+          skipAuthRefresh: true,
+          body: JSON.stringify({
+            productSlug: referenceProduct.slug,
+            heightCm: profile.heightCm,
+            weightKg: profile.weightKg,
+            bustCm: profile.bustCm ?? undefined,
+            waistCm: profile.waistCm ?? undefined,
+            hipCm: profile.hipCm ?? undefined,
+          }),
+        },
+      );
+      if (recRes.ok && recRes.data?.recommendedSize) {
+        const updated = saveBodyProfileSize(recRes.data.recommendedSize, profile);
+        setSavedProfile(updated);
+        setShowQuickSizePicker(false);
+        setMySizeStatus(
+          `Đang lọc sản phẩm còn hàng theo Size ${recRes.data.recommendedSize} (${profile.heightCm}cm / ${profile.weightKg}kg).`,
+        );
+        updateFilters({ mySize: recRes.data.recommendedSize, size: '' });
+        return;
+      }
+    }
+
+    // 3. Check logged-in customer body profile from BFF
     const session = getStoredSession();
     if (session?.accessToken) {
-      setMySizeStatus('Đang đọc hồ sơ số đo cá nhân...');
+      setMySizeStatus('Đang đồng bộ hồ sơ số đo cá nhân...');
       const profileRes = await apiFetch<CustomerBodyProfileDto>(
         '/bff/v1/customers/me/body-profile',
       );
-      if (profileRes.ok && profileRes.data) {
-        const referenceProduct = products[0] ?? initialProducts[0];
-        if (referenceProduct) {
-          const recRes = await apiFetch<SizeRecommendResponse>(
-            '/bff/v1/storefront/size-recommend',
-            {
-              method: 'POST',
-              body: JSON.stringify({
-                productSlug: referenceProduct.slug,
-                heightCm: profileRes.data.heightCm,
-                weightKg: profileRes.data.weightKg,
-                bustCm: profileRes.data.bustCm ?? undefined,
-                waistCm: profileRes.data.waistCm ?? undefined,
-                hipCm: profileRes.data.hipCm ?? undefined,
-                shoulderCm: profileRes.data.shoulderCm ?? undefined,
-                fitPreference: profileRes.data.fitPreference,
-              }),
-            },
-          );
+      if (profileRes.ok && profileRes.data && referenceProduct) {
+        const recRes = await apiFetch<SizeRecommendResponse>(
+          '/bff/v1/storefront/size-recommend',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              productSlug: referenceProduct.slug,
+              heightCm: profileRes.data.heightCm,
+              weightKg: profileRes.data.weightKg,
+              bustCm: profileRes.data.bustCm ?? undefined,
+              waistCm: profileRes.data.waistCm ?? undefined,
+              hipCm: profileRes.data.hipCm ?? undefined,
+              shoulderCm: profileRes.data.shoulderCm ?? undefined,
+              fitPreference: profileRes.data.fitPreference,
+            }),
+          },
+        );
 
-          if (recRes.ok && recRes.data?.recommendedSize) {
-            try {
-              window.sessionStorage.setItem(
-                'atelier_last_recommended_size',
-                recRes.data.recommendedSize,
-              );
-            } catch {
-              // Ignore private mode errors
-            }
-            setMySizeActive(true);
-            setMySizeStatus(
-              `Đang lọc sản phẩm còn hàng theo cỡ ${recRes.data.recommendedSize} (từ hồ sơ ${profileRes.data.heightCm}cm / ${profileRes.data.weightKg}kg).`,
-            );
-            updateFilter('size', recRes.data.recommendedSize);
-            return;
-          }
+        if (recRes.ok && recRes.data?.recommendedSize) {
+          const updated = saveBodyProfileSize(recRes.data.recommendedSize, {
+            heightCm: profileRes.data.heightCm,
+            weightKg: profileRes.data.weightKg,
+            bustCm: profileRes.data.bustCm ?? undefined,
+            waistCm: profileRes.data.waistCm ?? undefined,
+            hipCm: profileRes.data.hipCm ?? undefined,
+          });
+          setSavedProfile(updated);
+          setShowQuickSizePicker(false);
+          setMySizeStatus(
+            `Đang lọc sản phẩm còn hàng theo Size ${recRes.data.recommendedSize} (từ hồ sơ ${profileRes.data.heightCm}cm / ${profileRes.data.weightKg}kg).`,
+          );
+          updateFilters({ mySize: recRes.data.recommendedSize, size: '' });
+          return;
         }
       }
     }
 
-    try {
-      const cachedSize = window.sessionStorage.getItem(
-        'atelier_last_recommended_size',
-      );
-      if (cachedSize) {
-        setMySizeActive(true);
-        setMySizeStatus(
-          `Đang lọc sản phẩm còn hàng theo cỡ ${cachedSize} (từ kết quả tính cỡ gần nhất trong phiên).`,
-        );
-        updateFilter('size', cachedSize);
-        return;
-      }
-    } catch {
-      // Ignore private mode
-    }
-
+    // 4. No saved profile yet: show inline instant quick-size picker + advisor link
+    setShowQuickSizePicker((prev) => !prev);
     setMySizeStatus(
-      'Vui lòng đăng nhập tại /dang-nhap hoặc tính cỡ tại Cố vấn Size AI để kích hoạt bộ lọc theo size của bạn.',
+      'Chưa có hồ sơ size đã lưu. Chọn nhanh cỡ của bạn bên dưới hoặc tính chi tiết bằng Cố vấn Size AI:',
     );
   };
 
   const activeHeading =
+    CATEGORY_TABS.find((c) => c.slug === activeCategorySlug)?.name ||
     headingTitle ||
-    CATEGORY_TABS.find((c) => c.slug === initialCategorySlug)?.name ||
     'Tất cả bộ sưu tập';
+
+  const firstProductSlug =
+    products[0]?.slug ?? initialProducts[0]?.slug ?? 'ao-so-mi-lua-to-tam-tam-xuan';
+  const isTryOnFilterActive = isTryonEnabled === 'true';
+  const isMySizeFilterActive = Boolean(mySize);
+  const savedSizeHint = savedProfile?.recommendedSize;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-10 lg:px-10">
@@ -216,10 +456,17 @@ export function CollectionCatalogClient({
           <p className="atelier-eyebrow text-[#8A672C]">
             Danh mục sản phẩm · Meilisearch Tiếng Việt
           </p>
-          <span className="rounded-full border border-[#B08A4A]/35 bg-[#F4EBDA] px-3 py-1 text-[11px] text-[#8A672C]">
-            {initialSource === 'live-bff' ? 'Live Catalog' : 'Fallback Mode'} ·{' '}
-            {products.length} thiết kế
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {lastQueryMs !== null ? (
+              <span className="rounded-full border border-[#B08A4A]/30 bg-white px-3 py-1 font-mono text-[11px] text-[#5C4B41]">
+                Truy vấn {lastQueryMs}ms
+              </span>
+            ) : null}
+            <span className="rounded-full border border-[#B08A4A]/35 bg-[#F4EBDA] px-3 py-1 text-[11px] text-[#8A672C]">
+              {initialSource === 'live-bff' ? 'Live Catalog' : 'Fallback Mode'} ·{' '}
+              {products.length} thiết kế
+            </span>
+          </div>
         </div>
         <h1 className="font-editorial mt-2 text-5xl font-light text-[#1C1410]">
           {activeHeading}
@@ -227,11 +474,11 @@ export function CollectionCatalogClient({
 
         <div className="mt-5 flex flex-wrap gap-2">
           <Link
-            href="/bo-suu-tap"
+            href={buildCategoryHref()}
             className={`rounded-full px-4 py-1.5 text-xs transition-colors ${
-              !initialCategorySlug && !initialOccasionSlug && !initialSeasonSlug
+              !activeCategorySlug && !initialOccasionSlug && !initialSeasonSlug
                 ? 'bg-[#1C1410] text-[#EBCF8F]'
-                : 'border border-[#B08A4A]/35 bg-[#FBF7EF] text-[#2B2019]'
+                : 'border border-[#B08A4A]/35 bg-[#FBF7EF] text-[#2B2019] hover:border-[#8A672C]'
             }`}
           >
             Tất cả
@@ -239,9 +486,9 @@ export function CollectionCatalogClient({
           {CATEGORY_TABS.map((cat) => (
             <Link
               key={cat.slug}
-              href={`/bo-suu-tap/${cat.slug}`}
+              href={buildCategoryHref(cat.slug)}
               className={`rounded-full px-4 py-1.5 text-xs transition-colors ${
-                initialCategorySlug === cat.slug
+                activeCategorySlug === cat.slug
                   ? 'bg-[#1C1410] text-[#EBCF8F]'
                   : 'border border-[#B08A4A]/35 bg-[#FBF7EF] text-[#2B2019] hover:border-[#8A672C]'
               }`}
@@ -252,7 +499,7 @@ export function CollectionCatalogClient({
         </div>
       </div>
 
-      {/* Multi-Facet Filter Bar synced with URL query */}
+      {/* Multi-Facet Filter Bar synced with URL Search Params */}
       <section className="mt-6 rounded-3xl border border-[#B08A4A]/25 bg-[#F4EBDA]/55 p-5">
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6">
           <form
@@ -264,13 +511,21 @@ export function CollectionCatalogClient({
           >
             <input
               type="search"
+              data-testid="plp-search-input"
               value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Tìm không dấu: ao blazer, vay di tiec..."
+              onChange={(event) => {
+                const nextVal = event.target.value;
+                setSearchInput(nextVal);
+                if (nextVal === '' && q !== '') {
+                  updateFilter('q', '');
+                }
+              }}
+              placeholder="Tìm không dấu: ao so mi lua, ao len cashmere..."
               className="flex-1 rounded-full border border-[#B08A4A]/35 bg-white px-4 py-2 text-xs text-[#1C1410] outline-none focus:border-[#8A672C]"
             />
             <button
               type="submit"
+              data-testid="plp-search-submit"
               className="rounded-full bg-[#1C1410] px-4 py-2 text-[11px] uppercase tracking-[0.14em] text-[#EBCF8F]"
             >
               Tìm
@@ -316,6 +571,7 @@ export function CollectionCatalogClient({
 
           <select
             aria-label="Sắp xếp theo"
+            data-testid="plp-sort-select"
             value={sort}
             onChange={(event) => updateFilter('sort', event.target.value)}
             className="rounded-full border border-[#B08A4A]/35 bg-white px-3.5 py-2 text-xs text-[#1C1410]"
@@ -349,61 +605,110 @@ export function CollectionCatalogClient({
           />
         </div>
 
+        {/* Size pills + 2 Strategic Quick Toggle Chips */}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#B08A4A]/20 pt-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] uppercase tracking-[0.16em] text-[#8A672C]">
               Kích cỡ:
             </span>
-            {SIZE_FILTER_OPTIONS.map((code) => (
-              <button
-                key={code}
-                type="button"
-                onClick={() => updateFilter('size', size === code ? '' : code)}
-                className={`rounded-full px-3 py-1 text-xs ${
-                  size === code
-                    ? 'bg-[#1C1410] text-[#EBCF8F]'
-                    : 'border border-[#B08A4A]/35 bg-white text-[#2B2019]'
-                }`}
-              >
-                {code}
-              </button>
-            ))}
+            {SIZE_FILTER_OPTIONS.map((code) => {
+              const selected = effectiveSize === code;
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() =>
+                    updateFilters({
+                      size: selected ? '' : code,
+                      mySize: '',
+                    })
+                  }
+                  className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                    selected
+                      ? 'bg-[#1C1410] text-[#EBCF8F]'
+                      : 'border border-[#B08A4A]/35 bg-white text-[#2B2019] hover:border-[#8A672C]'
+                  }`}
+                >
+                  {code}
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
             <button
               type="button"
+              data-testid="plp-filter-tryon"
+              aria-pressed={isTryOnFilterActive}
               onClick={() =>
                 updateFilter(
                   'isTryonEnabled',
-                  isTryonEnabled === 'true' ? '' : 'true',
+                  isTryOnFilterActive ? '' : 'true',
                 )
               }
-              className={`rounded-full px-4 py-1.5 text-xs ${
-                isTryonEnabled === 'true'
-                  ? 'bg-[#1C1410] text-[#EBCF8F]'
-                  : 'border border-[#B08A4A]/40 bg-white text-[#2B2019]'
+              className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
+                isTryOnFilterActive
+                  ? 'bg-[#1C1410] text-[#EBCF8F] shadow-sm'
+                  : 'border border-[#B08A4A]/45 bg-white text-[#1C1410] hover:border-[#8A672C]'
               }`}
             >
-              Hỗ trợ Thử đồ AI
+              ✦ Hỗ trợ Thử đồ AI
             </button>
 
             <button
               type="button"
-              onClick={handleToggleMySize}
-              className={`rounded-full px-4 py-1.5 text-xs font-medium ${
-                mySizeActive
-                  ? 'bg-[#8A672C] text-[#FBF7EF]'
-                  : 'border border-[#8A672C] bg-[#FBF7EF] text-[#8A672C]'
+              data-testid="plp-filter-mysize"
+              aria-pressed={isMySizeFilterActive}
+              onClick={() => void handleToggleMySize()}
+              className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
+                isMySizeFilterActive
+                  ? 'bg-[#8A672C] text-[#FBF7EF] shadow-sm'
+                  : 'border border-[#8A672C] bg-[#FBF7EF] text-[#8A672C] hover:bg-[#1C1410] hover:text-[#EBCF8F]'
               }`}
             >
-              Còn hàng theo Size của tôi
+              ✓ Còn hàng theo Size của tôi
+              {isMySizeFilterActive
+                ? ` (${mySize})`
+                : savedSizeHint
+                  ? ` (${savedSizeHint})`
+                  : ''}
             </button>
           </div>
         </div>
 
         {mySizeStatus ? (
           <p className="mt-3 text-xs text-[#5C4B41]">{mySizeStatus}</p>
+        ) : null}
+
+        {showQuickSizePicker ? (
+          <div
+            data-testid="plp-mysize-quick-picker"
+            className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#B08A4A]/35 bg-[#FBF7EF] px-4 py-3"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#8A672C]">
+                Chọn nhanh Size của bạn:
+              </span>
+              {QUICK_MY_SIZES.map((sz) => (
+                <button
+                  key={sz}
+                  type="button"
+                  data-testid={`plp-quick-size-${sz}`}
+                  onClick={() => handleApplyQuickMySize(sz)}
+                  className="rounded-full border border-[#8A672C]/50 bg-white px-3.5 py-1 text-xs font-medium text-[#1C1410] transition-colors hover:bg-[#1C1410] hover:text-[#EBCF8F]"
+                >
+                  Size {sz}
+                </button>
+              ))}
+            </div>
+            <Link
+              href={`/san-pham/${firstProductSlug}#pdp-size-advisor`}
+              className="text-xs font-medium text-[#8A672C] underline underline-offset-4 hover:text-[#1C1410]"
+            >
+              Hoặc tính chuẩn theo số đo tại Cố vấn Size AI →
+            </Link>
+          </div>
         ) : null}
       </section>
 
@@ -474,7 +779,7 @@ export function CollectionCatalogClient({
                       href={`/san-pham/${product.slug}?tryon=1`}
                       className="absolute right-3 bottom-3 rounded-full bg-[#1C1410]/90 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-[#EBCF8F]"
                     >
-                      Ướm thử AI
+                      ✦ Ướm thử AI
                     </Link>
                   ) : null}
                 </div>

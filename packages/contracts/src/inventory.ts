@@ -40,6 +40,8 @@ export const InventoryLedgerReason = {
   GRN_INBOUND: 'GRN_INBOUND',
   RMA_RESTOCK: 'RMA_RESTOCK',
   ADJUSTMENT: 'ADJUSTMENT',
+  TRANSFER_OUT: 'TRANSFER_OUT',
+  TRANSFER_IN: 'TRANSFER_IN',
 } as const;
 export type InventoryLedgerReason =
   (typeof InventoryLedgerReason)[keyof typeof InventoryLedgerReason];
@@ -52,6 +54,8 @@ export const InventoryLedgerReasonSchema = z.enum([
   InventoryLedgerReason.GRN_INBOUND,
   InventoryLedgerReason.RMA_RESTOCK,
   InventoryLedgerReason.ADJUSTMENT,
+  InventoryLedgerReason.TRANSFER_OUT,
+  InventoryLedgerReason.TRANSFER_IN,
 ]);
 
 export const BatchAvailabilityRequestSchema = z.object({
@@ -218,3 +222,62 @@ export const InventoryLedgerEntryDtoSchema = z.object({
   createdAt: z.string(),
 });
 export type InventoryLedgerEntryDto = z.infer<typeof InventoryLedgerEntryDtoSchema>;
+
+// ----------------------------------------------------------------------------
+// Stage P2.1: Inventory Adjustments, Transfers, Warehouses & Safety Threshold
+// ----------------------------------------------------------------------------
+
+export const InventoryAdjustmentDtoSchema = z.object({
+  sku: z.string().trim().min(1).optional(),
+  skuId: z.string().trim().min(1).optional(),
+  warehouseCode: z.string().trim().min(1),
+  deltaAvailable: z.coerce.number().int().default(0),
+  deltaDamaged: z.coerce.number().int().default(0),
+  reasonCode: z.string().trim().min(1).max(80),
+  note: z.string().max(500).optional(),
+  actorId: z.string().trim().optional(),
+  actorEmail: z.string().trim().optional(),
+});
+export type InventoryAdjustmentDto = z.infer<typeof InventoryAdjustmentDtoSchema>;
+
+export const InventoryTransferDtoSchema = z.object({
+  sku: z.string().trim().min(1).optional(),
+  skuId: z.string().trim().min(1).optional(),
+  fromWarehouseCode: z.string().trim().min(1),
+  toWarehouseCode: z.string().trim().min(1),
+  quantity: z.coerce.number().int().positive(),
+  note: z.string().max(500).optional(),
+  actorId: z.string().trim().optional(),
+  actorEmail: z.string().trim().optional(),
+});
+export type InventoryTransferDto = z.infer<typeof InventoryTransferDtoSchema>;
+
+export const CreateWarehouseDtoSchema = z.object({
+  code: z.string().trim().min(2).max(40),
+  name: z.string().trim().min(2).max(160),
+  warehouseType: WarehouseTypeSchema.default(WarehouseType.SHOWROOM),
+  city: z.string().trim().min(1).max(100),
+  address: z.string().max(300).nullable().optional(),
+  isActive: z.boolean().default(true),
+  priority: z.coerce.number().int().default(10),
+});
+export type CreateWarehouseDto = z.infer<typeof CreateWarehouseDtoSchema>;
+
+export const UpdateWarehouseDtoSchema = CreateWarehouseDtoSchema.omit({ code: true }).partial();
+export type UpdateWarehouseDto = z.infer<typeof UpdateWarehouseDtoSchema>;
+
+export const UpdateSafetyThresholdDtoSchema = z.object({
+  safetyThreshold: z.coerce.number().int().nonnegative().max(100_000),
+  warehouseCode: z.string().trim().min(1).optional(),
+});
+export type UpdateSafetyThresholdDto = z.infer<typeof UpdateSafetyThresholdDtoSchema>;
+
+export const InventoryLedgerQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  sku: z.string().trim().optional(),
+  warehouseCode: z.string().trim().optional(),
+  movementType: z.string().trim().optional(),
+  reason: z.string().trim().optional(),
+});
+export type InventoryLedgerQuery = z.infer<typeof InventoryLedgerQuerySchema>;

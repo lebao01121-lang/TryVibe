@@ -3,22 +3,38 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import json
 import logging
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 
+from app.config import REPO_ROOT
 from app.db.models import utcnow
+from app.providers.base import (
+    TryOnGenerationRequest,
+    VTONProvider,
+    get_provider_display_badge,
+)
+from app.providers.mock_provider import get_vton_provider
 from app.storage.minio_client import MinioStorageClient
 
 logger = logging.getLogger("atelier.ai_tryon.lookbook_studio")
 
-LOOKBOOK_WIDTH = 960
-LOOKBOOK_HEIGHT = 1280
+LOOKBOOK_WIDTH = 768
+LOOKBOOK_HEIGHT = 1024
+
+STOREFRONT_PUBLIC_DIR = REPO_ROOT / "apps" / "storefront" / "public"
+TRYON_MODELS_DIR = STOREFRONT_PUBLIC_DIR / "images" / "tryon-models"
+SEASONS_VITRINE_LOOKBOOKS_DIR = (
+    STOREFRONT_PUBLIC_DIR / "images" / "seasons-vitrine" / "lookbooks"
+)
 
 
 @dataclass(frozen=True)
@@ -31,6 +47,7 @@ class VirtualStudioModel:
     vibe: str
     studio_backdrop: str
     palette: tuple[str, str, str]
+    portrait_rel_path: str
     is_dark_scene: bool = False
 
     def as_dict(self) -> dict[str, Any]:
@@ -43,6 +60,7 @@ class VirtualStudioModel:
             "vibe": self.vibe,
             "studioBackdrop": self.studio_backdrop,
             "palette": list(self.palette),
+            "portraitAsset": f"/{self.portrait_rel_path.lstrip('/')}",
         }
 
 
@@ -56,6 +74,7 @@ VIRTUAL_STUDIO_MODELS: tuple[VirtualStudioModel, ...] = (
         vibe="Ánh nắng sớm Hà Nội · Tông kem ngà nhẹ bẫng",
         studio_backdrop="Warm Morning Ivory Studio",
         palette=("#FBF7EF", "#F0E4CE", "#B08A4A"),
+        portrait_rel_path="images/tryon-models/vn-model-petite-xs.webp",
         is_dark_scene=False,
     ),
     VirtualStudioModel(
@@ -67,6 +86,7 @@ VIRTUAL_STUDIO_MODELS: tuple[VirtualStudioModel, ...] = (
         vibe="Kiến trúc Đông Dương · Phom dáng thanh lịch Tràng Tiền",
         studio_backdrop="Trang Tien Archway Daylight",
         palette=("#F4EBDA", "#DFCEB4", "#6E5035"),
+        portrait_rel_path="images/tryon-models/vn-model-balanced-s.webp",
         is_dark_scene=False,
     ),
     VirtualStudioModel(
@@ -78,6 +98,7 @@ VIRTUAL_STUDIO_MODELS: tuple[VirtualStudioModel, ...] = (
         vibe="Tối giản đương đại · Sắc cát đá & linen tự nhiên",
         studio_backdrop="Warm Sandstone Atelier",
         palette=("#EFE7DA", "#CFC2AE", "#3B2D24"),
+        portrait_rel_path="images/tryon-models/vn-model-tall-m.webp",
         is_dark_scene=False,
     ),
     VirtualStudioModel(
@@ -89,6 +110,7 @@ VIRTUAL_STUDIO_MODELS: tuple[VirtualStudioModel, ...] = (
         vibe="Dạ tiệc sang trọng · Ánh đèn champagne trên nền cacao trầm",
         studio_backdrop="Evening Cocoa & Champagne Spotlight",
         palette=("#261B15", "#1C1410", "#EBCF8F"),
+        portrait_rel_path="images/tryon-models/vn-model-curvy-l.webp",
         is_dark_scene=True,
     ),
     VirtualStudioModel(
@@ -100,6 +122,7 @@ VIRTUAL_STUDIO_MODELS: tuple[VirtualStudioModel, ...] = (
         vibe="Nghệ thuật triển lãm · Phông nền ngà tinh giản Quiet Luxury",
         studio_backdrop="Gallery Warm Ivory Backdrop",
         palette=("#FAF5EC", "#ECE1CE", "#B08A4A"),
+        portrait_rel_path="images/seasons-vitrine/lookbooks/xuan-tam-xuan-base.webp",
         is_dark_scene=False,
     ),
 )
@@ -142,6 +165,67 @@ def _infer_scene_darkness(model: VirtualStudioModel, scene_prompt: str) -> bool:
     if any(tok in prompt_lower for tok in light_tokens):
         return False
     return model.is_dark_scene
+
+
+def _infer_lighting_preset(model: VirtualStudioModel, scene_prompt: str) -> Literal["morning", "atelier", "evening"]:
+    prompt_lower = (scene_prompt or "").lower()
+    if any(tok in prompt_lower for tok in ("evening", "night", "tiệc tối", "dạ tiệc", "cocoa", "candle", "spotlight", "tối")):
+        return "evening"
+    if any(tok in prompt_lower for tok in ("morning", "nắng sớm", "sunrise", "ban mai", "sunlight")):
+        return "morning"
+    return "evening" if model.is_dark_scene else "atelier"
+
+
+def _infer_cloth_type(product_name: str | None, scene_prompt: str) -> str:
+    combined = f"{product_name or ''} {scene_prompt or ''}".lower()
+    if any(tok in combined for tok in ("đầm", "váy liền", "dress", "áo dài", "ao dai", "jumpsuit", "overall", "one piece", "one-piece")):
+        return "overall"
+    if any(tok in combined for tok in ("quần", "chân váy", "trouser", "pants", "skirt", "culottes", "bottom", "lower")):
+        return "lower"
+    if any(tok in combined for tok in ("blazer", "trench", "coat", "jacket", "áo khoác", "cardigan", "outerwear", "măng tô")):
+        return "outerwear"
+    return "upper"
+
+
+def _normalize_lookbook_provider_used(raw_provider_used: str | None, raw_provider_type: str | None) -> str:
+    """
+    Normalize actual VTON provider name into a clean <= 32-char identifier (fitting
+    `lookbook_studio_sessions.provider_used VARCHAR(32)`). NEVER returns 'MOCK' for real VTON.
+    """
+    candidates = [raw_provider_used or "", raw_provider_type or ""]
+    for raw in candidates:
+        token = raw.strip().upper().replace("-", "_")
+        if not token or token == "MOCK":
+            continue
+        if token in ("FAL", "FAL_CATVTON", "CATVTON"):
+            return "FAL_CATVTON"
+        if token in ("FASHN", "FASHN_VTON"):
+            return "FASHN_VTON"
+        if token in ("LOCAL_GPU", "LOCAL_GPU_VTON"):
+            return "LOCAL_GPU_VTON"
+        if token in ("HF", "HF_GRADIO", "HF_GRADIO_VTON"):
+            return "HF_GRADIO_VTON"
+        if token in ("PHOTOMETRIC_INPAINT", "SMART_POSE_WARP", "SMART_POSE_WARP_V2", "POSE_WARP"):
+            return "SMART_POSE_WARP_V2"
+        return token[:32]
+    return "SMART_POSE_WARP_V2"
+
+
+def _normalize_webp_768x1024(image_bytes: bytes) -> tuple[bytes, int, int]:
+    """Ensure final synthesized lookbook image is a crisp 768x1024 RGB WebP."""
+    with Image.open(io.BytesIO(image_bytes)) as img:
+        transposed = ImageOps.exif_transpose(img)
+        rgb = transposed.convert("RGB")
+        if rgb.size != (LOOKBOOK_WIDTH, LOOKBOOK_HEIGHT):
+            rgb = ImageOps.fit(
+                rgb,
+                (LOOKBOOK_WIDTH, LOOKBOOK_HEIGHT),
+                method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.35),
+            )
+        out_buf = io.BytesIO()
+        rgb.save(out_buf, format="WEBP", quality=92, method=4)
+        return out_buf.getvalue(), LOOKBOOK_WIDTH, LOOKBOOK_HEIGHT
 
 
 def _draw_vertical_gradient(
@@ -195,7 +279,7 @@ def _render_editorial_lookbook_sync(
     scene_prompt: str,
     garment_bytes: bytes | None,
 ) -> bytes:
-    """Generate a clean, watermark-free 960x1280 (3:4) Quiet Luxury Lookbook WebP."""
+    """Last-resort 768x1024 (3:4) Pillow render used ONLY if every VTON tier fails."""
     w, h = LOOKBOOK_WIDTH, LOOKBOOK_HEIGHT
     is_dark = _infer_scene_darkness(model, scene_prompt)
 
@@ -216,12 +300,11 @@ def _render_editorial_lookbook_sync(
 
     canvas = _draw_vertical_gradient(w, h, top_rgb, bottom_rgb)
 
-    # 1. Warm radial editorial key light + subtle studio arch
     light_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     ldraw = ImageDraw.Draw(light_layer)
     spot_color = (235, 207, 143, 62) if is_dark else (255, 250, 240, 120)
     ldraw.ellipse([int(w * 0.08), int(h * 0.05), int(w * 0.92), int(h * 0.72)], fill=spot_color)
-    light_layer = light_layer.filter(ImageFilter.GaussianBlur(radius=68))
+    light_layer = light_layer.filter(ImageFilter.GaussianBlur(radius=54))
     canvas = Image.alpha_composite(canvas, light_layer)
 
     arch_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -235,61 +318,55 @@ def _render_editorial_lookbook_sync(
     adraw.rectangle([0, int(h * 0.86), w, h], fill=floor_rgba)
     canvas = Image.alpha_composite(canvas, arch_layer)
 
-    # 2. Refined editorial studio model silhouette tailored to model gender & height
     figure_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     fdraw = ImageDraw.Draw(figure_layer)
     cx = w // 2
-    shoulder_half = 132 if model.gender == "MALE" else (106 if model.gender == "FEMALE" else 118)
-    hip_half = 104 if model.gender == "MALE" else (112 if model.gender == "FEMALE" else 108)
+    shoulder_half = 106 if model.gender == "MALE" else (85 if model.gender == "FEMALE" else 94)
+    hip_half = 83 if model.gender == "MALE" else (90 if model.gender == "FEMALE" else 86)
 
-    # Soft studio floor shadow
     fdraw.ellipse(
-        [cx - 175, int(h * 0.88), cx + 175, int(h * 0.93)],
+        [cx - 140, int(h * 0.88), cx + 140, int(h * 0.93)],
         fill=(28, 20, 16, 75 if not is_dark else 135),
     )
 
-    # Hair / head silhouette
-    head_r = 58
+    head_r = 46
     head_cy = int(h * 0.175)
     if model.gender == "FEMALE":
         fdraw.ellipse(
-            [cx - head_r - 12, head_cy - head_r - 8, cx + head_r + 12, head_cy + head_r + 48],
+            [cx - head_r - 10, head_cy - head_r - 6, cx + head_r + 10, head_cy + head_r + 38],
             fill=hair_rgba,
         )
     else:
         fdraw.ellipse(
-            [cx - head_r - 4, head_cy - head_r - 10, cx + head_r + 4, head_cy + int(head_r * 0.4)],
+            [cx - head_r - 4, head_cy - head_r - 8, cx + head_r + 4, head_cy + int(head_r * 0.4)],
             fill=hair_rgba,
         )
     fdraw.ellipse(
         [cx - head_r, head_cy - head_r, cx + head_r, head_cy + head_r],
         fill=skin_rgba,
     )
-    # Neck
     fdraw.rectangle(
-        [cx - 24, head_cy + head_r - 8, cx + 24, int(h * 0.255)],
+        [cx - 19, head_cy + head_r - 6, cx + 19, int(h * 0.255)],
         fill=skin_rgba,
     )
-    # Torso + arms + lower silhouette
     body_poly = [
         (cx - shoulder_half, int(h * 0.255)),
         (cx + shoulder_half, int(h * 0.255)),
-        (cx + shoulder_half + 36, int(h * 0.56)),
-        (cx + hip_half + 12, int(h * 0.58)),
+        (cx + shoulder_half + 28, int(h * 0.56)),
+        (cx + hip_half + 10, int(h * 0.58)),
         (cx + hip_half, int(h * 0.89)),
-        (cx + 16, int(h * 0.89)),
+        (cx + 13, int(h * 0.89)),
         (cx, int(h * 0.62)),
-        (cx - 16, int(h * 0.89)),
+        (cx - 13, int(h * 0.89)),
         (cx - hip_half, int(h * 0.89)),
-        (cx - hip_half - 12, int(h * 0.58)),
-        (cx - shoulder_half - 36, int(h * 0.56)),
+        (cx - hip_half - 10, int(h * 0.58)),
+        (cx - shoulder_half - 28, int(h * 0.56)),
     ]
     base_suit_rgba = (54, 42, 35, 225) if not is_dark else (228, 218, 202, 210)
     fdraw.polygon(body_poly, fill=base_suit_rgba)
     figure_layer = figure_layer.filter(ImageFilter.GaussianBlur(radius=0.8))
     canvas = Image.alpha_composite(canvas, figure_layer)
 
-    # 3. Composite fetched garment flat-lay cleanly onto model torso/drape
     box_x = int(w * 0.19)
     box_y = int(h * 0.235)
     box_w = int(w * 0.62)
@@ -317,16 +394,14 @@ def _render_editorial_lookbook_sync(
     paste_x = box_x + (box_w - overlay.width) // 2
     paste_y = box_y + (box_h - overlay.height) // 2
 
-    # Natural contact shadow behind garment
     shadow_alpha = overlay.getchannel("A").point(lambda px: int(px * 0.30))
     shadow = Image.new("RGBA", overlay.size, (20, 14, 10, 255))
     shadow.putalpha(shadow_alpha)
-    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=10))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=8))
     shadow_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    shadow_layer.paste(shadow, (paste_x + 6, paste_y + 12), shadow)
+    shadow_layer.paste(shadow, (paste_x + 5, paste_y + 10), shadow)
     canvas = Image.alpha_composite(canvas, shadow_layer)
 
-    # Soft feathered edge blending
     edge_mask = Image.new("L", overlay.size, 255)
     edraw = ImageDraw.Draw(edge_mask)
     edraw.rectangle([0, 0, overlay.width - 1, overlay.height - 1], outline=110, width=4)
@@ -338,7 +413,6 @@ def _render_editorial_lookbook_sync(
     garment_layer.paste(overlay, (paste_x, paste_y), overlay)
     canvas = Image.alpha_composite(canvas, garment_layer)
 
-    # 4. Subtle editorial vignette (watermark-free studio finish)
     vignette = Image.new("RGBA", (w, h), (28, 20, 16, 48 if not is_dark else 86))
     vmask = Image.new("L", (w, h), 255)
     vdraw = ImageDraw.Draw(vmask)
@@ -346,7 +420,7 @@ def _render_editorial_lookbook_sync(
         [int(w * 0.04), int(h * 0.03), int(w * 0.96), int(h * 0.97)],
         fill=0,
     )
-    vmask = vmask.filter(ImageFilter.GaussianBlur(radius=95))
+    vmask = vmask.filter(ImageFilter.GaussianBlur(radius=76))
     vignette.putalpha(ImageChops.multiply(vignette.getchannel("A"), vmask))
     canvas = Image.alpha_composite(canvas, vignette)
 
@@ -365,10 +439,15 @@ class LookbookGenerateResult:
     bucket: str
     object_key: str
     result_url: str
-    provider_used: Literal["MOCK", "FAL_CATVTON"]
+    provider_used: str
     width: int
     height: int
     created_at: str
+    provider_badge: str = ""
+    status: Literal["NHAP_AI"] = "NHAP_AI"
+    auto_attach: Literal[False] = False
+    auto_attach_as_tryon_garment: Literal[False] = False
+    requires_human_approval: Literal[True] = True
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -381,35 +460,201 @@ class LookbookGenerateResult:
             "objectKey": self.object_key,
             "resultUrl": self.result_url,
             "providerUsed": self.provider_used,
+            "providerBadge": self.provider_badge or get_provider_display_badge(self.provider_used),
             "width": self.width,
             "height": self.height,
+            "status": self.status,
+            "autoAttach": self.auto_attach,
+            "autoAttachAsTryOnGarment": self.auto_attach_as_tryon_garment,
+            "requiresHumanApproval": self.requires_human_approval,
             "createdAt": self.created_at,
         }
 
 
 class LookbookStudioService:
-    """AI Lookbook Studio: 5 virtual models -> 960x1280 editorial WebP on `atelier-public`."""
+    """
+    AI Lookbook Studio powered by multi-tier `AutoVTONProvider` (`CompositeVtonRouter`):
+    maps all 5 virtual models to real studio portraits on disk -> synthesizes 768x1024
+    editorial WebP on `atelier-public` while preserving strict Human-in-the-Loop locks.
+    """
 
     def __init__(
         self,
         *,
         minio: MinioStorageClient,
         catalog_url: str = "http://127.0.0.1:4002",
-        vton_provider: str = "mock",
+        vton_provider: str = "auto",
+        provider: VTONProvider | None = None,
         fal_key: str = "",
         fal_endpoint_url: str = "https://queue.fal.run/fal-ai/cat-vton",
         fal_timeout_seconds: float = 45.0,
+        hf_token: str = "",
+        hf_vton_enabled: bool = True,
+        hf_vton_timeout_seconds: float = 10.0,
+        lookbook_vton_timeout_seconds: float = 11.5,
     ) -> None:
         self.minio = minio
         self.catalog_url = catalog_url.rstrip("/")
-        self.vton_provider = (vton_provider or "mock").strip().lower()
+        self.vton_provider = (vton_provider or "auto").strip().lower()
         self.fal_key = (fal_key or "").strip()
         self.fal_endpoint_url = fal_endpoint_url
         self.fal_timeout_seconds = fal_timeout_seconds
+        self.lookbook_vton_timeout_seconds = max(6.0, float(lookbook_vton_timeout_seconds))
+
+        if provider is not None:
+            self.provider: VTONProvider = provider
+        else:
+            effective_name = (
+                "auto" if self.vton_provider in ("", "mock") else self.vton_provider
+            )
+            self.provider = get_vton_provider(
+                effective_name,
+                fal_key=self.fal_key,
+                fal_catvton_url=self.fal_endpoint_url,
+                fal_timeout_seconds=min(self.fal_timeout_seconds, 14.0),
+                hf_token=hf_token,
+                hf_vton_enabled=hf_vton_enabled,
+                hf_vton_timeout_seconds=min(hf_vton_timeout_seconds, 8.0),
+                total_timeout_seconds=14.0 if self.fal_key else self.lookbook_vton_timeout_seconds,
+            )
 
     @staticmethod
     def list_virtual_models() -> list[dict[str, Any]]:
         return [m.as_dict() for m in VIRTUAL_STUDIO_MODELS]
+
+    @staticmethod
+    def _resolve_model_portrait_path(model: VirtualStudioModel) -> Path | None:
+        candidates = [
+            (STOREFRONT_PUBLIC_DIR / model.portrait_rel_path).resolve(),
+            (TRYON_MODELS_DIR / "vn-model-balanced-s.webp").resolve(),
+            (TRYON_MODELS_DIR / "vn-model-petite-xs.webp").resolve(),
+            (TRYON_MODELS_DIR / "vn-model-tall-m.webp").resolve(),
+            (TRYON_MODELS_DIR / "vn-model-curvy-l.webp").resolve(),
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return None
+
+    async def _load_model_portrait_bytes(self, model: VirtualStudioModel) -> bytes | None:
+        portrait_path = self._resolve_model_portrait_path(model)
+        if portrait_path is None:
+            return None
+        try:
+            data = await asyncio.to_thread(portrait_path.read_bytes)
+            return data if data and len(data) > 128 else None
+        except Exception as exc:
+            logger.warning("Failed to read studio portrait %s: %s", portrait_path, exc)
+            return None
+
+    def _load_manifest_garment_bytes(self, product_id: str) -> tuple[bytes | None, str | None]:
+        processed_dir = REPO_ROOT / "infra" / "seeds" / "real-assets-cache" / "processed"
+        manifest_path = processed_dir / "manifest.json"
+        if not manifest_path.is_file():
+            return None, None
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            products_map = manifest.get("products") or {}
+            if not isinstance(products_map, dict):
+                return None, None
+            entry = products_map.get(product_id.strip())
+            if isinstance(entry, dict):
+                rel = entry.get("tryonFlat") or entry.get("rackFront")
+                if rel:
+                    asset_path = processed_dir / str(rel)
+                    if asset_path.is_file():
+                        return asset_path.read_bytes(), str(asset_path)
+            # Fallback to first real processed flat-lay asset on disk if ID is synthetic
+            for item in products_map.values():
+                if not isinstance(item, dict):
+                    continue
+                rel = item.get("tryonFlat") or item.get("rackFront")
+                if rel:
+                    asset_path = processed_dir / str(rel)
+                    if asset_path.is_file():
+                        return asset_path.read_bytes(), str(asset_path)
+        except Exception:
+            pass
+        return None, None
+
+    async def _fetch_bytes_from_source(self, source: str) -> bytes | None:
+        cleaned = (source or "").strip()
+        if not cleaned:
+            return None
+
+        if cleaned.lower().startswith("data:") and "," in cleaned:
+            try:
+                raw = base64.b64decode(cleaned.split(",", 1)[1].strip())
+                return raw if raw and len(raw) > 128 else None
+            except Exception:
+                return None
+
+        if cleaned.startswith("/"):
+            rel_path = cleaned.split("?", 1)[0].lstrip("/")
+            try:
+                candidate = (STOREFRONT_PUBLIC_DIR / rel_path).resolve()
+                candidate.relative_to(STOREFRONT_PUBLIC_DIR.resolve())
+                if candidate.is_file():
+                    data = await asyncio.to_thread(candidate.read_bytes)
+                    if data and len(data) > 128:
+                        return data
+            except Exception:
+                pass
+            cleaned = f"http://127.0.0.1:3000{cleaned}"
+
+        if cleaned.startswith("minio://"):
+            parsed = urlparse(cleaned)
+            bucket = parsed.netloc
+            key = parsed.path.lstrip("/")
+            if bucket and key:
+                try:
+                    data = await self.minio.get_object_bytes(bucket=bucket, key=key)
+                    if data and len(data) > 128:
+                        return data
+                except Exception:
+                    pass
+            return None
+
+        # Local filesystem path (used in tests or local asset pipelines)
+        if not cleaned.startswith(("http://", "https://")):
+            try:
+                local_path = Path(cleaned)
+                if local_path.is_file():
+                    data = await asyncio.to_thread(local_path.read_bytes)
+                    if data and len(data) > 128:
+                        return data
+            except Exception:
+                pass
+            return None
+
+        fetch_url = cleaned.replace("http://localhost:", "http://127.0.0.1:")
+        try:
+            async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as client:
+                r = await client.get(fetch_url)
+                if r.status_code == 200 and r.content and len(r.content) > 128:
+                    return r.content
+        except Exception:
+            pass
+
+        # Direct MinIO bucket fallback if URL points at a known MinIO bucket
+        parsed = urlparse(fetch_url)
+        parts = [p for p in parsed.path.lstrip("/").split("/") if p]
+        if len(parts) >= 2 and parts[0] in (
+            self.minio.garments_bucket,
+            self.minio.public_bucket,
+            self.minio.private_bucket,
+        ):
+            try:
+                data = await self.minio.get_object_bytes(
+                    bucket=parts[0],
+                    key="/".join(parts[1:]),
+                )
+                if data and len(data) > 128:
+                    return data
+            except Exception:
+                pass
+
+        return None
 
     async def _fetch_garment_bytes(
         self,
@@ -432,7 +677,7 @@ class LookbookStudioService:
                         for prod in items:
                             if not isinstance(prod, dict):
                                 continue
-                            if str(prod.get("id") or "") != product_id:
+                            if str(prod.get("id") or "") != product_id and str(prod.get("slug") or "") != product_id:
                                 continue
                             resolved_url = (
                                 prod.get("tryonFlatAssetUrl")
@@ -459,85 +704,19 @@ class LookbookStudioService:
             except Exception:
                 pass
 
-        if resolved_url and (
-            resolved_url.startswith("http://") or resolved_url.startswith("https://")
-        ):
-            try:
-                async with httpx.AsyncClient(timeout=3.5) as client:
-                    r = await client.get(resolved_url)
-                    if r.status_code == 200 and r.content:
-                        return r.content, resolved_url
-            except Exception:
-                pass
+        if resolved_url:
+            fetched = await self._fetch_bytes_from_source(resolved_url)
+            if fetched:
+                return fetched, resolved_url
+
+        manifest_bytes, manifest_path = await asyncio.to_thread(
+            self._load_manifest_garment_bytes,
+            product_id,
+        )
+        if manifest_bytes:
+            return manifest_bytes, resolved_url or manifest_path
 
         return None, resolved_url
-
-    async def _try_fal_lookbook(
-        self,
-        *,
-        base_lookbook_webp: bytes,
-        garment_url: str | None,
-        garment_bytes: bytes | None,
-        scene_prompt: str,
-    ) -> bytes | None:
-        if self.vton_provider != "fal" or not self.fal_key:
-            return None
-        try:
-            human_uri = (
-                "data:image/webp;base64,"
-                + base64.b64encode(base_lookbook_webp).decode("ascii")
-            )
-            garment_input = garment_url or (
-                "data:image/webp;base64,"
-                + base64.b64encode(garment_bytes).decode("ascii")
-                if garment_bytes
-                else None
-            )
-            if not garment_input:
-                return None
-            async with httpx.AsyncClient(timeout=self.fal_timeout_seconds) as client:
-                resp = await client.post(
-                    self.fal_endpoint_url,
-                    headers={
-                        "Authorization": f"Key {self.fal_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "human_image_url": human_uri,
-                        "garment_image_url": garment_input,
-                        "cloth_type": "overall",
-                        "prompt": scene_prompt,
-                    },
-                )
-                if resp.status_code >= 400:
-                    return None
-                data = resp.json()
-                img_url = (
-                    (data.get("image") or {}).get("url")
-                    if isinstance(data.get("image"), dict)
-                    else data.get("image_url")
-                )
-                if not img_url:
-                    return None
-                img_resp = await client.get(str(img_url))
-                if img_resp.status_code != 200 or not img_resp.content:
-                    return None
-                # Normalize returned fal output to 960x1280 WebP
-                with Image.open(io.BytesIO(img_resp.content)) as im:
-                    fitted = ImageOps.fit(
-                        im.convert("RGB"),
-                        (LOOKBOOK_WIDTH, LOOKBOOK_HEIGHT),
-                        method=Image.Resampling.LANCZOS,
-                    )
-                    out = io.BytesIO()
-                    fitted.save(out, format="WEBP", quality=90, method=4)
-                    return out.getvalue()
-        except Exception as exc:
-            logger.warning(
-                "fal.ai lookbook generation failed (%s); falling back to Pillow studio render",
-                exc.__class__.__name__,
-            )
-            return None
 
     async def generate_lookbook(
         self,
@@ -547,9 +726,9 @@ class LookbookStudioService:
         scene_prompt: str,
         variant_id: str | None = None,
         garment_image_url: str | None = None,
+        garment_bytes: bytes | None = None,
         product_name: str | None = None,
     ) -> LookbookGenerateResult:
-        del product_name  # Editorial lookbook output is watermark-free
         model = VIRTUAL_STUDIO_MODELS_BY_CODE.get(virtual_model_code)
         if model is None:
             raise ValueError(
@@ -557,30 +736,90 @@ class LookbookStudioService:
                 f"Allowed: {', '.join(VIRTUAL_STUDIO_MODELS_BY_CODE.keys())}"
             )
 
-        garment_bytes, resolved_garment_url = await self._fetch_garment_bytes(
-            garment_image_url=garment_image_url,
-            product_id=product_id,
-            variant_id=variant_id,
-        )
-
-        webp_bytes = await asyncio.to_thread(
-            _render_editorial_lookbook_sync,
-            model=model,
-            scene_prompt=scene_prompt,
-            garment_bytes=garment_bytes,
-        )
-        provider_used: Literal["MOCK", "FAL_CATVTON"] = "MOCK"
-
-        if self.vton_provider == "fal" and self.fal_key:
-            fal_bytes = await self._try_fal_lookbook(
-                base_lookbook_webp=webp_bytes,
-                garment_url=resolved_garment_url,
-                garment_bytes=garment_bytes,
-                scene_prompt=scene_prompt,
+        resolved_garment_url = garment_image_url.strip() if garment_image_url else None
+        if garment_bytes is None:
+            garment_bytes, resolved_garment_url = await self._fetch_garment_bytes(
+                garment_image_url=garment_image_url,
+                product_id=product_id,
+                variant_id=variant_id,
             )
-            if fal_bytes:
-                webp_bytes = fal_bytes
-                provider_used = "FAL_CATVTON"
+
+        portrait_bytes = await self._load_model_portrait_bytes(model)
+        cloth_type = _infer_cloth_type(product_name, scene_prompt)
+        lighting_preset = _infer_lighting_preset(model, scene_prompt)
+
+        webp_bytes: bytes | None = None
+        out_width = LOOKBOOK_WIDTH
+        out_height = LOOKBOOK_HEIGHT
+        provider_used = "PILLOW_LAST_RESORT_FALLBACK"
+        provider_badge = get_provider_display_badge("SMART_POSE_WARP")
+
+        # Primary path: Real Multi-Tier AutoVTONProvider (FAL_CATVTON -> FASHN -> LAN GPU -> HF_GRADIO -> PhotometricInpaint/SmartPoseWarp)
+        if portrait_bytes is not None:
+            try:
+                effective_garment_bytes = garment_bytes
+                if effective_garment_bytes is None:
+                    fallback_img = _build_fallback_garment(
+                        512,
+                        680,
+                        _infer_scene_darkness(model, scene_prompt),
+                    )
+                    g_buf = io.BytesIO()
+                    fallback_img.save(g_buf, format="PNG")
+                    effective_garment_bytes = g_buf.getvalue()
+
+                vton_timeout = 14.0 if self.fal_key else self.lookbook_vton_timeout_seconds
+                gen_req = TryOnGenerationRequest(
+                    person_bytes=portrait_bytes,
+                    garment_bytes=effective_garment_bytes,
+                    garment_image_url=(
+                        resolved_garment_url
+                        if resolved_garment_url
+                        and resolved_garment_url.startswith(("http://", "https://"))
+                        else None
+                    ),
+                    cloth_type=cloth_type,
+                    garment_name=(product_name or product_id or "luxury garment").strip(),
+                    lighting_preset=lighting_preset,
+                    step_order=1,
+                    total_steps=1,
+                    timeout_seconds=vton_timeout,
+                )
+                gen_res = await self.provider.generate(gen_req)
+                raw_bytes = getattr(gen_res, "result_bytes", None)
+                if raw_bytes and len(raw_bytes) > 128:
+                    webp_bytes, out_width, out_height = await asyncio.to_thread(
+                        _normalize_webp_768x1024,
+                        raw_bytes,
+                    )
+                    provider_used = _normalize_lookbook_provider_used(
+                        getattr(gen_res, "provider_used", None),
+                        getattr(gen_res, "provider_type", None),
+                    )
+                    provider_badge = str(
+                        getattr(gen_res, "provider_badge", None)
+                        or get_provider_display_badge(provider_used)
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "All AutoVTONProvider tiers failed for lookbook (%s: %s); using PILLOW_LAST_RESORT_FALLBACK",
+                    exc.__class__.__name__,
+                    str(exc)[:220],
+                )
+                webp_bytes = None
+
+        # Last-resort Pillow 2D fallback ONLY when every VTON tier failed or portrait missing
+        if webp_bytes is None:
+            webp_bytes = await asyncio.to_thread(
+                _render_editorial_lookbook_sync,
+                model=model,
+                scene_prompt=scene_prompt,
+                garment_bytes=garment_bytes,
+            )
+            out_width = LOOKBOOK_WIDTH
+            out_height = LOOKBOOK_HEIGHT
+            provider_used = "PILLOW_LAST_RESORT_FALLBACK"
+            provider_badge = get_provider_display_badge("MOCK")
 
         lookbook_id = str(uuid4())
         safe_product_id = re.sub(r"[^a-zA-Z0-9_-]", "-", product_id.strip())[:80] or "product"
@@ -597,9 +836,8 @@ class LookbookStudioService:
 
         result_url = f"{self.minio.endpoint_url}/{public_bucket}/{object_key}"
 
-        # Verify public URL is immediately readable (200 OK)
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
+            async with httpx.AsyncClient(timeout=2.5) as client:
                 verify_resp = await client.get(result_url)
                 if verify_resp.status_code != 200:
                     logger.warning(
@@ -623,7 +861,12 @@ class LookbookStudioService:
             object_key=object_key,
             result_url=result_url,
             provider_used=provider_used,
-            width=LOOKBOOK_WIDTH,
-            height=LOOKBOOK_HEIGHT,
+            provider_badge=provider_badge,
+            width=out_width,
+            height=out_height,
+            status="NHAP_AI",
+            auto_attach=False,
+            auto_attach_as_tryon_garment=False,
+            requires_human_approval=True,
             created_at=utcnow().isoformat(),
         )

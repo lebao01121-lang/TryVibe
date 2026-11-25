@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   CopilotActionCardType,
   Permission,
@@ -11,12 +11,17 @@ import {
   type CopilotChatResponseDTO,
 } from '@atelier/contracts';
 import { adminFetch } from '@/lib/api-client';
+import { emitPortalToast } from './PortalToastBanner';
 
 export interface McpCopilotDrawerProps {
   activeRole: Role;
   twoFactorVerified: boolean;
   isOpen: boolean;
   onToggleOpen: () => void;
+  initialPrompt?: string | null;
+  onConsumeInitialPrompt?: () => void;
+  onPromotionApproved?: (promotionId: string) => void;
+  onRefreshOverview?: () => void;
 }
 
 interface SafetyReportMeta {
@@ -27,7 +32,10 @@ interface SafetyReportMeta {
 }
 
 type ExtendedCopilotResponse = CopilotChatResponseDTO & {
+  traceId?: string;
   safetyReport?: SafetyReportMeta;
+  llmBackend?: 'ollama' | 'gemini' | 'rule_fallback';
+  geminiConfigured?: boolean;
 };
 
 interface OllamaEngineSnapshot {
@@ -51,9 +59,26 @@ interface ChatTurn {
   id: string;
   role: 'user' | 'assistant' | 'error';
   text: string;
+  promptText?: string;
   response?: ExtendedCopilotResponse;
   errorCode?: string;
 }
+
+interface TurnFeedbackState {
+  status: 'idle' | 'selecting_reason' | 'submitting' | 'saved' | 'error';
+  rating?: 'UP' | 'DOWN';
+  reason?: string;
+  customReason?: string;
+  showCustomInput?: boolean;
+  errorMessage?: string;
+}
+
+const COPILOT_DOWN_REASON_CHIPS = [
+  'Sai số liệu',
+  'Thiếu trích dẫn',
+  'Gợi ý chưa khớp tồn kho',
+  'Khác',
+] as const;
 
 const FORMAT_VND = (amount: number): string =>
   `${new Intl.NumberFormat('vi-VN').format(amount)}₫`;
@@ -86,6 +111,12 @@ function getPromptChipsForRole(role: Role): Array<{ label: string; prompt: strin
   }
 
   chips.push({
+    label: 'Tính size chuẩn (156cm / 46kg)',
+    prompt:
+      'Tính size chuẩn calculate_verified_size cho khách cao 156cm nặng 46kg mẫu áo blazer linen',
+  });
+
+  chips.push({
     label: 'Chính sách đổi size 7–14 ngày',
     prompt:
       'Tóm tắt chính sách đổi size 7–14 ngày và 3 tiêu chí kiểm định QC hoàn kho',
@@ -96,6 +127,11 @@ function getPromptChipsForRole(role: Role): Array<{ label: string; prompt: strin
 
 function resolveTurnTelemetry(resp: ExtendedCopilotResponse) {
   const ot = resp.ollamaTelemetry;
+  const llmBackend =
+    resp.llmBackend ??
+    (resp.modelUsed?.startsWith('gemini:')
+      ? 'gemini'
+      : (ot?.aiProvider ?? resp.aiProvider ?? (resp.fallbackUsed ? 'rule_fallback' : 'ollama')));
   const aiProvider = ot?.aiProvider ?? resp.aiProvider ?? (resp.fallbackUsed ? 'rule_fallback' : 'ollama');
   const modelUsed = ot?.modelUsed ?? resp.modelUsed;
   const embedModel = ot?.embedModel ?? resp.embedModel ?? 'nomic-embed-text';
@@ -111,6 +147,7 @@ function resolveTurnTelemetry(resp: ExtendedCopilotResponse) {
 
   return {
     aiProvider,
+    llmBackend,
     modelUsed,
     embedModel,
     tokensPerSec,
@@ -125,13 +162,21 @@ export function McpCopilotDrawer({
   twoFactorVerified,
   isOpen,
   onToggleOpen,
+  initialPrompt,
+  onConsumeInitialPrompt,
+  onPromotionApproved,
+  onRefreshOverview,
 }: McpCopilotDrawerProps) {
   const [inputMessage, setInputMessage] = useState('');
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [sending, setSending] = useState(false);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const lastConsumedPromptRef = useRef<string | null>(null);
   const [cardStates, setCardStates] = useState<
     Record<string, { busy?: boolean; doneLabel?: string; error?: string }>
+  >({});
+  const [turnFeedbacks, setTurnFeedbacks] = useState<
+    Record<string, TurnFeedbackState>
   >({});
   const [ollamaInfo, setOllamaInfo] = useState<OllamaEngineSnapshot>({
     reachable: true,
@@ -148,6 +193,11 @@ export function McpCopilotDrawer({
   const canApproveMedia =
     twoFactorVerified &&
     hasPermission(activeRole, Permission.CATALOG_AI_APPROVE);
+  const canApprovePromotion =
+    (activeRole === Role.SUPER_ADMIN ? twoFactorVerified : true) &&
+    (activeRole === Role.SUPER_ADMIN ||
+      hasPermission(activeRole, Permission.CATALOG_AI_APPROVE) ||
+      hasPermission(activeRole, Permission.CATALOG_PRODUCT_WRITE));
   const canProbeCluster =
     (activeRole === Role.SUPER_ADMIN ||
       activeRole === Role.WAREHOUSE_MANAGER) &&
@@ -231,6 +281,7 @@ export function McpCopilotDrawer({
           id: `a-${Date.now()}`,
           role: 'assistant',
           text: res.data!.reply,
+          promptText: trimmed,
           response: res.data!,
         },
       ]);
@@ -253,6 +304,66 @@ export function McpCopilotDrawer({
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void sendMessage(inputMessage);
+  };
+
+  const handleSubmitFeedback = async (
+    turn: ChatTurn,
+    rating: 'UP' | 'DOWN',
+    reason?: string,
+  ) => {
+    const resp = turn.response;
+    const traceId = resp?.traceId || resp?.correlationId || turn.id;
+    const trimmedReason = reason?.trim() || undefined;
+
+    setTurnFeedbacks((prev) => ({
+      ...prev,
+      [turn.id]: {
+        ...(prev[turn.id] ?? {}),
+        status: 'submitting',
+        rating,
+        reason: trimmedReason,
+        errorMessage: undefined,
+      },
+    }));
+
+    const res = await adminFetch<unknown>('/api/v1/admin/copilot/feedback', {
+      method: 'POST',
+      body: JSON.stringify({
+        traceId,
+        sessionId: resp?.sessionId ?? sessionId,
+        portal: 'ADMIN_PORTAL',
+        rating,
+        ...(trimmedReason ? { reason: trimmedReason } : {}),
+        promptText: turn.promptText ?? '',
+        responseText: turn.text,
+        prompt: turn.promptText ?? '',
+        response: turn.text,
+      }),
+    });
+
+    if (res.ok) {
+      setTurnFeedbacks((prev) => ({
+        ...prev,
+        [turn.id]: {
+          status: 'saved',
+          rating,
+          reason: trimmedReason,
+        },
+      }));
+    } else {
+      setTurnFeedbacks((prev) => ({
+        ...prev,
+        [turn.id]: {
+          ...(prev[turn.id] ?? {}),
+          status: 'error',
+          rating,
+          reason: trimmedReason,
+          errorMessage:
+            res.error?.message ||
+            'Chưa thể gửi phản hồi Copilot. Vui lòng thử lại.',
+        },
+      }));
+    }
   };
 
   const handleApprovePoCard = async (card: CopilotActionCard) => {
@@ -333,25 +444,163 @@ export function McpCopilotDrawer({
     }));
   };
 
+  const handleApproveClearanceCard = async (card: CopilotActionCard) => {
+    if (!canApprovePromotion) return;
+    const promoId =
+      card.entityId ||
+      (typeof card.payload.promotionId === 'string'
+        ? card.payload.promotionId
+        : null) ||
+      (typeof card.payload.id === 'string' ? card.payload.id : null) ||
+      (typeof card.payload.draftId === 'string' ? card.payload.draftId : null);
+
+    if (!promoId) {
+      setCardStates((prev) => ({
+        ...prev,
+        [card.id]: {
+          error: 'Thiếu mã chiến dịch khuyến mãi để phê duyệt kích hoạt.',
+        },
+      }));
+      return;
+    }
+
+    setCardStates((prev) => ({ ...prev, [card.id]: { busy: true } }));
+
+    const endpoint =
+      card.approveEndpoint && card.approveEndpoint.startsWith('/api/')
+        ? card.approveEndpoint
+        : `/api/v1/admin/promotions/${encodeURIComponent(promoId)}/approve-draft`;
+
+    const res = await adminFetch<unknown>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+
+    if (res.ok) {
+      const codeLabel =
+        typeof card.payload.code === 'string' ? ` (${card.payload.code})` : '';
+      setCardStates((prev) => ({
+        ...prev,
+        [card.id]: {
+          doneLabel: `Đã phê duyệt & Kích hoạt Chiến dịch${codeLabel} → ACTIVE`,
+        },
+      }));
+      emitPortalToast({
+        kind: 'success',
+        title: 'HITL CHIẾN DỊCH KHUYẾN MÃI',
+        message: `Đã phê duyệt & kích hoạt chiến dịch xả kho${codeLabel} lên Storefront.`,
+      });
+      onPromotionApproved?.(promoId);
+      onRefreshOverview?.();
+    } else {
+      setCardStates((prev) => ({
+        ...prev,
+        [card.id]: {
+          error:
+            res.error?.message ||
+            'Không thể phê duyệt & kích hoạt chiến dịch khuyến mãi.',
+        },
+      }));
+    }
+  };
+
+  // Close slide-over drawer cleanly on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onToggleOpen();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onToggleOpen]);
+
+  // Support 1-click handoff prompts from modules such as AiTryOnAnalyticsTab
+  useEffect(() => {
+    const trimmed = initialPrompt?.trim();
+    if (!trimmed) {
+      lastConsumedPromptRef.current = null;
+      return;
+    }
+    if (!isOpen) return;
+    if (lastConsumedPromptRef.current === trimmed) return;
+    lastConsumedPromptRef.current = trimmed;
+    onConsumeInitialPrompt?.();
+    if (sending) {
+      setInputMessage(trimmed);
+    } else {
+      void sendMessage(trimmed);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialPrompt]);
+
   if (!isOpen) {
     return (
-      <div className="fixed right-5 bottom-5 z-30">
+      <div className="fixed right-5 bottom-5 z-40">
         <button
           type="button"
+          data-testid="copilot-floating-launcher"
           onClick={onToggleOpen}
-          className="rounded-full border border-[#EBCF8F]/60 bg-[#1C1410] px-5 py-3 text-xs uppercase tracking-[0.18em] text-[#EBCF8F] shadow-xl"
+          aria-label="Mở Trợ lý Điều hành AI MCP Copilot"
+          className="group flex items-center gap-3 rounded-2xl border border-[#EBCF8F]/45 bg-gradient-to-r from-[#19120D] via-[#221811] to-[#16100C] px-4 py-2.5 text-left text-[#FBF7EF] shadow-[0_18px_42px_-12px_rgba(22,16,12,0.78)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#EBCF8F]/85 hover:shadow-[0_22px_48px_-12px_rgba(176,138,74,0.42)]"
         >
-          Mở Ollama MCP Copilot ({turns.length} lượt)
+          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#EBCF8F]/35 bg-[#B08A4A]/20 text-[#EBCF8F]">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-5 w-5"
+              aria-hidden="true"
+            >
+              <path d="M12 3v3" />
+              <rect x="4" y="6" width="16" height="12" rx="3" />
+              <path d="M9 11h.01" />
+              <path d="M15 11h.01" />
+              <path d="M9 15c1 .8 2 .8 3 .8s2 0 3-.8" />
+              <path d="M2 12h2" />
+              <path d="M20 12h2" />
+            </svg>
+            <span
+              className={`absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#19120D] ${
+                ollamaInfo.reachable ? 'bg-emerald-400' : 'bg-amber-400'
+              }`}
+            />
+          </span>
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.11em] text-[#FBF7EF]">
+                TRỢ LÝ ĐIỀU HÀNH AI
+              </span>
+              <span className="rounded-md border border-[#EBCF8F]/40 bg-[#B08A4A]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-[0.06em] text-[#EBCF8F]">
+                LLM + MCP
+              </span>
+            </span>
+            <span className="mt-0.5 block font-mono text-[10px] text-[#EBCF8F]/80">
+              Ollama {ollamaInfo.activeMainModel} · MCP + HITL
+              {turns.length > 0 ? ` · ${turns.length} lượt` : ''}
+            </span>
+          </span>
         </button>
       </div>
     );
   }
 
   return (
-    <aside
-      aria-label="MCP Copilot Drawer"
-      className="flex w-full flex-col border-l border-[#B08A4A]/25 bg-[#1C1410] text-[#FBF7EF] xl:w-[420px] xl:shrink-0"
-    >
+    <>
+      <div
+        aria-hidden="true"
+        onClick={onToggleOpen}
+        className="fixed inset-0 z-40 bg-[#0D0805]/50 backdrop-blur-[2px]"
+      />
+      <aside
+        data-testid="mcp-copilot-drawer"
+        aria-label="MCP Copilot Drawer"
+        className="adm-drawer-enter fixed top-0 right-0 bottom-0 z-50 flex w-full max-w-[440px] flex-col border-l border-[#B08A4A]/35 bg-[#16100C] text-[#FBF7EF] shadow-[-24px_0_64px_-16px_rgba(0,0,0,0.65)]"
+      >
       {/* Header + Quiet Luxury Local Ollama Badge */}
       <div className="border-b border-[#B08A4A]/20 px-5 py-4">
         <div className="flex items-start justify-between gap-2">
@@ -500,9 +749,11 @@ export function McpCopilotDrawer({
                       Tier {resp.tierUsed}
                     </span>
                     <span className="rounded bg-[#1C1410] px-2 py-0.5">
-                      {telem.aiProvider === 'ollama'
-                        ? `Ollama · ${telem.modelUsed}`
-                        : telem.modelUsed}
+                      {telem.llmBackend === 'gemini'
+                        ? `Gemini API · ${telem.modelUsed}`
+                        : telem.aiProvider === 'ollama'
+                          ? `Ollama · ${telem.modelUsed}`
+                          : telem.modelUsed}
                     </span>
                     {telem.tokensPerSec != null && telem.tokensPerSec > 0 ? (
                       <span className="rounded bg-[#1E4B32] px-2 py-0.5 text-emerald-100">
@@ -519,7 +770,10 @@ export function McpCopilotDrawer({
 
                 {/* Untrusted Customer Data Sandbox Badge */}
                 {hasUntrustedSandbox ? (
-                  <div className="mb-2.5 rounded-xl border border-[#EBCF8F]/55 bg-[#332316] p-2.5 text-[11px] text-[#EBCF8F]">
+                  <div
+                    data-testid="copilot-untrusted-sandbox-badge"
+                    className="mb-2.5 rounded-xl border border-[#EBCF8F]/55 bg-[#332316] p-2.5 text-[11px] text-[#EBCF8F]"
+                  >
                     <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
                       UNTRUSTED CUSTOMER DATA SANDBOX ACTIVE
                     </p>
@@ -539,9 +793,11 @@ export function McpCopilotDrawer({
                 {telem ? (
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#B08A4A]/15 pt-2 font-mono text-[10px] text-[#EBCF8F]/75">
                     <span>
-                      {telem.aiProvider === 'ollama'
-                        ? `Ollama Qwen 2.5 (${telem.modelUsed})`
-                        : 'RuleBased Fallback'}
+                      {telem.llmBackend === 'gemini'
+                        ? `Gemini API (${telem.modelUsed})`
+                        : telem.aiProvider === 'ollama'
+                          ? `Ollama Qwen 2.5 (${telem.modelUsed})`
+                          : 'RuleBased Fallback'}
                       {telem.evalCount != null
                         ? ` · ${telem.promptEvalCount ?? 0}→${telem.evalCount} tok`
                         : ''}
@@ -608,6 +864,162 @@ export function McpCopilotDrawer({
                     </div>
                   </div>
                 ) : null}
+
+                {/* Assistant Feedback (👍 Hữu ích / 👎 Cần cải thiện) */}
+                {(() => {
+                  const fb = turnFeedbacks[turn.id] ?? { status: 'idle' };
+                  const isBusy = fb.status === 'submitting';
+
+                  if (fb.status === 'saved') {
+                    return (
+                      <div
+                        data-testid="copilot-feedback-saved"
+                        className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#B08A4A]/20 pt-2.5 text-[11px] text-emerald-300"
+                      >
+                        <span className="font-medium">
+                          ✓ Đã ghi nhận phản hồi
+                          {fb.rating === 'UP'
+                            ? ' (👍 Hữu ích)'
+                            : fb.reason
+                              ? ` (👎 ${fb.reason})`
+                              : ' (👎 Cần cải thiện)'}
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="mt-3 border-t border-[#B08A4A]/20 pt-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          data-testid="copilot-feedback-up"
+                          disabled={isBusy}
+                          onClick={() => void handleSubmitFeedback(turn, 'UP')}
+                          className="inline-flex items-center gap-1 rounded-full border border-[#B08A4A]/35 bg-[#1C1410] px-2.5 py-1 text-[10px] font-medium text-[#EBCF8F] transition-colors hover:border-emerald-400/60 hover:bg-emerald-950/60 hover:text-emerald-200 disabled:opacity-45"
+                        >
+                          👍 Hữu ích
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="copilot-feedback-down"
+                          disabled={isBusy}
+                          onClick={() =>
+                            setTurnFeedbacks((prev) => ({
+                              ...prev,
+                              [turn.id]: {
+                                ...(prev[turn.id] ?? {}),
+                                status:
+                                  prev[turn.id]?.status === 'selecting_reason'
+                                    ? 'idle'
+                                    : 'selecting_reason',
+                                rating: 'DOWN',
+                                errorMessage: undefined,
+                              },
+                            }))
+                          }
+                          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors disabled:opacity-45 ${
+                            fb.status === 'selecting_reason'
+                              ? 'border-rose-400/70 bg-rose-950/70 text-rose-200'
+                              : 'border-[#B08A4A]/35 bg-[#1C1410] text-[#FBF7EF]/80 hover:border-rose-400/60 hover:bg-rose-950/50 hover:text-rose-200'
+                          }`}
+                        >
+                          👎 Cần cải thiện
+                        </button>
+                        {isBusy ? (
+                          <span className="font-mono text-[10px] text-[#EBCF8F]/70">
+                            Đang lưu phản hồi...
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {fb.status === 'selecting_reason' ? (
+                        <div className="mt-2 space-y-2 rounded-xl border border-[#B08A4A]/25 bg-[#1C1410]/90 p-2.5">
+                          <p className="text-[10px] uppercase tracking-[0.12em] text-[#EBCF8F]/75">
+                            Chọn lý do cần cải thiện:
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {COPILOT_DOWN_REASON_CHIPS.map((chip) => (
+                              <button
+                                key={chip}
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => {
+                                  if (chip === 'Khác') {
+                                    setTurnFeedbacks((prev) => ({
+                                      ...prev,
+                                      [turn.id]: {
+                                        ...(prev[turn.id] ?? {
+                                          status: 'selecting_reason',
+                                        }),
+                                        status: 'selecting_reason',
+                                        rating: 'DOWN',
+                                        showCustomInput: true,
+                                      },
+                                    }));
+                                  } else {
+                                    void handleSubmitFeedback(
+                                      turn,
+                                      'DOWN',
+                                      chip,
+                                    );
+                                  }
+                                }}
+                                className="rounded-full border border-[#B08A4A]/40 bg-[#2A1E17] px-2.5 py-1 text-[10px] text-[#EBCF8F] transition-colors hover:bg-[#B08A4A] hover:text-[#1C1410] disabled:opacity-45"
+                              >
+                                {chip}
+                              </button>
+                            ))}
+                          </div>
+
+                          {fb.showCustomInput ? (
+                            <div className="flex gap-1.5 pt-1">
+                              <input
+                                type="text"
+                                value={fb.customReason ?? ''}
+                                onChange={(e) =>
+                                  setTurnFeedbacks((prev) => ({
+                                    ...prev,
+                                    [turn.id]: {
+                                      ...(prev[turn.id] ?? {
+                                        status: 'selecting_reason',
+                                      }),
+                                      status: 'selecting_reason',
+                                      showCustomInput: true,
+                                      customReason: e.target.value,
+                                    },
+                                  }))
+                                }
+                                placeholder="Mô tả ngắn vấn đề (tùy chọn)..."
+                                className="min-w-0 flex-1 rounded-full border border-[#B08A4A]/40 bg-[#241A14] px-3 py-1 text-[11px] text-[#FBF7EF] placeholder:text-[#FBF7EF]/45 outline-none focus:border-[#EBCF8F]"
+                              />
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() =>
+                                  void handleSubmitFeedback(
+                                    turn,
+                                    'DOWN',
+                                    fb.customReason?.trim() || 'Khác',
+                                  )
+                                }
+                                className="rounded-full bg-[#EBCF8F] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#1C1410] disabled:opacity-45"
+                              >
+                                Gửi
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {fb.status === 'error' && fb.errorMessage ? (
+                        <p className="mt-1.5 text-[10px] text-rose-300">
+                          {fb.errorMessage}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Live Interactive Action Cards */}
@@ -625,12 +1037,25 @@ export function McpCopilotDrawer({
                     return (
                       <article
                         key={card.id}
+                        data-testid="copilot-action-card"
                         className="rounded-2xl border border-[#B08A4A]/50 bg-[#FBF7EF] p-4 text-xs text-[#2B2019]"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="rounded-full bg-[#1C1410] px-2.5 py-0.5 font-mono text-[10px] font-semibold text-[#EBCF8F]">
-                            {card.status}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="rounded-full bg-[#1C1410] px-2.5 py-0.5 font-mono text-[10px] font-semibold text-[#EBCF8F]">
+                              {card.status}
+                            </span>
+                            {typeof card.payload.nguonTao === 'string' ||
+                            typeof card.payload.createdSource === 'string' ? (
+                              <span className="rounded-full border border-[#B08A4A]/45 bg-white px-2 py-0.5 font-mono text-[10px] text-[#8A672C]">
+                                nguonTao:{' '}
+                                {String(
+                                  card.payload.nguonTao ??
+                                    card.payload.createdSource,
+                                )}
+                              </span>
+                            ) : null}
+                          </div>
                           <span className="font-mono text-[10px] text-[#8A672C]">
                             {card.type}
                           </span>
@@ -690,6 +1115,7 @@ export function McpCopilotDrawer({
                             ) : (
                               <button
                                 type="button"
+                                data-testid="copilot-po-approve-btn"
                                 disabled={!canApprovePo || cardState?.busy}
                                 onClick={() => void handleApprovePoCard(card)}
                                 className="w-full rounded-full bg-[#1C1410] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[#EBCF8F] disabled:cursor-not-allowed disabled:opacity-40"
@@ -752,11 +1178,79 @@ export function McpCopilotDrawer({
                           </div>
                         ) : null}
 
-                        {/* SIZING_ADJUSTMENT_PROPOSAL & CLEARANCE_CAMPAIGN_DRAFT */}
-                        {(card.type ===
-                          CopilotActionCardType.SIZING_ADJUSTMENT_PROPOSAL ||
-                          card.type ===
-                            CopilotActionCardType.CLEARANCE_CAMPAIGN_DRAFT) ? (
+                        {/* CLEARANCE_CAMPAIGN_DRAFT: 1-Click HITL Promotion Activation */}
+                        {card.type ===
+                        CopilotActionCardType.CLEARANCE_CAMPAIGN_DRAFT ? (
+                          <div className="mt-3 space-y-2.5">
+                            <div className="space-y-1 rounded-xl bg-[#F4EBDA]/80 p-2.5 font-mono text-[11px] text-[#2B2019]">
+                              {typeof card.payload.code === 'string' ? (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[#7A6A5B]">Mã Voucher</span>
+                                  <strong className="rounded bg-[#1C1410] px-2 py-0.5 text-[#EBCF8F]">
+                                    {card.payload.code}
+                                  </strong>
+                                </div>
+                              ) : null}
+                              {(typeof card.payload.discountPercent === 'number' ||
+                                typeof card.payload.discountValue === 'number') ? (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[#7A6A5B]">Mức giảm xả kho</span>
+                                  <strong className="text-[#1E4B32]">
+                                    {String(
+                                      card.payload.discountPercent ??
+                                        card.payload.discountValue,
+                                    )}
+                                    %
+                                  </strong>
+                                </div>
+                              ) : null}
+                              {Array.isArray(card.payload.targetSkuCodes) &&
+                              card.payload.targetSkuCodes.length > 0 ? (
+                                <div className="pt-1 text-[10px] text-[#5C4B41]">
+                                  SKU áp dụng:{' '}
+                                  {(card.payload.targetSkuCodes as unknown[])
+                                    .map(String)
+                                    .join(', ')}
+                                </div>
+                              ) : null}
+                            </div>
+
+                            {cardState?.doneLabel ? (
+                              <p
+                                data-testid="copilot-clearance-approved-badge"
+                                className="rounded-xl border border-[#2E6B47]/35 bg-[#F2FBF6] px-3 py-2 text-[11px] font-medium text-[#1E4B32]"
+                              >
+                                ✓ {cardState.doneLabel}
+                              </p>
+                            ) : (
+                              <button
+                                type="button"
+                                data-testid="copilot-clearance-approve-btn"
+                                disabled={!canApprovePromotion || cardState?.busy}
+                                onClick={() =>
+                                  void handleApproveClearanceCard(card)
+                                }
+                                className="w-full rounded-full bg-[#1C1410] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[#EBCF8F] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {cardState?.busy
+                                  ? 'Đang phê duyệt & kích hoạt...'
+                                  : 'Phê duyệt & Kích hoạt Chiến dịch'}
+                              </button>
+                            )}
+
+                            {!canApprovePromotion ? (
+                              <p className="text-[10px] text-[#8B2E2E]">
+                                {!twoFactorVerified
+                                  ? 'Cần xác thực 2FA để phê duyệt chiến dịch khuyến mãi.'
+                                  : `Vai trò ${activeRole} không có quyền phê duyệt chiến dịch khuyến mãi.`}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        {/* SIZING_ADJUSTMENT_PROPOSAL */}
+                        {card.type ===
+                        CopilotActionCardType.SIZING_ADJUSTMENT_PROPOSAL ? (
                           <div className="mt-2.5 rounded-xl bg-[#F4EBDA]/80 p-2.5 text-[11px] text-[#5C4B41]">
                             Đề xuất chỉ đọc / nháp nội bộ — nhân sự xem xét và
                             áp dụng trong phân hệ chuyên môn.
@@ -792,6 +1286,7 @@ export function McpCopilotDrawer({
         <div className="flex gap-2">
           <input
             type="text"
+            data-testid="copilot-input"
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             placeholder="Nhập câu hỏi vận hành cho Ollama MCP Copilot..."
@@ -800,6 +1295,7 @@ export function McpCopilotDrawer({
           />
           <button
             type="submit"
+            data-testid="copilot-send-btn"
             disabled={sending || !inputMessage.trim()}
             className="rounded-full bg-[#EBCF8F] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#1C1410] disabled:opacity-40"
           >
@@ -807,6 +1303,7 @@ export function McpCopilotDrawer({
           </button>
         </div>
       </form>
-    </aside>
+      </aside>
+    </>
   );
 }

@@ -1,6 +1,8 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
+import { useCallback } from 'react';
 import {
   TryOnGarmentCategory,
   TryOnMode,
@@ -20,45 +22,45 @@ function TryOnStudioSkeleton() {
     <div
       role="status"
       aria-live="polite"
-      aria-label="Đang khởi tạo Phòng Thử Đồ 3D AR"
-      className="relative mx-auto flex min-h-[640px] w-full max-w-[1280px] flex-col overflow-hidden rounded-3xl border border-[#B08A4A]/35 bg-[#1C1410] text-[#FBF7EF] shadow-2xl"
+      aria-label="Đang khởi tạo Phòng Thử Đồ AI"
+      className="fixed inset-0 z-[1200] flex h-[100svh] w-screen flex-col overflow-hidden bg-[#18120E] text-[#FBF7EF]"
     >
-      <div className="flex items-center justify-between border-b border-[#B08A4A]/22 bg-[#231914]/96 px-5 py-3.5">
-        <div className="space-y-1.5">
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-[#B08A4A]/22 bg-[#18120E] px-5">
+        <div className="space-y-1">
           <p className="text-[10px] font-medium tracking-[0.22em] uppercase text-[#EBCF8F]">
-            PHÒNG THỬ ĐỒ 3D AR · VIRTUAL TRY-ON ATELIER
+            PHÒNG THỬ ĐỒ AI · VIRTUAL TRY-ON ATELIER
           </p>
-          <div className="h-5 w-64 animate-pulse rounded-full bg-[#3A2B22]" />
+          <p className="font-editorial text-xl font-light text-[#FBF7EF]">
+            Ướm thử trực tiếp trên vóc dáng thật
+          </p>
         </div>
-        <div className="h-8 w-28 animate-pulse rounded-full border border-[#B08A4A]/30 bg-[#2A1E17]" />
+        <div className="h-8 w-48 animate-pulse rounded-full border border-[#B08A4A]/30 bg-[#241A14]" />
       </div>
 
-      <div className="grid flex-1 gap-6 p-6 lg:grid-cols-[1.35fr_0.85fr]">
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-[#B08A4A]/20 bg-gradient-to-b from-[#2A1E17] via-[#1C1410] to-[#150F0C] p-8 text-center">
-          <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full border border-[#B08A4A]/45 bg-[#231914] font-editorial text-xl tracking-wider text-[#EBCF8F]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-[#B08A4A]/22 bg-gradient-to-b from-[#241A14] via-[#1C1410] to-[#140E0B] p-8 text-center">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-[#B08A4A]/45 bg-[#1F1712] font-editorial text-lg tracking-wider text-[#EBCF8F]">
             T&amp;X
           </div>
           <p className="font-editorial text-2xl font-light text-[#FBF7EF]">
-            Đang chuẩn bị Gương Thử Đồ 3D...
+            Đang chuẩn bị Phòng Thử Đồ AI...
           </p>
           <p className="mt-2 max-w-sm text-xs leading-relaxed text-[#C9B8A3]">
-            Khởi tạo không gian ánh sáng Atelier và mô hình dựng phom 3D trực
-            tiếp trên thiết bị của bạn.
+            Khởi tạo Gương Camera Thông Minh, ánh sáng Atelier và bảo mật tự động xóa ảnh sau 15 phút.
           </p>
-          <div className="mt-6 h-1 w-48 overflow-hidden rounded-full bg-[#3A2B22]">
+          <div className="mt-5 h-1 w-44 overflow-hidden rounded-full bg-[#3A2B22]">
             <div className="h-full w-1/2 animate-pulse rounded-full bg-[#EBCF8F]/75" />
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 rounded-2xl border border-[#B08A4A]/20 bg-[#231914]/75 p-5">
-          <div className="h-4 w-36 animate-pulse rounded bg-[#3A2B22]" />
-          <div className="grid grid-cols-2 gap-3">
-            <div className="h-32 animate-pulse rounded-xl bg-[#2A1E17]" />
-            <div className="h-32 animate-pulse rounded-xl bg-[#2A1E17]" />
-            <div className="h-32 animate-pulse rounded-xl bg-[#2A1E17]" />
-            <div className="h-32 animate-pulse rounded-xl bg-[#2A1E17]" />
+        <div className="flex flex-col gap-3 rounded-2xl border border-[#B08A4A]/20 bg-[#1F1713] p-4">
+          <div className="h-8 w-full animate-pulse rounded-xl bg-[#2A1E17]" />
+          <div className="grid flex-1 grid-cols-3 gap-2">
+            <div className="aspect-[3/4] animate-pulse rounded-xl bg-[#2A1E17]" />
+            <div className="aspect-[3/4] animate-pulse rounded-xl bg-[#2A1E17]" />
+            <div className="aspect-[3/4] animate-pulse rounded-xl bg-[#2A1E17]" />
           </div>
-          <div className="mt-auto h-11 w-full animate-pulse rounded-full bg-[#B08A4A]/25" />
+          <div className="h-12 w-full animate-pulse rounded-full bg-[#B08A4A]/30" />
         </div>
       </div>
     </div>
@@ -105,6 +107,7 @@ export function TryOnPageClient({
   initialSlug = null,
   initialVariantId = null,
 }: TryOnPageClientProps) {
+  const router = useRouter();
   const effectiveProducts = products.length > 0 ? products : FALLBACK_PRODUCTS;
 
   const matchedProduct =
@@ -136,19 +139,28 @@ export function TryOnPageClient({
   const isOuterwear =
     !isOnePiece && !isLower && isOuterwearProduct(matchedProduct);
 
-  const handleAddedToBag = (cart?: CartDto | null) => {
+  const handleClose = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/');
+    }
+  }, [router]);
+
+  const handleAddedToBag = useCallback((cart?: CartDto | null) => {
     if (cart) {
       emitCartUpdated(cart);
     } else {
       refreshCartCount();
     }
     openQuickBagDrawer(null);
-  };
+  }, []);
 
   return (
     <VirtualTryOnModal
       open
       embedded
+      onClose={handleClose}
       products={effectiveProducts}
       initialMode={TryOnMode.SINGLE}
       initialUpper={!isOnePiece && !isLower && !isOuterwear ? initialRef : null}

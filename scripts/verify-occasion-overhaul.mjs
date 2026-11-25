@@ -433,6 +433,7 @@ async function main() {
       NEXT_PUBLIC_BFF_URL: BFF_BASE,
       STOREFRONT_URL: 'http://127.0.0.1:3000',
       REVALIDATE_SECRET: envVars.REVALIDATE_SECRET || 'Atelier_Isr_Revalidate_2026!',
+      INTERNAL_SERVICE_SECRET: envVars.INTERNAL_SERVICE_SECRET || 'Atelier_Internal_Svc_2026!',
       REDIS_HOST: '127.0.0.1',
       REDIS_PORT: '6379',
       REDIS_URL: `redis://:${envVars.REDIS_PASSWORD || 'Atelier_Redis2026!'}@127.0.0.1:6379`,
@@ -514,6 +515,7 @@ async function main() {
     console.log('  [SEED] Calling POST /v1/catalog/internal/reseed ...');
     const reseedRes = await httpRequest(`${CATALOG_BASE}/v1/catalog/internal/reseed`, {
       method: 'POST',
+      headers: { 'x-internal-secret': serviceEnv.INTERNAL_SERVICE_SECRET },
       timeoutMs: 90_000,
     });
     console.log(`  [SEED] Catalog reseed HTTP ${reseedRes.status}`);

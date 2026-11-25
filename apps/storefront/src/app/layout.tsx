@@ -13,6 +13,7 @@ import { FabricParticleCanvas } from '@/components/motion/FabricParticleCanvas';
 import { GlintsCanvas } from '@/components/motion/GlintsCanvas';
 import { LookbookAutoTour } from '@/components/motion/LookbookAutoTour';
 import { SmoothScrollProvider } from '@/components/motion/SmoothScrollProvider';
+import { AdaptivePerformanceProvider } from '@/lib/performance/AdaptivePerformanceProvider';
 import './globals.css';
 
 const cormorant = Cormorant_Garamond({
@@ -57,16 +58,18 @@ export default function RootLayout({ children }: RootLayoutProps) {
       className={`${cormorant.variable} ${beVietnamPro.variable} ${dancingScript.variable}`}
     >
       <body className="min-h-[100svh] bg-[#FBF7EF] text-[#2B2019]">
-        <SmoothScrollProvider>
-          <CustomCursor />
-          <GlintsCanvas />
-          <FabricParticleCanvas />
-          <SiteHeader />
-          <LookbookAutoTour />
-          <main>{children}</main>
-          <StorefrontShellOverlays />
-          <AtelierToastProvider />
-        </SmoothScrollProvider>
+        <AdaptivePerformanceProvider>
+          <SmoothScrollProvider>
+            <CustomCursor />
+            <GlintsCanvas />
+            <FabricParticleCanvas />
+            <SiteHeader />
+            <LookbookAutoTour />
+            <main>{children}</main>
+            <StorefrontShellOverlays />
+            <AtelierToastProvider />
+          </SmoothScrollProvider>
+        </AdaptivePerformanceProvider>
       </body>
     </html>
   );

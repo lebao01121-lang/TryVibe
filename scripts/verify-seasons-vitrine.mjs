@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * FULL 6-Season `#seasons` Vitrine Image, Photometric Recolor, UI Polish & Network Hygiene Verification
+ * FULL 6-Season `#seasons` Vitrine Clean Audit, Pin Anti-Collision, Image & Network Verification
  * Targets: Live http://127.0.0.1:3000 AND http://localhost:3000 (1440x900 Real Chrome)
  *
  * STRICT SAFETY RULES:
@@ -15,17 +15,55 @@ import { chromium } from 'playwright-core';
 
 const AUDIT_DIR =
   process.env.SEASONS_AUDIT_DIR ||
-  'C:\\Users\\Admin\\.gemini\\antigravity\\brain\\d1783908-6521-4608-8b37-41aae3ee9a65\\scratch\\seasons-audit';
+  'C:\\Users\\Admin\\.gemini\\antigravity\\brain\\d1783908-6521-4608-8b37-41aae3ee9a65\\scratch\\seasons-clean-audit';
 
 const TARGET_ORIGINS = ['http://127.0.0.1:3000', 'http://localhost:3000'];
 
+const MIN_PIN_CLEARANCE_PX = 10;
+
 const EXPECTED_SEASONS = [
-  { idx: 0, orderLabel: '01', slug: 'xuan-tam-xuan', shortHint: 'XUÂN LỤA' },
-  { idx: 1, orderLabel: '02', slug: 'ha-pho-co', shortHint: 'HẠ LINEN' },
-  { idx: 2, orderLabel: '03', slug: 'resort-ban-mai', shortHint: 'RESORT BIỂN' },
-  { idx: 3, orderLabel: '04', slug: 'thu-hoang-hon', shortHint: 'THU CÔNG SỞ' },
-  { idx: 4, orderLabel: '05', slug: 'dong-cashmere', shortHint: 'DẠ TWEED' },
-  { idx: 5, orderLabel: '06', slug: 'atelier-di-san', shortHint: 'DẠ TIỆC' },
+  {
+    idx: 0,
+    orderLabel: '01',
+    slug: 'xuan-tam-xuan',
+    shortHint: 'XUÂN LỤA',
+    screenshotName: 's01-xuan-lua.png',
+  },
+  {
+    idx: 1,
+    orderLabel: '02',
+    slug: 'ha-pho-co',
+    shortHint: 'HẠ LINEN',
+    screenshotName: 's02-ha-linen.png',
+  },
+  {
+    idx: 2,
+    orderLabel: '03',
+    slug: 'resort-ban-mai',
+    shortHint: 'RESORT BIỂN',
+    screenshotName: 's03-resort-bien.png',
+  },
+  {
+    idx: 3,
+    orderLabel: '04',
+    slug: 'thu-hoang-hon',
+    shortHint: 'THU CÔNG SỞ',
+    screenshotName: 's04-thu-cong-so.png',
+  },
+  {
+    idx: 4,
+    orderLabel: '05',
+    slug: 'dong-cashmere',
+    shortHint: 'DẠ TWEED',
+    screenshotName: 's05-da-tweed.png',
+  },
+  {
+    idx: 5,
+    orderLabel: '06',
+    slug: 'atelier-di-san',
+    shortHint: 'DẠ TIỆC',
+    screenshotName: 's06-da-tiec.png',
+  },
 ];
 
 fs.mkdirSync(AUDIT_DIR, { recursive: true });
@@ -132,7 +170,6 @@ async function scrollToSeasonsSection(page) {
     window.dispatchEvent(new Event('scroll'));
   });
   await page.waitForTimeout(900);
-  // Re-sync in case lazy layout shifted above #seasons
   await page.evaluate(() => {
     const el = document.getElementById('seasons');
     if (!el) return;
@@ -169,9 +206,20 @@ async function inspectSeasonsDom(page) {
     const section = document.getElementById('seasons');
     if (!section) return { missing: true };
 
-    const stage = section.querySelector('[data-restyle-ready]');
+    const stage = section.querySelector('[data-season-slug][data-restyle-ready]');
     const activeSlug = stage?.getAttribute('data-season-slug') ?? null;
     const restyleReady = stage?.getAttribute('data-restyle-ready') === 'true';
+    const stageRectRaw = stage?.getBoundingClientRect();
+    const stageRect = stageRectRaw
+      ? {
+          left: stageRectRaw.left,
+          top: stageRectRaw.top,
+          right: stageRectRaw.right,
+          bottom: stageRectRaw.bottom,
+          width: stageRectRaw.width,
+          height: stageRectRaw.height,
+        }
+      : null;
 
     const imgs = Array.from(section.querySelectorAll('img')).map((img) => ({
       src: img.getAttribute('src') || '',
@@ -194,6 +242,100 @@ async function inspectSeasonsDom(page) {
     const card0Ok = imgs.some((i) => i.inCard0 && i.complete && i.naturalWidth > 0);
     const card1Ok = imgs.some((i) => i.inCard1 && i.complete && i.naturalWidth > 0);
     const card2Ok = imgs.some((i) => i.inCard2 && i.complete && i.naturalWidth > 0);
+
+    // Hotspot pin geometry & anti-collision verification
+    function rectGap(a, b) {
+      const dx = Math.max(0, Math.max(a.left - b.right, b.left - a.right));
+      const dy = Math.max(0, Math.max(a.top - b.bottom, b.top - a.bottom));
+      const overlaps =
+        a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      const touching = dx === 0 && dy === 0;
+      const clearancePx =
+        overlaps || touching ? 0 : Math.hypot(dx, dy);
+      return {
+        dx: Number(dx.toFixed(2)),
+        dy: Number(dy.toFixed(2)),
+        overlaps: overlaps || touching,
+        clearancePx: Number(clearancePx.toFixed(2)),
+      };
+    }
+
+    const pinNodes = Array.from(
+      section.querySelectorAll('button[data-testid^="season-hotspot-"]'),
+    );
+    const pins = pinNodes.map((btn) => {
+      const r = btn.getBoundingClientRect();
+      return {
+        testId: btn.getAttribute('data-testid') || '',
+        slotKey: btn.getAttribute('data-slot-key') || '',
+        pinX: Number(btn.getAttribute('data-pin-x') || 'NaN'),
+        pinY: Number(btn.getAttribute('data-pin-y') || 'NaN'),
+        reverse: btn.getAttribute('data-pin-reverse') === 'true',
+        text: (btn.textContent || '').replace(/\s+/g, ' ').trim(),
+        rect: {
+          left: Number(r.left.toFixed(2)),
+          top: Number(r.top.toFixed(2)),
+          right: Number(r.right.toFixed(2)),
+          bottom: Number(r.bottom.toFixed(2)),
+          width: Number(r.width.toFixed(2)),
+          height: Number(r.height.toFixed(2)),
+        },
+        clippedStage: stageRect
+          ? r.left < stageRect.left - 1 ||
+            r.right > stageRect.right + 1 ||
+            r.top < stageRect.top - 1 ||
+            r.bottom > stageRect.bottom + 1
+          : false,
+      };
+    });
+
+    const pinPairs = [];
+    let overlapCount = 0;
+    let minPinClearancePx = Infinity;
+    let minPinDyPx = Infinity;
+    for (let i = 0; i < pins.length; i += 1) {
+      for (let j = i + 1; j < pins.length; j += 1) {
+        const g = rectGap(pins[i].rect, pins[j].rect);
+        if (g.overlaps) overlapCount += 1;
+        if (g.clearancePx < minPinClearancePx) minPinClearancePx = g.clearancePx;
+        if (g.dy < minPinDyPx) minPinDyPx = g.dy;
+        pinPairs.push({
+          a: pins[i].slotKey,
+          b: pins[j].slotKey,
+          ...g,
+        });
+      }
+    }
+    if (!Number.isFinite(minPinClearancePx)) minPinClearancePx = 0;
+    if (!Number.isFinite(minPinDyPx)) minPinDyPx = 0;
+
+    const tryOnBtn = section.querySelector('button[data-testid="season-tryon-set-btn"]');
+    const tryOnRectRaw = tryOnBtn?.getBoundingClientRect() ?? null;
+    const tryOnRect = tryOnRectRaw
+      ? {
+          left: Number(tryOnRectRaw.left.toFixed(2)),
+          top: Number(tryOnRectRaw.top.toFixed(2)),
+          right: Number(tryOnRectRaw.right.toFixed(2)),
+          bottom: Number(tryOnRectRaw.bottom.toFixed(2)),
+          width: Number(tryOnRectRaw.width.toFixed(2)),
+          height: Number(tryOnRectRaw.height.toFixed(2)),
+        }
+      : null;
+
+    let tryOnOverlapCount = 0;
+    let minTryOnClearancePx = Infinity;
+    const pinVsTryOn = [];
+    if (tryOnRect) {
+      for (const pin of pins) {
+        const g = rectGap(pin.rect, tryOnRect);
+        if (g.overlaps) tryOnOverlapCount += 1;
+        if (g.clearancePx < minTryOnClearancePx) minTryOnClearancePx = g.clearancePx;
+        pinVsTryOn.push({ slotKey: pin.slotKey, ...g });
+      }
+    }
+    if (!Number.isFinite(minTryOnClearancePx)) minTryOnClearancePx = 0;
+
+    const clippedPinCount = pins.filter((p) => p.clippedStage).length;
 
     // Inspect center canvas pixels
     const canvas = section.querySelector('[data-testid="season-ai-canvas"]');
@@ -265,6 +407,19 @@ async function inspectSeasonsDom(page) {
       legacyCount: legacyImgs.length,
       framesOk: { macroOk, card0Ok, card1Ok, card2Ok },
       canvasMetrics,
+      pinGeometry: {
+        pinCount: pins.length,
+        overlapCount,
+        minPinClearancePx: Number(minPinClearancePx.toFixed(2)),
+        minPinDyPx: Number(minPinDyPx.toFixed(2)),
+        tryOnPresent: Boolean(tryOnRect),
+        tryOnOverlapCount,
+        minTryOnClearancePx: Number(minTryOnClearancePx.toFixed(2)),
+        clippedPinCount,
+        pins,
+        pinPairs,
+        pinVsTryOn,
+      },
       imgs,
     };
   });
@@ -328,7 +483,6 @@ async function verifyOrigin(browser, origin, captureScreenshots) {
     await scrollToSeasonsSection(page);
 
     for (const season of EXPECTED_SEASONS) {
-      // Click season tab
       const tabSelector = `[data-testid="season-tab-${season.idx}"]`;
       await page.waitForSelector(tabSelector, { timeout: 15_000 });
       await page.click(tabSelector);
@@ -347,21 +501,11 @@ async function verifyOrigin(browser, origin, captureScreenshots) {
 
       const defaultAudit = await inspectSeasonsDom(page);
 
-      // Capture clean default screenshots on primary origin (127.0.0.1:3000)
+      // Capture ALL 6 clean default season screenshots on primary origin (127.0.0.1:3000)
       if (captureScreenshots) {
-        if (season.idx === 0) {
-          const p = path.join(AUDIT_DIR, '01-seasons-s01-xuan-lua-1440.png');
-          await page.screenshot({ path: p });
-          capturedPaths.push(p);
-        } else if (season.idx === 3) {
-          const p = path.join(AUDIT_DIR, '02-seasons-s04-thu-cong-so-1440.png');
-          await page.screenshot({ path: p });
-          capturedPaths.push(p);
-        } else if (season.idx === 5) {
-          const p = path.join(AUDIT_DIR, '04-seasons-s06-da-tiec-1440.png');
-          await page.screenshot({ path: p });
-          capturedPaths.push(p);
-        }
+        const p = path.join(AUDIT_DIR, season.screenshotName);
+        await page.screenshot({ path: p });
+        capturedPaths.push(p);
       }
 
       // Season 04 Specific UI Checks: 2-line title clamp & (ĐANG MỞ BÁN) dark bronze badge contrast
@@ -415,42 +559,56 @@ async function verifyOrigin(browser, origin, captureScreenshots) {
       }
 
       // Swatch Test A: Click alternate color swatch on Standing Product Card 0
-      const card0AltSwatch = page.locator(
-        '[data-testid="season-product-card-0"] [data-testid^="season-card-swatch-"][aria-pressed="false"]',
-      ).first();
+      const card0AltSwatch = page
+        .locator(
+          '[data-testid="season-product-card-0"] [data-testid^="season-card-swatch-"][aria-pressed="false"]',
+        )
+        .first();
       const card0AltColor = await card0AltSwatch.getAttribute('data-color-key');
       await card0AltSwatch.click();
       await page.waitForTimeout(750);
       await waitForSeasonSettled(page, season.slug);
       const afterCardSwatchAudit = await inspectSeasonsDom(page);
 
-      // Swatch Test B: Open a hotspot popover (prefer slot 1, fallback slot 0) and click alternate color swatch
-      const hotspotPins = page.locator('#seasons [data-hotspot-pin="true"]');
+      // Swatch Test B: Open a hotspot popover (prefer non-card0 garment slot, fallback slot 1)
+      const hotspotPins = page.locator('#seasons button[data-testid^="season-hotspot-"]');
       const pinCount = await hotspotPins.count();
       const targetPinIdx = pinCount >= 2 ? 1 : 0;
       await hotspotPins.nth(targetPinIdx).click();
       await page.waitForSelector('[data-testid="season-swatch-popover"]', { timeout: 6_000 });
-      const popoverAltSwatch = page.locator(
-        '[data-testid="season-swatch-popover"] [data-testid^="season-popover-swatch-"][aria-pressed="false"]',
-      ).first();
+
+      // Assert popover stays cleanly inside stage bounds (zero clipping)
+      const popoverInStage = await page.evaluate(() => {
+        const stage = document.querySelector('#seasons [data-season-slug][data-restyle-ready]');
+        const pop = document.querySelector('#seasons [data-testid="season-swatch-popover"]');
+        if (!stage || !pop) return false;
+        const s = stage.getBoundingClientRect();
+        const p = pop.getBoundingClientRect();
+        return (
+          p.left >= s.left - 2 &&
+          p.right <= s.right + 2 &&
+          p.top >= s.top - 2 &&
+          p.bottom <= s.bottom + 2
+        );
+      });
+
+      const popoverAltSwatch = page
+        .locator(
+          '[data-testid="season-swatch-popover"] [data-testid^="season-popover-swatch-"][aria-pressed="false"]',
+        )
+        .first();
       const popoverAltColor = await popoverAltSwatch.getAttribute('data-color-key');
       await popoverAltSwatch.click();
       await page.waitForTimeout(750);
-      // Close popover cleanly so UI & screenshot stay crisp
-      const closeBtn = page.locator('[data-testid="season-swatch-popover"] button[aria-label="Đóng bảng màu"]');
+      const closeBtn = page.locator(
+        '[data-testid="season-swatch-popover"] button[aria-label="Đóng bảng màu"]',
+      );
       if (await closeBtn.isVisible()) {
         await closeBtn.click();
       }
       await page.waitForTimeout(450);
       await waitForSeasonSettled(page, season.slug);
       const afterPopoverSwatchAudit = await inspectSeasonsDom(page);
-
-      // Capture Season 04 swatch-recolor screenshot after both alternate color clicks
-      if (captureScreenshots && season.idx === 3) {
-        const p = path.join(AUDIT_DIR, '03-seasons-s04-swatch-recolor-1440.png');
-        await page.screenshot({ path: p });
-        capturedPaths.push(p);
-      }
 
       const canvasRgbDelta =
         defaultAudit.canvasMetrics.avgRgb && afterPopoverSwatchAudit.canvasMetrics.avgRgb
@@ -494,15 +652,29 @@ async function verifyOrigin(browser, origin, captureScreenshots) {
         afterPopoverSwatchAudit.canvasMetrics.nonEmptyRatio > 0.9 &&
         afterPopoverSwatchAudit.canvasMetrics.stdDev > 8;
 
+      const pg = defaultAudit.pinGeometry;
+      const pinsOk =
+        pg.pinCount >= 3 &&
+        pg.overlapCount === 0 &&
+        pg.minPinClearancePx >= MIN_PIN_CLEARANCE_PX &&
+        pg.tryOnPresent &&
+        pg.tryOnOverlapCount === 0 &&
+        pg.minTryOnClearancePx >= MIN_PIN_CLEARANCE_PX &&
+        pg.clippedPinCount === 0 &&
+        popoverInStage;
+
       seasonReports.push({
         orderLabel: season.orderLabel,
         slug: season.slug,
-        ok: allFramesOk && brokenTotal === 0 && legacyTotal === 0 && canvasOk,
+        ok: allFramesOk && brokenTotal === 0 && legacyTotal === 0 && canvasOk && pinsOk,
         imgCount: defaultAudit.imgCount,
         brokenTotal,
         legacyTotal,
         allFramesOk,
         canvasOk,
+        pinsOk,
+        popoverInStage,
+        pinGeometry: pg,
         defaultStdDev: Number(defaultAudit.canvasMetrics.stdDev.toFixed(2)),
         recoloredStdDev: Number(afterPopoverSwatchAudit.canvasMetrics.stdDev.toFixed(2)),
         canvasRgbDelta: Number(canvasRgbDelta.toFixed(2)),
@@ -529,7 +701,7 @@ async function verifyOrigin(browser, origin, captureScreenshots) {
 }
 
 async function main() {
-  console.log('=== FULL 6-Season `#seasons` Vitrine Image & Network Verification ===');
+  console.log('=== FULL 6-Season `#seasons` Clean Vitrine, Pin Anti-Collision & Network Audit ===');
   console.log(`Audit Dir: ${AUDIT_DIR}`);
 
   // 1. Live Service Health + BFF /bff/v1/seasons API Contract Check
@@ -624,6 +796,40 @@ async function main() {
         ),
       );
 
+      // Pin Anti-Collision & Try-On Clearance Assertion across ALL 6 Seasons
+      const allPinsOk =
+        report.seasonReports.length === 6 && report.seasonReports.every((s) => s.pinsOk);
+      const totalPinOverlaps = report.seasonReports.reduce(
+        (acc, s) => acc + s.pinGeometry.overlapCount,
+        0,
+      );
+      const totalTryOnOverlaps = report.seasonReports.reduce(
+        (acc, s) => acc + s.pinGeometry.tryOnOverlapCount,
+        0,
+      );
+      const globalMinPinClearance = Math.min(
+        ...report.seasonReports.map((s) => s.pinGeometry.minPinClearancePx),
+      );
+      const globalMinTryOnClearance = Math.min(
+        ...report.seasonReports.map((s) => s.pinGeometry.minTryOnClearancePx),
+      );
+
+      record(
+        `PINS-${i + 1}`,
+        `Zero pin overlaps (clearance >= ${MIN_PIN_CLEARANCE_PX}px) & zero Try-On CTA overlap across ALL 6 seasons on ${origin}`,
+        allPinsOk && totalPinOverlaps === 0 && totalTryOnOverlaps === 0,
+        [
+          `GLOBAL: totalPinOverlaps=${totalPinOverlaps}, globalMinPinClearance=${globalMinPinClearance.toFixed(2)}px, totalTryOnOverlaps=${totalTryOnOverlaps}, globalMinTryOnClearance=${globalMinTryOnClearance.toFixed(2)}px`,
+          ...report.seasonReports.map((s) => {
+            const pg = s.pinGeometry;
+            const pairSummary = pg.pinPairs
+              .map((p) => `${p.a}-${p.b}:${p.clearancePx}px(dy=${p.dy}px)`)
+              .join(', ');
+            return `S${s.orderLabel} (${s.slug}): pins=${pg.pinCount}, overlap=${pg.overlapCount}, minClear=${pg.minPinClearancePx}px, tryOnOverlap=${pg.tryOnOverlapCount}, minTryOnClear=${pg.minTryOnClearancePx}px, clipped=${pg.clippedPinCount}, popoverInStage=${s.popoverInStage} | pairs=[${pairSummary}]`;
+          }),
+        ],
+      );
+
       // Season 04 Specific Title + Contrast Badge Assertion
       const title = report.s04TitleCheck;
       const titleOk = Boolean(
@@ -692,9 +898,9 @@ async function main() {
 
       if (captureScreenshots) {
         const allShotsExist =
-          report.capturedPaths.length === 4 &&
+          report.capturedPaths.length === 6 &&
           report.capturedPaths.every((p) => fs.existsSync(p) && fs.statSync(p).size > 20_000);
-        record('SCREENSHOTS', 'Captured 4 clean 1440x900 audit PNGs', allShotsExist, [
+        record('SCREENSHOTS', 'Captured ALL 6 clean 1440x900 season audit PNGs', allShotsExist, [
           ...report.capturedPaths.map((p) => {
             const kb = fs.existsSync(p) ? (fs.statSync(p).size / 1024).toFixed(1) : '0';
             return `${p} (${kb} KB)`;

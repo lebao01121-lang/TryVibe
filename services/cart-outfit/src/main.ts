@@ -5,6 +5,9 @@ import { HTTP_HEADERS } from '@atelier/contracts';
 import {
   correlationIdMiddleware,
   createLogger,
+  createPrometheusHttpMiddleware,
+  createPrometheusMetricsRouteMiddleware,
+  initOpenTelemetry,
   TRACEPARENT_HEADER,
 } from '@atelier/observability';
 import { AppModule } from './app.module';
@@ -17,6 +20,7 @@ import {
 async function bootstrap(): Promise<void> {
   const config = loadCartOutfitConfig();
   const logger = createLogger(config.serviceName);
+  initOpenTelemetry({ serviceName: 'cart-outfit', serviceVersion: '3.1.0' });
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn'],
@@ -26,6 +30,8 @@ async function bootstrap(): Promise<void> {
   app.useBodyParser('json', { limit: '2mb' });
   app.useBodyParser('urlencoded', { extended: true, limit: '2mb' });
   app.use(correlationIdMiddleware);
+  app.use(createPrometheusHttpMiddleware('cart-outfit'));
+  app.use(createPrometheusMetricsRouteMiddleware());
 
   app.enableCors({
     origin: (

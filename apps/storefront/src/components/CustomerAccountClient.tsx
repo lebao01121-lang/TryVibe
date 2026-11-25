@@ -19,8 +19,26 @@ import {
   setStoredSession,
 } from '@/lib/api-client';
 import { FORMAT_VND } from '@/lib/catalog-data';
+import {
+  VN_PROVINCES,
+  getDefaultDivisionSelection,
+  getDistrictsByProvinceCode,
+  getWardsByDistrictCode,
+  selectDistrictCascade,
+  selectProvinceCascade,
+  selectWardCascade,
+  type VnDivisionSelection,
+} from '@/lib/vn-admin-divisions';
 
 type AccountTab = 'profile' | 'orders' | 'outfits';
+
+interface ChangePasswordResponse {
+  accessToken?: string;
+  csrfToken?: string;
+  user?: UserSummaryDto;
+  message?: string;
+  changed?: boolean;
+}
 
 const ORDER_STATUS_BADGE: Record<OrderStatus, string> = {
   [OrderStatus.PENDING_RESERVATION]: 'Đang giữ kho',
@@ -58,14 +76,28 @@ export function CustomerAccountClient() {
   );
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // New Address form state
+  // New Address form state (cascading official Vietnamese administrative divisions)
   const [recipientName, setRecipientName] = useState('');
   const [phone, setPhone] = useState('');
-  const [provinceName, setProvinceName] = useState('Hà Nội');
-  const [districtName, setDistrictName] = useState('Quận Hoàn Kiếm');
-  const [wardName, setWardName] = useState('Phường Hàng Trống');
+  const [division, setDivision] = useState<VnDivisionSelection>(() =>
+    getDefaultDivisionSelection(),
+  );
   const [streetLine, setStreetLine] = useState('');
   const [isDefault, setIsDefault] = useState(true);
+
+  // Change Password form state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  const availableDistricts = getDistrictsByProvinceCode(division.provinceCode);
+  const availableWards = getWardsByDistrictCode(
+    division.provinceCode,
+    division.districtCode,
+  );
 
   const loadAccountData = async () => {
     setLoading(true);
@@ -170,12 +202,12 @@ export function CustomerAccountClient() {
         body: JSON.stringify({
           recipientName: recipientName.trim(),
           phone: phone.trim(),
-          provinceCode: '01',
-          provinceName: provinceName.trim(),
-          districtCode: '002',
-          districtName: districtName.trim(),
-          wardCode: '00070',
-          wardName: wardName.trim(),
+          provinceCode: division.provinceCode,
+          provinceName: division.provinceName,
+          districtCode: division.districtCode,
+          districtName: division.districtName,
+          wardCode: division.wardCode,
+          wardName: division.wardName,
           streetLine: streetLine.trim(),
           isDefault,
         }),
@@ -191,6 +223,67 @@ export function CustomerAccountClient() {
     } else {
       setStatusMessage(res.error?.message || 'Không thể thêm địa chỉ mới.');
     }
+  };
+
+  const handleChangePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordSuccess(null);
+    setPasswordError(null);
+
+    if (!currentPassword) {
+      setPasswordError('Vui lòng nhập mật khẩu hiện tại.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordError('Mật khẩu mới cần có tối thiểu 8 ký tự.');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setPasswordError('Mật khẩu mới phải khác mật khẩu hiện tại.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('Xác nhận mật khẩu mới không khớp.');
+      return;
+    }
+
+    setChangingPassword(true);
+    const res = await apiFetch<ChangePasswordResponse>(
+      '/bff/v1/auth/change-password',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      },
+    );
+    setChangingPassword(false);
+
+    if (!res.ok) {
+      setPasswordError(
+        res.error?.message ||
+          'Đổi mật khẩu thất bại. Vui lòng kiểm tra lại mật khẩu hiện tại.',
+      );
+      return;
+    }
+
+    if (res.data?.accessToken) {
+      const current = getStoredSession();
+      setStoredSession({
+        accessToken: res.data.accessToken,
+        csrfToken: res.data.csrfToken || current?.csrfToken || '',
+        user: res.data.user ?? current?.user ?? user,
+      });
+    }
+
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmNewPassword('');
+    setPasswordSuccess(
+      res.data?.message ||
+        'Đổi mật khẩu thành công. Phiên bảo mật tài khoản của bạn đã được làm mới.',
+    );
   };
 
   const handleSetDefaultAddress = async (id: string) => {
@@ -259,6 +352,15 @@ export function CustomerAccountClient() {
               className="rounded-full border border-[#8A672C] px-7 py-3 text-xs uppercase tracking-[0.18em] text-[#8A672C]"
             >
               Đăng ký mới
+            </Link>
+          </div>
+          <div className="mt-5">
+            <Link
+              href="/quen-mat-khau"
+              data-testid="account-forgot-password-link"
+              className="text-xs font-medium text-[#8A672C] underline underline-offset-4 transition-colors hover:text-[#1C1410]"
+            >
+              Quên mật khẩu?
             </Link>
           </div>
         </div>
@@ -552,38 +654,80 @@ export function CustomerAccountClient() {
                   onChange={(e) => setPhone(e.target.value)}
                   className="rounded-xl border border-[#B08A4A]/35 px-3 py-2 text-xs"
                 />
-                <input
-                  type="text"
-                  required
-                  placeholder="Tỉnh / Thành phố"
-                  value={provinceName}
-                  onChange={(e) => setProvinceName(e.target.value)}
-                  className="rounded-xl border border-[#B08A4A]/35 px-3 py-2 text-xs"
-                />
-                <input
-                  type="text"
-                  required
-                  placeholder="Quận / Huyện"
-                  value={districtName}
-                  onChange={(e) => setDistrictName(e.target.value)}
-                  className="rounded-xl border border-[#B08A4A]/35 px-3 py-2 text-xs"
-                />
-                <input
-                  type="text"
-                  required
-                  placeholder="Phường / Xã"
-                  value={wardName}
-                  onChange={(e) => setWardName(e.target.value)}
-                  className="rounded-xl border border-[#B08A4A]/35 px-3 py-2 text-xs"
-                />
-                <input
-                  type="text"
-                  required
-                  placeholder="Số nhà, tên đường"
-                  value={streetLine}
-                  onChange={(e) => setStreetLine(e.target.value)}
-                  className="rounded-xl border border-[#B08A4A]/35 px-3 py-2 text-xs"
-                />
+                <label className="text-[11px] text-[#5C4B41]">
+                  <span>Tỉnh / Thành phố</span>
+                  <select
+                    required
+                    value={division.provinceCode}
+                    onChange={(e) => setDivision(selectProvinceCascade(e.target.value))}
+                    data-testid="account-province-select"
+                    className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-white px-3 py-2 text-xs text-[#1C1410]"
+                  >
+                    {VN_PROVINCES.map((p) => (
+                      <option key={p.code} value={p.code}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="text-[11px] text-[#5C4B41]">
+                  <span>Quận / Huyện</span>
+                  <select
+                    required
+                    value={division.districtCode}
+                    onChange={(e) =>
+                      setDivision(
+                        selectDistrictCascade(division.provinceCode, e.target.value),
+                      )
+                    }
+                    data-testid="account-district-select"
+                    className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-white px-3 py-2 text-xs text-[#1C1410]"
+                  >
+                    {availableDistricts.map((d) => (
+                      <option key={d.code} value={d.code}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="text-[11px] text-[#5C4B41]">
+                  <span>Phường / Xã</span>
+                  <select
+                    required
+                    value={division.wardCode}
+                    onChange={(e) =>
+                      setDivision(
+                        selectWardCascade(
+                          division.provinceCode,
+                          division.districtCode,
+                          e.target.value,
+                        ),
+                      )
+                    }
+                    data-testid="account-ward-select"
+                    className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-white px-3 py-2 text-xs text-[#1C1410]"
+                  >
+                    {availableWards.map((w) => (
+                      <option key={w.code} value={w.code}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="text-[11px] text-[#5C4B41]">
+                  <span>Số nhà, tên đường</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Số nhà, tên đường"
+                    value={streetLine}
+                    onChange={(e) => setStreetLine(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 px-3 py-2 text-xs text-[#1C1410]"
+                  />
+                </label>
               </div>
 
               <label className="flex items-center gap-2 text-xs text-[#5C4B41]">
@@ -602,6 +746,110 @@ export function CustomerAccountClient() {
               >
                 Thêm địa chỉ
               </button>
+            </form>
+          </section>
+
+          {/* Change Password Security Section */}
+          <section
+            data-testid="change-password-section"
+            className="rounded-3xl border border-[#B08A4A]/25 bg-white p-6 lg:col-span-2"
+          >
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="atelier-eyebrow text-[#8A672C]">Bảo mật tài khoản</p>
+                <h2 className="font-editorial mt-1 text-3xl text-[#1C1410]">
+                  Đổi mật khẩu
+                </h2>
+                <p className="mt-1 text-xs text-[#7A6A5B]">
+                  Cập nhật mật khẩu định kỳ để bảo vệ hồ sơ số đo, sổ địa chỉ và lịch sử đơn hàng của bạn.
+                </p>
+              </div>
+              <Link
+                href="/quen-mat-khau"
+                className="text-xs font-medium text-[#8A672C] underline underline-offset-4 hover:text-[#1C1410]"
+              >
+                Quên mật khẩu hiện tại? Khôi phục qua email
+              </Link>
+            </div>
+
+            <form
+              onSubmit={handleChangePassword}
+              className="mt-5 grid gap-4 md:grid-cols-3"
+            >
+              <label className="text-xs">
+                <span className="text-[#5C4B41]">Mật khẩu hiện tại *</span>
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="••••••••"
+                  data-testid="change-password-current-input"
+                  className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-[#FBF7EF]/50 px-3.5 py-2.5 text-sm text-[#1C1410] outline-none focus:border-[#8A672C]"
+                />
+              </label>
+
+              <label className="text-xs">
+                <span className="text-[#5C4B41]">Mật khẩu mới (tối thiểu 8 ký tự) *</span>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="••••••••"
+                  data-testid="change-password-new-input"
+                  className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-[#FBF7EF]/50 px-3.5 py-2.5 text-sm text-[#1C1410] outline-none focus:border-[#8A672C]"
+                />
+              </label>
+
+              <label className="text-xs">
+                <span className="text-[#5C4B41]">Xác nhận mật khẩu mới *</span>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  placeholder="••••••••"
+                  data-testid="change-password-confirm-input"
+                  className="mt-1 w-full rounded-xl border border-[#B08A4A]/35 bg-[#FBF7EF]/50 px-3.5 py-2.5 text-sm text-[#1C1410] outline-none focus:border-[#8A672C]"
+                />
+              </label>
+
+              <div className="space-y-3 md:col-span-3">
+                {passwordSuccess ? (
+                  <p
+                    role="status"
+                    data-testid="change-password-success"
+                    className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-950"
+                  >
+                    {passwordSuccess}
+                  </p>
+                ) : null}
+
+                {passwordError ? (
+                  <p
+                    role="alert"
+                    data-testid="change-password-error"
+                    className="rounded-xl border border-[#8B2E2E]/35 bg-[#FFF5F4] px-4 py-2.5 text-xs text-[#8B2E2E]"
+                  >
+                    {passwordError}
+                  </p>
+                ) : null}
+
+                <button
+                  type="submit"
+                  disabled={changingPassword}
+                  data-testid="change-password-submit-btn"
+                  className="rounded-full bg-[#1C1410] px-6 py-2.5 text-xs uppercase tracking-[0.18em] text-[#EBCF8F] transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {changingPassword ? 'Đang cập nhật mật khẩu...' : 'Cập nhật mật khẩu'}
+                </button>
+              </div>
             </form>
           </section>
         </div>

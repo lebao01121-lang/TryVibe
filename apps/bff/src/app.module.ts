@@ -1,7 +1,9 @@
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 import { AdminBffController } from './admin/admin-bff.controller';
 import { AdminOpsController } from './admin/admin-ops.controller';
+import { AdminP2Controller } from './admin/admin-p2.controller';
 import { AdminPhase5Controller } from './admin/admin-phase5.controller';
+import { AdminRagController } from './admin/admin-rag.controller';
 import {
   ApiAuthBffController,
   AuthProxyService,
@@ -33,6 +35,7 @@ import {
 } from './storefront/storefront-bff.controller';
 import { StorefrontCheckoutController } from './storefront/storefront-checkout.controller';
 import { StorefrontCommerceTryOnController } from './storefront/storefront-commerce-tryon.controller';
+import { PublicWebhooksController } from './webhooks/public-webhooks.controller';
 
 @Module({
   controllers: [
@@ -45,9 +48,12 @@ import { StorefrontCommerceTryOnController } from './storefront/storefront-comme
     StorefrontAliasBffController,
     StorefrontCommerceTryOnController,
     StorefrontCheckoutController,
+    PublicWebhooksController,
     AdminBffController,
     AdminPhase5Controller,
+    AdminP2Controller,
     AdminOpsController,
+    AdminRagController,
     PartnerBffController,
     InternalRealtimeController,
   ],

@@ -173,8 +173,12 @@ export const OrderDtoSchema = z.object({
   reservationExpiresAt: z.string().nullable(),
   paidAt: z.string().nullable(),
   deliveredAt: z.string().nullable(),
+  completedAt: z.string().nullable().optional(),
+  completedBy: z.string().nullable().optional(),
   cancelledAt: z.string().nullable(),
   cancelReason: z.string().nullable(),
+  cancelledBy: z.string().nullable().optional(),
+  totalVnd: z.number().int().nonnegative().optional(),
   items: z.array(OrderItemDtoSchema),
   shipment: ShipmentDtoSchema.nullable(),
   paymentIntent: PaymentIntentResponseDtoSchema.nullable().optional(),
@@ -183,6 +187,22 @@ export const OrderDtoSchema = z.object({
 });
 export type OrderDTO = z.infer<typeof OrderDtoSchema>;
 export type OrderDto = OrderDTO;
+
+export const AdminCancelOrderDtoSchema = z.object({
+  reason: z.string().trim().min(1).max(500).optional(),
+  cancelledBy: z.string().trim().max(140).optional(),
+});
+export type AdminCancelOrderDTO = z.infer<typeof AdminCancelOrderDtoSchema>;
+export type AdminCancelOrderDto = AdminCancelOrderDTO;
+
+export const CompleteOrderDtoSchema = z
+  .object({
+    completedBy: z.string().trim().max(140).optional(),
+    note: z.string().max(500).optional(),
+  })
+  .optional();
+export type CompleteOrderDTO = z.infer<typeof CompleteOrderDtoSchema>;
+export type CompleteOrderDto = CompleteOrderDTO;
 
 // ============================================================================
 // RMA & Size Exchange Contracts
@@ -265,6 +285,7 @@ export function truncateRmaCustomerNote(
   if (!note) {
     return '';
   }
+  // eslint-disable-next-line no-control-regex
   const cleaned = note.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
   if (cleaned.length <= maxLength) {
     return cleaned;
@@ -317,12 +338,22 @@ export const RmaRequestDtoSchema = z.object({
   refundAmountVnd: z.number().int().nonnegative().nullable(),
   refundTransactionId: z.string().nullable(),
   qcResult: CompleteRmaQcDtoSchema.nullable().optional(),
+  rejectionReason: z.string().nullable().optional(),
+  rejectedBy: z.string().nullable().optional(),
+  rejectedAt: z.string().nullable().optional(),
   supplierBatchCode: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type RmaRequestDTO = z.infer<typeof RmaRequestDtoSchema>;
 export type RmaRequestDto = RmaRequestDTO;
+
+export const RejectRmaDtoSchema = z.object({
+  reason: z.string().trim().min(2).max(500),
+  rejectedBy: z.string().trim().max(140).optional(),
+});
+export type RejectRmaDTO = z.infer<typeof RejectRmaDtoSchema>;
+export type RejectRmaDto = RejectRmaDTO;
 
 export const RmaSampleCustomerNoteSchema = z.object({
   rmaCode: z.string().min(1),

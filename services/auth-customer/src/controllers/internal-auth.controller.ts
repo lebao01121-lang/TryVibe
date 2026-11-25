@@ -68,7 +68,7 @@ export class InternalAuthController {
     const rawHeader = req.headers['x-internal-secret'];
     const candidate = (Array.isArray(rawHeader) ? rawHeader[0] : rawHeader)?.trim() ?? '';
     const expected = this.config.security.internalServiceSecret;
-    if (!candidate || !constantTimeEqualString(candidate, expected)) {
+    if (!candidate || !expected || !constantTimeEqualString(candidate, expected)) {
       throw new ApiDomainException(
         HttpStatus.FORBIDDEN,
         ErrorCode.FORBIDDEN,

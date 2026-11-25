@@ -18,6 +18,7 @@ import {
 import { ORDER_CONFIG_TOKEN, type OrderRmaConfig } from './config/env';
 import { OrderDbService } from './db/order-db.service';
 import { OrderRabbitMqService } from './infra/rabbitmq.service';
+import { ShippingProviderRegistry } from './shipping/shipping-provider.registry';
 
 @Controller()
 export class OrderRmaController {
@@ -25,6 +26,7 @@ export class OrderRmaController {
     @Inject(ORDER_CONFIG_TOKEN) private readonly config: OrderRmaConfig,
     private readonly db: OrderDbService,
     private readonly rabbitmq: OrderRabbitMqService,
+    private readonly shippingRegistry: ShippingProviderRegistry,
   ) {}
 
   @Get('health')
@@ -105,6 +107,14 @@ export class OrderRmaController {
           'rma_items',
           'outbox_events',
           'processed_events',
+          'processed_shipping_webhooks',
+        ],
+        shippingProviders: this.shippingRegistry.getProviderStatuses(),
+        shippingEndpoints: [
+          'POST /v1/shipping/quote',
+          'POST /v1/shipping/webhooks/ghn',
+          'POST /v1/shipping/webhooks/ghtk',
+          'POST /v1/shipping/webhooks/ahamove',
         ],
         sagaPolicy: {
           orchestrator: true,

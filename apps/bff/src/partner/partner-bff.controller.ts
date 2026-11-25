@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Inject,
   Param,
   Post,
@@ -11,8 +13,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  createApiErrorResponse,
   createApiResponse,
+  ErrorCode,
+  hasPermission,
   PARTNER_PORTAL_ROLES,
+  Permission,
   Portal,
   type ApiResponse,
   type JwtAccessPayload,
@@ -26,12 +32,13 @@ import {
 } from '../common/http-proxy.service';
 import { buildCanonicalQueryString } from '../common/sanitize';
 import { BFF_CONFIG_TOKEN, type BffConfig } from '../config/env';
+import { AuditLoggerService } from '../security/audit-logger.service';
 import { CurrentUser } from '../security/auth-types';
 import { JwtAuthGuard, PartnerPortalGuard } from '../security/guards';
 
 export interface PartnerOverviewDto {
   portal: typeof Portal.PARTNER_PORTAL;
-  phase: 'phase-1';
+  phase: 'v3.1.0 / Production Ready';
   supplierId: string;
   actor: {
     id: string;
@@ -59,12 +66,42 @@ export interface PartnerOverviewDto {
   generatedAt: string;
 }
 
+function extractPartnerDataList(body: unknown): Record<string, unknown>[] {
+  if (!body || typeof body !== 'object') {
+    return [];
+  }
+  const rec = body as Record<string, unknown>;
+  const root = rec.data !== undefined ? rec.data : body;
+  if (Array.isArray(root)) {
+    return root.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
+  }
+  if (root && typeof root === 'object') {
+    const items = (root as Record<string, unknown>).items;
+    if (Array.isArray(items)) {
+      return items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
+    }
+  }
+  return [];
+}
+
+function toYmdDate(raw: unknown): string | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length < 10) {
+    return null;
+  }
+  return trimmed.slice(0, 10);
+}
+
 @Controller('api/v1/partner')
 @UseGuards(JwtAuthGuard, PartnerPortalGuard)
 export class PartnerBffController {
   constructor(
     @Inject(BFF_CONFIG_TOKEN) private readonly config: BffConfig,
     @Inject(HttpProxyService) private readonly proxy: HttpProxyService,
+    @Inject(AuditLoggerService) private readonly audit: AuditLoggerService,
   ) {}
 
   @Get('overview')
@@ -74,30 +111,101 @@ export class PartnerBffController {
   ): Promise<ApiResponse<PartnerOverviewDto>> {
     const correlationId = getOrCreateCorrelationId(req.headers as HeaderBag);
     const supplierId = user.supplierId as string;
+    const tenantHeaders = this.buildTenantHeaders(user);
 
-    let submissionsTotal = 0;
-    try {
-      const subRes = await this.proxy.request({
-        method: 'GET',
-        url: `${this.config.upstreams.catalogLookbookUrl}/v1/catalog/partner/submissions`,
-        req,
-        correlationId,
-        timeoutMs: 2500,
-        extraHeaders: this.buildTenantHeaders(user),
-      });
-      if (subRes.ok && subRes.body && typeof subRes.body === 'object') {
-        const data = (subRes.body as Record<string, unknown>).data;
-        if (Array.isArray(data)) {
-          submissionsTotal = data.length;
+    const safeGet = async (url: string) => {
+      try {
+        return await this.proxy.request({
+          method: 'GET',
+          url,
+          req,
+          correlationId,
+          timeoutMs: 2500,
+          extraHeaders: tenantHeaders,
+        });
+      } catch {
+        return null;
+      }
+    };
+
+    const [subRes, poRes, grnRes] = await Promise.all([
+      safeGet(`${this.config.upstreams.catalogLookbookUrl}/v1/catalog/partner/submissions`),
+      safeGet(`${this.config.inventoryServiceUrl}/v1/procurement/partner/purchase-orders`),
+      safeGet(`${this.config.inventoryServiceUrl}/v1/procurement/partner/goods-receipts`),
+    ]);
+
+    const submissions = subRes?.ok ? extractPartnerDataList(subRes.body) : [];
+    const purchaseOrders = poRes?.ok ? extractPartnerDataList(poRes.body) : [];
+    const goodsReceipts = grnRes?.ok ? extractPartnerDataList(grnRes.body) : [];
+
+    const submissionsTotal = submissions.length;
+
+    const poById = new Map<string, Record<string, unknown>>();
+    let purchaseOrdersAwaitingConfirmation = 0;
+    let scheduledGrnDeliveries = 0;
+
+    for (const po of purchaseOrders) {
+      if (typeof po.id === 'string' && po.id.trim()) {
+        poById.set(po.id.trim(), po);
+      }
+      const status = String(po.status ?? '').toUpperCase();
+      if (status === 'CHO_NCC_XAC_NHAN') {
+        purchaseOrdersAwaitingConfirmation += 1;
+      } else if (status === 'NCC_DA_XAC_NHAN' || status === 'HOAN_TAT_MOT_PHAN') {
+        scheduledGrnDeliveries += 1;
+      }
+    }
+
+    const activeBatchCodes = new Set<string>();
+    const todayYmd = new Date().toISOString().slice(0, 10);
+    let evaluatedDeliveries = 0;
+    let onTimeDeliveries = 0;
+
+    for (const grn of goodsReceipts) {
+      const items = Array.isArray(grn.items)
+        ? (grn.items as Array<Record<string, unknown>>)
+        : [];
+      for (const item of items) {
+        if (typeof item?.batchCode === 'string' && item.batchCode.trim().length > 0) {
+          activeBatchCodes.add(item.batchCode.trim());
         }
       }
-    } catch {
-      // Graceful fallback
+
+      const grnPoId = typeof grn.poId === 'string' ? grn.poId.trim() : '';
+      const linkedPo = grnPoId ? poById.get(grnPoId) : undefined;
+      const deadlineYmd =
+        toYmdDate(linkedPo?.confirmedDeliveryDate) ??
+        toYmdDate(linkedPo?.expectedDeliveryDate);
+      const deliveredYmd = toYmdDate(grn.createdAt);
+
+      evaluatedDeliveries += 1;
+      if (!deadlineYmd || !deliveredYmd || deliveredYmd <= deadlineYmd) {
+        onTimeDeliveries += 1;
+      }
     }
+
+    // Factor in open confirmed/partial POs whose promised delivery date has already passed
+    for (const po of purchaseOrders) {
+      const status = String(po.status ?? '').toUpperCase();
+      if (status !== 'NCC_DA_XAC_NHAN' && status !== 'HOAN_TAT_MOT_PHAN') {
+        continue;
+      }
+      const deadlineYmd =
+        toYmdDate(po.confirmedDeliveryDate) ?? toYmdDate(po.expectedDeliveryDate);
+      if (deadlineYmd && deadlineYmd < todayYmd) {
+        evaluatedDeliveries += 1;
+      }
+    }
+
+    const activeFabricLots = activeBatchCodes.size;
+    const onTimeFulfillmentSlaPct =
+      evaluatedDeliveries > 0
+        ? Math.round((onTimeDeliveries / evaluatedDeliveries) * 1000) / 10
+        : 100;
 
     const payload: PartnerOverviewDto = {
       portal: Portal.PARTNER_PORTAL,
-      phase: 'phase-1',
+      phase: 'v3.1.0 / Production Ready',
       supplierId,
       actor: {
         id: user.sub,
@@ -123,10 +231,10 @@ export class PartnerBffController {
       },
       b2bSummary: {
         submissionsTotal,
-        purchaseOrdersAwaitingConfirmation: 0,
-        scheduledGrnDeliveries: 0,
-        activeFabricLots: 0,
-        onTimeFulfillmentSlaPct: 100,
+        purchaseOrdersAwaitingConfirmation,
+        scheduledGrnDeliveries,
+        activeFabricLots,
+        onTimeFulfillmentSlaPct,
       },
       generatedAt: new Date().toISOString(),
     };
@@ -328,6 +436,118 @@ export class PartnerBffController {
       body,
       extraHeaders: this.buildTenantHeaders(user),
     });
+    this.proxy.sendProxyResponse(res, upstream);
+  }
+
+  @Post('purchase-orders/:id/reject')
+  @HttpCode(HttpStatus.OK)
+  async rejectPartnerPurchaseOrder(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Res() res: Response,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<void> {
+    const correlationId = getOrCreateCorrelationId(req.headers as HeaderBag);
+    const verifiedSupplierId = user.supplierId?.trim();
+    const hasPoConfirmPerm =
+      user.permissions.includes(Permission.SUPPLIER_PO_CONFIRM) ||
+      hasPermission(user.roles, Permission.SUPPLIER_PO_CONFIRM);
+
+    if (!verifiedSupplierId || !hasPoConfirmPerm) {
+      res.status(403).json(
+        createApiErrorResponse(
+          ErrorCode.FORBIDDEN,
+          'Tài khoản đối tác thiếu quyền SUPPLIER_PO_CONFIRM hoặc thiếu định danh supplierId.',
+          undefined,
+          { correlationId, service: this.config.serviceName },
+        ),
+      );
+      return;
+    }
+
+    const tenantHeaders = this.buildTenantHeaders(user);
+    const beforeRes = await this.proxy.request({
+      method: 'GET',
+      url: `${this.config.inventoryServiceUrl}/v1/procurement/partner/purchase-orders/${encodeURIComponent(id)}`,
+      req,
+      correlationId,
+      timeoutMs: 3000,
+      extraHeaders: tenantHeaders,
+    });
+    const beforeRoot =
+      beforeRes.ok && beforeRes.body && typeof beforeRes.body === 'object'
+        ? (beforeRes.body as Record<string, unknown>)
+        : null;
+    const fallbackBefore =
+      beforeRoot?.data && typeof beforeRoot.data === 'object' && !Array.isArray(beforeRoot.data)
+        ? (beforeRoot.data as Record<string, unknown>)
+        : beforeRoot;
+
+    const bodyObj =
+      body && typeof body === 'object' && !Array.isArray(body)
+        ? (body as Record<string, unknown>)
+        : {};
+    // Strictly inject verified supplierId from RS256 JWT (never trust client-supplied supplierId)
+    const forwardedBody = {
+      ...bodyObj,
+      supplierId: verifiedSupplierId,
+      actorId: user.sub,
+      actorEmail: user.email,
+    };
+
+    let upstream = await this.proxy.request({
+      method: 'POST',
+      url: `${this.config.inventoryServiceUrl}/v1/procurement/purchase-orders/${encodeURIComponent(id)}/reject`,
+      req,
+      body: forwardedBody,
+      correlationId,
+      extraHeaders: tenantHeaders,
+    });
+
+    if (upstream.status === 404) {
+      upstream = await this.proxy.request({
+        method: 'POST',
+        url: `${this.config.inventoryServiceUrl}/v1/procurement/partner/purchase-orders/${encodeURIComponent(id)}/reject`,
+        req,
+        body: forwardedBody,
+        correlationId,
+        extraHeaders: tenantHeaders,
+      });
+    }
+
+    if (upstream.ok) {
+      const upRoot =
+        upstream.body && typeof upstream.body === 'object' && !Array.isArray(upstream.body)
+          ? (upstream.body as Record<string, unknown>)
+          : null;
+      const upData =
+        upRoot?.data && typeof upRoot.data === 'object' && !Array.isArray(upRoot.data)
+          ? (upRoot.data as Record<string, unknown>)
+          : upRoot;
+      const beforeJsonb =
+        upData?.before && typeof upData.before === 'object' && !Array.isArray(upData.before)
+          ? (upData.before as Record<string, unknown>)
+          : fallbackBefore;
+      const afterJsonb =
+        upData?.after && typeof upData.after === 'object' && !Array.isArray(upData.after)
+          ? (upData.after as Record<string, unknown>)
+          : upData;
+
+      await this.audit.record({
+        actorId: user.sub,
+        actorEmail: user.email,
+        action: 'PARTNER_PO_REJECTED',
+        resourceType: 'purchase_order',
+        resourceId: id,
+        beforeJsonb,
+        afterJsonb,
+        correlationId,
+        ipAddress: this.proxy.extractClientIp(req),
+        extraMetadata: { supplierId: verifiedSupplierId },
+      });
+    }
+
     this.proxy.sendProxyResponse(res, upstream);
   }
 

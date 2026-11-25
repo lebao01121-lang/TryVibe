@@ -72,6 +72,34 @@ export class StorefrontAuthBffController {
     await this.authProxy.forwardAuth('POST', '/v1/auth/logout', req, res, body);
   }
 
+  @Post('forgot-password')
+  async forgotPassword(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ): Promise<void> {
+    await this.authProxy.forwardAuth('POST', '/v1/auth/forgot-password', req, res, body);
+  }
+
+  @Post('reset-password')
+  async resetPassword(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ): Promise<void> {
+    await this.authProxy.forwardAuth('POST', '/v1/auth/reset-password', req, res, body);
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  async changePassword(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ): Promise<void> {
+    await this.authProxy.forwardAuth('POST', '/v1/auth/change-password', req, res, body);
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async me(@Req() req: Request, @Res() res: Response): Promise<void> {
@@ -143,6 +171,34 @@ export class ApiAuthBffController {
   @UseGuards(CsrfOriginGuard)
   async logout(@Req() req: Request, @Res() res: Response, @Body() body: unknown): Promise<void> {
     await this.authProxy.forwardAuth('POST', '/v1/auth/logout', req, res, body);
+  }
+
+  @Post('forgot-password')
+  async forgotPassword(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ): Promise<void> {
+    await this.authProxy.forwardAuth('POST', '/v1/auth/forgot-password', req, res, body);
+  }
+
+  @Post('reset-password')
+  async resetPassword(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ): Promise<void> {
+    await this.authProxy.forwardAuth('POST', '/v1/auth/reset-password', req, res, body);
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  async changePassword(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ): Promise<void> {
+    await this.authProxy.forwardAuth('POST', '/v1/auth/change-password', req, res, body);
   }
 
   @Get('me')

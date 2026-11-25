@@ -143,8 +143,12 @@ export function subscribeSession(listener: () => void): () => void {
 }
 
 function getEffectiveCsrfToken(): string | null {
+  const cookieToken = readCookie('atelier_csrf_token');
+  if (cookieToken) {
+    return cookieToken;
+  }
   const session = getStoredSession();
-  return session?.csrfToken || readCookie('atelier_csrf_token');
+  return session?.csrfToken || null;
 }
 
 async function performSilentRefresh(): Promise<string | null> {

@@ -6,6 +6,7 @@ export {
   assertNoMutatingToolInUntrustedTurn,
   detectPromptInjection,
   detectPromptInjectionInUntrustedData,
+  detectStorefrontPromptInjection,
   enforceHumanInTheLoop,
   maskPii,
   maskPiiWithReport,

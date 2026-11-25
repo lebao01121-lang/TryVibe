@@ -6,15 +6,29 @@ import { FORMAT_VND } from '@/lib/catalog-data';
 
 const ALL_STANDARD_SIZES = ['XS', 'S', 'M', 'L', 'XL'] as const;
 
+export interface RackBagFeedback {
+  productId: string;
+  kind: 'success' | 'error';
+  message: string;
+}
+
 export interface FlatRackFallbackProps {
   items: RackGarmentItemDto[];
   activeIndex: number;
   activeVariants: Record<string, number>;
+  selectedSizes: Record<string, string>;
   showBackMap: Record<string, boolean>;
+  recommendedSize?: string | null;
+  addingProductId?: string | null;
+  bagFeedback?: RackBagFeedback | null;
   reasonLabel?: string;
   onSelectIndex: (index: number) => void;
   onSelectVariant: (productId: string, variantIndex: number) => void;
+  onSelectSize: (productId: string, sizeCode: string) => void;
   onToggleBack: (productId: string) => void;
+  onAddToBag: (item: RackGarmentItemDto) => void;
+  onOpenTryOn: (item: RackGarmentItemDto) => void;
+  onEnable3DRack?: () => void;
 }
 
 export function createEditorialGarmentSvg(
@@ -67,11 +81,19 @@ export function FlatRackFallback({
   items,
   activeIndex,
   activeVariants,
+  selectedSizes,
   showBackMap,
+  recommendedSize = null,
+  addingProductId = null,
+  bagFeedback = null,
   reasonLabel,
   onSelectIndex,
   onSelectVariant,
+  onSelectSize,
   onToggleBack,
+  onAddToBag,
+  onOpenTryOn,
+  onEnable3DRack,
 }: FlatRackFallbackProps) {
   if (items.length === 0) {
     return null;
@@ -85,7 +107,11 @@ export function FlatRackFallback({
   const frontUrl = resolveVariantCutoutUrl(activeItem, activeVariant, false);
   const backUrl = resolveVariantCutoutUrl(activeItem, activeVariant, true);
   const hasDistinctBack = Boolean(activeVariant?.backCutoutUrl);
-  const inStockSet = new Set<string>(activeVariant?.inStockSizes ?? []);
+  const inStockSet = new Set<string>(
+    activeVariant?.inStockSizes?.length
+      ? activeVariant.inStockSizes
+      : (activeVariant?.skus ?? []).filter((s) => s.inStock).map((s) => s.sizeCode),
+  );
 
   const sizeList =
     activeVariant && activeVariant.inStockSizes.length > 0
@@ -93,6 +119,28 @@ export function FlatRackFallback({
           new Set<string>([...ALL_STANDARD_SIZES, ...activeVariant.inStockSizes]),
         )
       : [...ALL_STANDARD_SIZES];
+
+  const activeSize =
+    selectedSizes[activeItem.productId] ||
+    (recommendedSize && inStockSet.has(recommendedSize) ? recommendedSize : '') ||
+    activeVariant?.skus.find((s) => s.inStock)?.sizeCode ||
+    activeVariant?.inStockSizes[0] ||
+    'M';
+
+  const activeSku =
+    activeVariant?.skus.find((s) => s.sizeCode === activeSize && s.inStock) ??
+    activeVariant?.skus.find((s) => s.sizeCode === activeSize) ??
+    activeVariant?.skus.find((s) => s.inStock) ??
+    activeVariant?.skus[0];
+
+  const displayPriceVnd =
+    activeSku?.salePriceVnd ?? activeSku?.basePriceVnd ?? activeItem.minPriceVnd;
+  const isAdding = addingProductId === activeItem.productId;
+  const canAddToBag = Boolean(activeSku?.inStock || inStockSet.has(activeSize));
+  const activeFeedback =
+    bagFeedback && bagFeedback.productId === activeItem.productId
+      ? bagFeedback
+      : null;
 
   const handlePrev = () => {
     onSelectIndex((safeIdx - 1 + items.length) % items.length);
@@ -103,24 +151,39 @@ export function FlatRackFallback({
   };
 
   return (
-    <div className="relative z-10 mx-auto flex min-h-[100svh] max-w-7xl flex-col justify-between px-4 pt-24 pb-12 sm:px-6 lg:px-10">
+    <div
+      data-testid="flat-rack-fallback"
+      className="relative z-10 mx-auto flex min-h-[100svh] w-full max-w-7xl flex-col justify-between overflow-x-hidden px-4 pt-20 pb-8 sm:px-6 lg:px-10"
+    >
       {/* Header + Prev/Next */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+      <div className="flex w-full min-w-0 flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
           <p className="eyebrow">Bộ sưu tập · Giá treo thanh đồng</p>
-          <h2 className="h2">
+          <h2 className="h2 !text-[clamp(28px,3.2vw,46px)] !leading-[1.06]">
             Chọn một dáng,
             <br />
             <em>thiết kế sẽ bước ra.</em>
           </h2>
           {reasonLabel ? (
-            <p className="mt-2 text-xs tracking-[0.14em] text-[#EBCF8F]/70">
-              {reasonLabel}
-            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-3">
+              <p className="text-xs tracking-[0.14em] text-[#EBCF8F]/75">
+                {reasonLabel}
+              </p>
+              {onEnable3DRack ? (
+                <button
+                  type="button"
+                  data-testid="rack-enable-3d-btn"
+                  onClick={onEnable3DRack}
+                  className="rounded-full border border-[#EBCF8F]/50 bg-[#2A1E17]/85 px-3 py-1 text-[10px] font-medium tracking-[0.14em] uppercase text-[#EBCF8F] transition-colors hover:border-[#EBCF8F] hover:bg-[#EBCF8F]/15"
+                >
+                  ↻ Bật lại Giá treo 3D
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={handlePrev}
@@ -144,11 +207,11 @@ export function FlatRackFallback({
       </div>
 
       {/* Brass Rail + 2D Editorial Garment Stage + Frosted Card */}
-      <div className="mt-8 grid items-center gap-8 lg:grid-cols-[1.25fr_380px]">
-        <div className="relative flex flex-col items-center">
+      <div className="mt-4 grid w-full min-w-0 items-center gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
+        <div className="relative flex w-full min-w-0 flex-col items-center">
           {/* Brass horizontal bar */}
           <div
-            className="relative mb-2 h-2 w-full max-w-xl rounded-full"
+            className="relative mb-2 h-2 w-full max-w-lg rounded-full"
             style={{
               background:
                 'linear-gradient(180deg, #f3dfae 0%, #d9b26a 45%, #8a672c 100%)',
@@ -160,14 +223,19 @@ export function FlatRackFallback({
           </div>
 
           {/* 3D CSS Y-Flip Container for Active Garment */}
-          <div
-            className="relative mx-auto w-full max-w-[300px] sm:max-w-[340px]"
+          <button
+            type="button"
+            className="relative mx-auto w-full max-w-[260px] cursor-pointer text-left"
             style={{ perspective: '1200px' }}
             data-cursor="view"
             data-cursor-label="XOAY"
+            aria-label={isBack ? 'Lật xem mặt trước thiết kế' : 'Lật xem mặt sau thiết kế'}
+            aria-pressed={isBack}
             onClick={() => onToggleBack(activeItem.productId)}
           >
             <div
+              data-testid="flat-rack-flip-stage"
+              data-flipped={isBack ? 'true' : 'false'}
               className="relative aspect-[2/3] w-full transition-transform duration-700"
               style={{
                 transformStyle: 'preserve-3d',
@@ -176,7 +244,7 @@ export function FlatRackFallback({
             >
               {/* Front Face */}
               <div
-                className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-3xl border border-[#EBCF8F]/20 bg-[#1B130E]/60 p-4 shadow-2xl"
+                className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-3xl border border-[#EBCF8F]/20 bg-[#1B130E]/60 p-3 shadow-2xl"
                 style={{ backfaceVisibility: 'hidden' }}
               >
                 <img
@@ -189,7 +257,7 @@ export function FlatRackFallback({
 
               {/* Back Face */}
               <div
-                className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-3xl border border-[#EBCF8F]/35 bg-[#1B130E]/70 p-4 shadow-2xl"
+                className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-3xl border border-[#EBCF8F]/35 bg-[#1B130E]/70 p-3 shadow-2xl"
                 style={{
                   backfaceVisibility: 'hidden',
                   transform: 'rotateY(180deg)',
@@ -208,10 +276,10 @@ export function FlatRackFallback({
                 ) : null}
               </div>
             </div>
-          </div>
+          </button>
 
           {/* Quick Rail Thumbnail Strip */}
-          <div className="mt-5 flex max-w-full items-center gap-2.5 overflow-x-auto pb-1">
+          <div className="mt-4 flex w-full max-w-full min-w-0 items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {items.map((item, idx) => {
               const vIdx = activeVariants[item.productId] ?? 0;
               const v = item.variants[vIdx] ?? item.variants[0];
@@ -224,7 +292,7 @@ export function FlatRackFallback({
                   onClick={() => onSelectIndex(idx)}
                   aria-label={`Chọn ${item.name}`}
                   aria-pressed={selected}
-                  className={`h-16 w-12 shrink-0 overflow-hidden rounded-xl border p-1 transition-all ${
+                  className={`h-14 w-11 shrink-0 overflow-hidden rounded-xl border p-1 transition-all ${
                     selected
                       ? 'scale-105 border-[#EBCF8F] bg-[#2C1F17]'
                       : 'border-[#EBCF8F]/20 bg-[#1C1410]/65 opacity-65 hover:opacity-100'
@@ -242,24 +310,29 @@ export function FlatRackFallback({
         </div>
 
         {/* Frosted Commerce Card (.rack__card) */}
-        <aside className="rack__card w-full" id="rackCard">
+        <aside className="rack__card w-full min-w-0" id="rackCard">
           <div className="flex items-center justify-between gap-2">
             <p className="rack__idx">
-              <b>{String(safeIdx + 1).padStart(2, '0')}</b> /{' '}
-              <span>{String(items.length).padStart(2, '0')}</span>
+              <b id="rcIdx">{String(safeIdx + 1).padStart(2, '0')}</b> /{' '}
+              <span id="rcTotal">{String(items.length).padStart(2, '0')}</span>
             </p>
             <button
               type="button"
+              data-testid="rack-flip-btn"
               onClick={() => onToggleBack(activeItem.productId)}
               aria-pressed={isBack}
-              className="rounded-full border border-[#EBCF8F]/40 bg-[#1C1410]/65 px-3 py-1 text-[10px] tracking-[0.16em] uppercase text-[#EBCF8F] transition-colors hover:border-[#EBCF8F]"
+              className="rounded-full border border-[#EBCF8F]/45 bg-[#1C1410]/70 px-3 py-1 text-[10px] tracking-[0.16em] uppercase text-[#EBCF8F] transition-colors hover:border-[#EBCF8F] hover:bg-[#EBCF8F]/15"
             >
-              {isBack ? 'Xem Mặt trước' : 'Mặt trước / Mặt sau'}
+              {isBack ? '↻ Mặt sau · Lật trước' : '↻ Mặt trước / sau'}
             </button>
           </div>
 
-          <h3 className="rack__name">{activeItem.name}</h3>
-          <p className="rack__flowers">{activeItem.fabricComposition}</p>
+          <h3 className="rack__name" id="rcName">
+            {activeItem.name}
+          </h3>
+          <p className="rack__flowers" id="rcFlowers">
+            {activeItem.fabricComposition}
+          </p>
 
           {/* Color Swatches */}
           {activeItem.variants.length > 0 ? (
@@ -270,6 +343,7 @@ export function FlatRackFallback({
                   <button
                     key={variant.id}
                     type="button"
+                    data-testid="rack-swatch-btn"
                     title={variant.colorName}
                     aria-label={`Chọn màu ${variant.colorName}`}
                     aria-pressed={selected}
@@ -289,56 +363,107 @@ export function FlatRackFallback({
             </div>
           ) : null}
 
-          {/* In-Stock Size Pills */}
+          {/* Interactive Size Selector */}
           <div className="mt-4">
-            <p className="mb-1.5 text-[10px] tracking-[0.2em] uppercase text-[#FBF7EF]/55">
-              Cỡ sẵn có
-            </p>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <p className="text-[10px] tracking-[0.2em] uppercase text-[#FBF7EF]/60">
+                Chọn kích cỡ · {activeSize}
+              </p>
+              {recommendedSize && inStockSet.has(recommendedSize) ? (
+                <span className="text-[10px] text-[#EBCF8F]/85">
+                  Hồ sơ: Size {recommendedSize}
+                </span>
+              ) : null}
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {sizeList.map((sz) => {
                 const available = inStockSet.has(sz);
+                const selected = activeSize === sz;
                 return (
-                  <span
+                  <button
                     key={sz}
-                    className={`inline-flex min-w-[34px] items-center justify-center rounded-full border px-2.5 py-0.5 text-[11px] tracking-[0.1em] ${
-                      available
-                        ? 'border-[#EBCF8F]/50 bg-[#EBCF8F]/10 text-[#FBF7EF]'
-                        : 'border-[#FBF7EF]/15 text-[#FBF7EF]/35 line-through'
+                    type="button"
+                    data-testid="rack-size-btn"
+                    disabled={!available}
+                    aria-pressed={selected}
+                    onClick={() => onSelectSize(activeItem.productId, sz)}
+                    className={`inline-flex min-w-[36px] items-center justify-center rounded-full border px-2.5 py-1 text-[11px] tracking-[0.1em] transition-colors ${
+                      selected
+                        ? 'border-[#EBCF8F] bg-[#EBCF8F] font-medium text-[#1C1410]'
+                        : available
+                          ? 'border-[#EBCF8F]/50 bg-[#EBCF8F]/10 text-[#FBF7EF] hover:border-[#EBCF8F]'
+                          : 'cursor-not-allowed border-[#FBF7EF]/15 text-[#FBF7EF]/35 line-through'
                     }`}
                   >
                     {sz}
-                  </span>
+                  </button>
                 );
               })}
             </div>
           </div>
 
-          <p className="rack__price">
+          <p className="rack__price" id="rcPrice">
             <small>Từ</small>
-            {FORMAT_VND(activeItem.minPriceVnd)}
+            {FORMAT_VND(displayPriceVnd)}
           </p>
 
-          <div className="flex flex-wrap gap-2.5">
-            <Link
-              href={`/san-pham/${activeItem.slug}`}
-              className="btn btn--line text-[#EBCF8F]"
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="rack-add-to-bag-btn"
+              disabled={isAdding || !canAddToBag}
+              onClick={() => onAddToBag(activeItem)}
+              className="inline-flex flex-1 items-center justify-center rounded-full bg-[#EBCF8F] px-4 py-2.5 text-[11px] font-medium tracking-[0.16em] uppercase text-[#1C1410] transition-opacity hover:opacity-90 disabled:opacity-45"
             >
-              Xem chi tiết
-            </Link>
+              {isAdding ? 'Đang thêm...' : '+ Thêm vào giỏ'}
+            </button>
             {activeItem.isTryonEnabled ? (
-              <Link
-                href={`/thu-do-ai?slug=${encodeURIComponent(activeItem.slug)}`}
-                className="inline-flex items-center rounded-full border border-[#FBF7EF]/35 px-4 py-2 text-[11px] tracking-[0.16em] uppercase text-[#FBF7EF]/90 transition-colors hover:border-[#EBCF8F] hover:text-[#EBCF8F]"
+              <button
+                type="button"
+                data-testid="rack-tryon-btn"
+                onClick={() => onOpenTryOn(activeItem)}
+                className="inline-flex items-center justify-center rounded-full border border-[#EBCF8F]/60 bg-[#2A1E17]/85 px-4 py-2.5 text-[11px] font-medium tracking-[0.14em] uppercase text-[#EBCF8F] transition-colors hover:border-[#EBCF8F] hover:bg-[#EBCF8F]/15"
               >
-                Ướm thử AI
-              </Link>
+                ✦ Ướm thử AI
+              </button>
             ) : null}
           </div>
+
+          <div className="mt-2.5 flex items-center justify-between gap-2">
+            <Link
+              href={`/san-pham/${activeItem.slug}`}
+              className="text-[11px] tracking-[0.16em] uppercase text-[#EBCF8F]/85 underline underline-offset-4 transition-colors hover:text-[#EBCF8F]"
+            >
+              Xem thiết kế →
+            </Link>
+            {activeSku?.skuCode ? (
+              <span className="font-mono text-[10px] text-[#FBF7EF]/45">
+                {activeSku.skuCode}
+              </span>
+            ) : null}
+          </div>
+
+          {activeFeedback ? (
+            <p
+              role="status"
+              className={`mt-3 rounded-xl border px-3 py-2 text-[11px] ${
+                activeFeedback.kind === 'success'
+                  ? 'border-[#EBCF8F]/45 bg-[#2A1E17]/85 text-[#EBCF8F]'
+                  : 'border-[#C96B5B]/55 bg-[#2A1815]/90 text-[#F4B8AE]'
+              }`}
+            >
+              {activeFeedback.message}
+            </p>
+          ) : null}
         </aside>
       </div>
 
       {/* Dot Pagination */}
-      <div className="mt-6 flex items-center justify-center gap-2" role="tablist" aria-label="Chọn mẫu trên giá treo">
+      <div
+        className="mt-4 flex max-w-full flex-wrap items-center justify-center gap-2"
+        role="tablist"
+        aria-label="Chọn mẫu trên giá treo"
+      >
         {items.map((item, idx) => {
           const selected = idx === safeIdx;
           return (

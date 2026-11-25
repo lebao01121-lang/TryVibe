@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=69.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atelier-finetune-mlops"
+version = "1.0.0"
+description = "Isolated offline QLoRA SFT + DPO fine-tuning & GGUF export pipeline for Tam Xuan Fashion Atelier Copilot (Qwen 2.5 Instruct)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Tam Xuan Fashion Atelier AI Engineering" }
+]
+
+# Completely isolated from web apps and FastAPI (services/ai-tryon) containers.
+# Intended for offline NVIDIA GPU workstations, Google Colab, or Cloud GPU runners.
+dependencies = [
+  "torch>=2.4.0",
+  "transformers>=4.46.0,<5.0.0",
+  "datasets>=3.0.0",
+  "accelerate>=1.0.0",
+  "peft>=0.13.0",
+  "trl>=0.12.0",
+  "bitsandbytes>=0.44.0",
+  "huggingface-hub>=0.26.0",
+  "unsloth>=2024.11.7",
+]
+
+[project.optional-dependencies]
+gguf = [
+  "gguf>=0.10.0",
+  "sentencepiece>=0.2.0",
+  "protobuf>=5.27.0",
+  "safetensors>=0.4.5",
+]
+dev = [
+  "pytest>=8.3.0",
+  "ruff>=0.7.0",
+]
+
+[project.scripts]
+atelier-train-sft = "train_qlora_sft:main"
+atelier-train-dpo = "train_dpo:main"
+
+[tool.setuptools]
+py-modules = ["train_qlora_sft", "train_dpo"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100

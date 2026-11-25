@@ -81,6 +81,109 @@ return {1}
 """
 
 
+SLOT_PHYSICAL_ORDER: dict[str, int] = {
+    "upper": 1,
+    "top": 1,
+    "onepiece": 1,
+    "one_piece": 1,
+    "overall": 1,
+    "lower": 2,
+    "bottom": 2,
+    "outerwear": 3,
+    "accessory": 4,
+}
+
+
+def normalize_garment_slot(slot: str | None) -> str:
+    """Normalize incoming slot names to canonical ('upper'|'lower'|'onePiece'|'outerwear'|'accessory')."""
+    raw = (slot or "upper").strip().lower().replace("-", "_")
+    if raw in ("upper", "top", "shirt", "blouse", "sweater"):
+        return "upper"
+    if raw in ("lower", "bottom", "pants", "trousers", "skirt"):
+        return "lower"
+    if raw in ("onepiece", "one_piece", "overall", "dress", "jumpsuit"):
+        return "onePiece"
+    if raw in ("outerwear", "jacket", "coat", "blazer", "cardigan"):
+        return "outerwear"
+    if raw == "accessory":
+        return "accessory"
+    return "upper"
+
+
+def sort_garments_physically(garments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Order garments physically: UPPER/ONE_PIECE -> LOWER -> OUTERWEAR -> ACCESSORY."""
+    def _sort_key(item: dict[str, Any]) -> tuple[int, str, str, str, str]:
+        slot_norm = normalize_garment_slot(str(item.get("slot") or "upper"))
+        prio = SLOT_PHYSICAL_ORDER.get(slot_norm.lower(), 5)
+        return (
+            prio,
+            slot_norm.lower(),
+            str(item.get("productId") or item.get("product_id") or "").strip(),
+            str(item.get("variantId") or item.get("variant_id") or "").strip(),
+            str(item.get("colorHex") or item.get("color_hex") or "").strip().lower(),
+        )
+
+    return sorted(garments, key=_sort_key)
+
+
+def format_garment_variant_pair(garment: dict[str, Any]) -> str:
+    """Build deterministic variant pair identifier for Stage 2 SHA-256 cache keys."""
+    slot_norm = normalize_garment_slot(str(garment.get("slot") or "upper"))
+    product_id = str(garment.get("productId") or garment.get("product_id") or "").strip()
+    variant_id = str(garment.get("variantId") or garment.get("variant_id") or "").strip()
+    color_hex = str(garment.get("colorHex") or garment.get("color_hex") or "").strip().lower()
+    image_url = str(
+        garment.get("garmentImageUrl")
+        or garment.get("garment_image_url")
+        or garment.get("cleanGarmentUrl768x1024")
+        or ""
+    ).strip()
+    parts = [slot_norm, product_id, variant_id]
+    if color_hex:
+        parts.append(color_hex)
+    if image_url and not variant_id:
+        parts.append(hashlib.sha256(image_url.encode("utf-8")).hexdigest()[:12])
+    return ":".join(parts)
+
+
+def compute_v2_cache_key(
+    *,
+    person_frame_sha256: str,
+    garments: list[dict[str, Any]],
+    lighting_preset: str = "atelier",
+) -> str:
+    """
+    Compute exact Stage 2 Redis cache key:
+      tryon:v2:<sha256(personFrameSha256 + "|" + orderedVariantPairs + "|" + lightingPreset)>
+    """
+    ordered = sort_garments_physically(garments)
+    ordered_variant_pairs = ",".join(format_garment_variant_pair(g) for g in ordered)
+    canonical = (
+        f"{person_frame_sha256.strip().lower()}|"
+        f"{ordered_variant_pairs}|"
+        f"{(lighting_preset or 'atelier').strip().lower()}"
+    )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return f"tryon:v2:{digest}"
+
+
+def compute_v2_step1_cache_key(
+    *,
+    person_frame_sha256: str,
+    step1_garment: dict[str, Any],
+    lighting_preset: str = "atelier",
+) -> str:
+    """Intermediate Step 1 cache key for OUTFIT mode so switching Bottom skips Step 1."""
+    step1_pair = format_garment_variant_pair(step1_garment)
+    canonical = (
+        f"{person_frame_sha256.strip().lower()}|"
+        f"{step1_pair}|"
+        f"{(lighting_preset or 'atelier').strip().lower()}"
+    )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return f"tryon:v2:step1:{digest}"
+
+
 def compute_session_cache_hash(
     *,
     sha256_hash: str,
@@ -125,11 +228,16 @@ class DualQuotaSnapshot:
 
 
 class TryOnCacheQuota:
-    """SHA-256 VTON result cache + dual (user + IP) daily quota guard with Redis & memory fallback."""
+    """SHA-256 VTON result cache + dual (user + IP) daily/weekly quota guard with Redis & memory fallback."""
 
     CACHE_PREFIX = "tryon:cache"
+    CACHE_V2_PREFIX = "tryon:v2"
+    CACHE_V2_STEP1_PREFIX = "tryon:v2:step1"
     LEGACY_CACHE_PREFIX = "atelier:tryon:cache"
     QUOTA_PREFIX = "tryon:quota"
+    JOB_STATE_PREFIX = "tryon:job"
+    CANCELLED_PREFIX = "tryon:cancelled"
+    REFUND_GUARD_PREFIX = "tryon:refunded"
 
     def __init__(
         self,
@@ -139,15 +247,22 @@ class TryOnCacheQuota:
         guest_ip_limit: int = 5,
         auth_ip_limit: int = 30,
         cache_ttl_seconds: int = 900,
+        is_production: bool = False,
+        dev_loopback_ip_limit: int = 60,
     ) -> None:
         self.redis_url = redis_url
         self.daily_limit = daily_limit
         self.guest_ip_limit = guest_ip_limit
         self.auth_ip_limit = auth_ip_limit
         self.cache_ttl_seconds = cache_ttl_seconds
+        self.is_production = is_production
+        self.dev_loopback_ip_limit = dev_loopback_ip_limit
         self._redis_client: Any | None = None
         self._memory_cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self._memory_quota: dict[str, int] = {}
+        self._memory_jobs: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._memory_cancelled: dict[str, float] = {}
+        self._memory_refunded: dict[str, float] = {}
 
     @classmethod
     def resolve_user_limit(
@@ -161,8 +276,10 @@ class TryOnCacheQuota:
 
     @classmethod
     def build_cache_redis_key(cls, cache_hash: str) -> str:
-        if cache_hash.startswith(f"{cls.CACHE_PREFIX}:") or cache_hash.startswith(
-            f"{cls.LEGACY_CACHE_PREFIX}:"
+        if (
+            cache_hash.startswith(f"{cls.CACHE_V2_PREFIX}:")
+            or cache_hash.startswith(f"{cls.CACHE_PREFIX}:")
+            or cache_hash.startswith(f"{cls.LEGACY_CACHE_PREFIX}:")
         ):
             return cache_hash
         return f"{cls.CACHE_PREFIX}:{cache_hash}"
@@ -297,13 +414,111 @@ class TryOnCacheQuota:
         loyalty_tier: str | None = None,
     ) -> tuple[str, str, int, int]:
         clean_user = user_id.strip() if user_id and user_id.strip() else ""
+        clean_ip = (ip_address or "127.0.0.1").strip()
         user_key = self.build_user_quota_key(clean_user) if clean_user else ""
-        ip_key = self.build_ip_quota_key(ip_address)
+        ip_key = self.build_ip_quota_key(clean_ip)
         user_limit = (
             self.resolve_user_limit(loyalty_tier, self.daily_limit) if clean_user else 0
         )
-        ip_limit = self.auth_ip_limit if clean_user else self.guest_ip_limit
+        base_guest_ip_limit = self.guest_ip_limit
+        if not self.is_production and clean_ip in ("127.0.0.1", "::1", "localhost"):
+            base_guest_ip_limit = max(self.guest_ip_limit, self.dev_loopback_ip_limit)
+        ip_limit = self.auth_ip_limit if clean_user else base_guest_ip_limit
         return user_key, ip_key, user_limit, ip_limit
+
+    @classmethod
+    def build_weekly_quota_key(cls, owner_key: str, now: datetime | None = None) -> str:
+        iso_year, iso_week, _ = (now or datetime.now(timezone.utc)).isocalendar()
+        return f"{cls.QUOTA_PREFIX}:week:{owner_key.strip()}:{iso_year}W{iso_week:02d}"
+
+    async def set_job_state(
+        self,
+        job_id: str,
+        payload: dict[str, Any],
+        *,
+        ttl_seconds: int = 900,
+    ) -> None:
+        key = f"{self.JOB_STATE_PREFIX}:{job_id}"
+        self._memory_jobs[key] = (time.monotonic() + ttl_seconds, dict(payload))
+        client = await self._get_redis()
+        if client is not None:
+            try:
+                await client.set(key, json.dumps(payload), ex=ttl_seconds)
+            except Exception:
+                pass
+
+    async def get_job_state(self, job_id: str) -> dict[str, Any] | None:
+        key = f"{self.JOB_STATE_PREFIX}:{job_id}"
+        client = await self._get_redis()
+        if client is not None:
+            try:
+                raw = await client.get(key)
+                if raw:
+                    return json.loads(raw)
+            except Exception:
+                pass
+
+        entry = self._memory_jobs.get(key)
+        if not entry:
+            return None
+        expires_at, payload = entry
+        if time.monotonic() >= expires_at:
+            self._memory_jobs.pop(key, None)
+            return None
+        return dict(payload)
+
+    async def delete_job_state(self, job_id: str) -> None:
+        key = f"{self.JOB_STATE_PREFIX}:{job_id}"
+        self._memory_jobs.pop(key, None)
+        client = await self._get_redis()
+        if client is not None:
+            try:
+                await client.delete(key)
+            except Exception:
+                pass
+
+    async def mark_job_cancelled(self, job_id: str, *, ttl_seconds: int = 1800) -> None:
+        key = f"{self.CANCELLED_PREFIX}:{job_id}"
+        self._memory_cancelled[key] = time.monotonic() + ttl_seconds
+        client = await self._get_redis()
+        if client is not None:
+            try:
+                await client.set(key, "1", ex=ttl_seconds)
+            except Exception:
+                pass
+
+    async def is_job_cancelled(self, job_id: str) -> bool:
+        key = f"{self.CANCELLED_PREFIX}:{job_id}"
+        exp = self._memory_cancelled.get(key)
+        if exp is not None:
+            if time.monotonic() < exp:
+                return True
+            self._memory_cancelled.pop(key, None)
+        client = await self._get_redis()
+        if client is not None:
+            try:
+                val = await client.get(key)
+                return bool(val)
+            except Exception:
+                pass
+        return False
+
+    async def _claim_refund_once(self, job_id: str) -> bool:
+        """Return True only the first time a refund is claimed for `job_id` (prevents double-refund)."""
+        key = f"{self.REFUND_GUARD_PREFIX}:{job_id}"
+        now = time.monotonic()
+        existing = self._memory_refunded.get(key)
+        if existing is not None and now < existing:
+            return False
+        self._memory_refunded[key] = now + 3600.0
+        client = await self._get_redis()
+        if client is not None:
+            try:
+                acquired = await client.set(key, "1", ex=3600, nx=True)
+                return bool(acquired)
+            except Exception:
+                pass
+        return True
 
     def _build_snapshot(
         self,
@@ -529,6 +744,32 @@ class TryOnCacheQuota:
         return await self.get_dual_quota(
             user_id=user_id,
             ip_address=ip_address,
+            loyalty_tier=loyalty_tier,
+        )
+
+    async def refund_quota(
+        self,
+        user_id: str | None,
+        client_ip: str,
+        *,
+        loyalty_tier: str | None = None,
+        job_id: str | None = None,
+    ) -> DualQuotaSnapshot:
+        """
+        Stage 2 idempotent +1 quota rollback on POSE_TOO_CLOSE, NO_PERSON_DETECTED,
+        processing failure, or pre-completion cancel.
+        """
+        if job_id:
+            first_claim = await self._claim_refund_once(job_id)
+            if not first_claim:
+                return await self.get_dual_quota(
+                    user_id=user_id,
+                    ip_address=client_ip,
+                    loyalty_tier=loyalty_tier,
+                )
+        return await self.refund_dual_quota(
+            user_id=user_id,
+            ip_address=client_ip,
             loyalty_tier=loyalty_tier,
         )
 

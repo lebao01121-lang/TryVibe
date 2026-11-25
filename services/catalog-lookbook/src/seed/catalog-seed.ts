@@ -1318,9 +1318,6 @@ export interface SeedSummary {
   campaignAssetsUploaded: number;
 }
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export interface SeedMediaRegistrationAsset {
   id: string;
   assetType: 'RACK_CUTOUT_2_3';

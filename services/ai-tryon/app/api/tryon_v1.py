@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import hmac
+import io
 import json
 import re
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -15,10 +17,17 @@ import cv2
 import numpy as np
 from fastapi import APIRouter, Query, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from PIL import Image, ImageOps
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sqlalchemy import desc, func, select
 
-from app.cache_quota.quota import TryOnCacheQuota, compute_session_cache_hash
+from app.cache_quota.quota import (
+    TryOnCacheQuota,
+    compute_session_cache_hash,
+    compute_v2_cache_key,
+    normalize_garment_slot,
+    sort_garments_physically,
+)
 from app.config import REPO_ROOT, Settings
 from app.db.database import TryOnDatabase
 from app.db.models import (
@@ -32,9 +41,14 @@ from app.db.models import (
 )
 from app.preprocessing.normalizer import (
     ALLOWED_UPLOAD_CONTENT_TYPES,
+    normalize_user_portrait_3x4,
     validate_magic_bytes,
 )
-from app.providers.base import VTONProvider, get_provider_display_badge
+from app.providers.base import (
+    CACHE_HIT_BADGE,
+    VTONProvider,
+    get_provider_display_badge,
+)
 from app.services.lookbook_studio import (
     VIRTUAL_STUDIO_MODELS_BY_CODE,
     LookbookStudioService,
@@ -89,6 +103,30 @@ def build_api_response(
     )
 
 
+def build_stage2_response(
+    payload: dict[str, Any],
+    *,
+    request: Request,
+    status_code: int = 200,
+) -> JSONResponse:
+    """Return flat Stage 2 JSON fields AND standard `data` envelope for dual compatibility."""
+    correlation_id = getattr(request.state, "correlation_id", "")
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "success": True,
+            **payload,
+            "data": payload,
+            "error": None,
+            "meta": {
+                "correlationId": correlation_id,
+                "timestamp": utcnow().isoformat(),
+                "service": "ai-tryon",
+            },
+        },
+    )
+
+
 def build_api_error_response(
     *,
     status_code: int,
@@ -105,6 +143,9 @@ def build_api_error_response(
         status_code=status_code,
         content={
             "success": False,
+            "code": code,
+            "errorCode": code,
+            "message": message,
             "data": None,
             "error": err,
             "meta": {
@@ -114,6 +155,100 @@ def build_api_error_response(
             },
         },
     )
+
+
+def _decode_image_data_url(raw_value: str) -> bytes:
+    """Strictly decode base64 image data URL (rejecting oversized or corrupted payloads)."""
+    cleaned = (raw_value or "").strip()
+    if not cleaned:
+        raise TryOnApiError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="INVALID_IMAGE_MAGIC_BYTES",
+            message="Dữ liệu ảnh trống hoặc không hợp lệ.",
+        )
+    if cleaned.lower().startswith("data:"):
+        if "," not in cleaned:
+            raise TryOnApiError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="INVALID_IMAGE_MAGIC_BYTES",
+                message="Định dạng data URL ảnh không hợp lệ.",
+            )
+        cleaned = cleaned.split(",", 1)[1].strip()
+    cleaned = re.sub(r"\s+", "", cleaned)
+    # 10 MB binary is ~13.98 MB in base64
+    if len(cleaned) > 14_500_000:
+        raise TryOnApiError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="FILE_TOO_LARGE",
+            message=f"Kích thước ảnh vượt quá giới hạn tối đa {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+    pad = (-len(cleaned)) % 4
+    if pad:
+        cleaned += "=" * pad
+    try:
+        decoded = base64.b64decode(cleaned, validate=True)
+    except Exception as exc:
+        raise TryOnApiError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="INVALID_IMAGE_MAGIC_BYTES",
+            message="Không thể giải mã tệp ảnh (Magic Bytes hoặc Base64 không hợp lệ).",
+        ) from exc
+    if not decoded:
+        raise TryOnApiError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="INVALID_IMAGE_MAGIC_BYTES",
+            message="Tệp ảnh rỗng.",
+        )
+    if len(decoded) > MAX_UPLOAD_BYTES:
+        raise TryOnApiError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="FILE_TOO_LARGE",
+            message=f"Kích thước ảnh vượt quá giới hạn tối đa {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+    return decoded
+
+
+def _normalize_portrait_768x1024_bytes(
+    raw_bytes: bytes,
+    detected_mime: str | None = None,
+    extension: str | None = None,
+) -> tuple[bytes, str, str]:
+    """Normalize uploaded person portrait to crisp 768x1024 RGB image without unnecessary recompression."""
+    try:
+        with Image.open(io.BytesIO(raw_bytes)) as img:
+            transposed = ImageOps.exif_transpose(img)
+            if transposed.size == (768, 1024) and img is transposed:
+                return (
+                    raw_bytes,
+                    detected_mime or "image/jpeg",
+                    extension or "jpg",
+                )
+        fitted_rgba = normalize_user_portrait_3x4(raw_bytes, target_size=(768, 1024))
+        bg = Image.new("RGB", (768, 1024), (245, 242, 236))
+        bg.paste(fitted_rgba, mask=fitted_rgba.split()[3])
+        buf = io.BytesIO()
+        bg.save(buf, format="JPEG", quality=92)
+        return buf.getvalue(), "image/jpeg", "jpg"
+    except Exception:
+        return raw_bytes, detected_mime or "image/jpeg", extension or "jpg"
+
+
+def _compute_expires_in_seconds(expires_at_val: datetime | str | None, default_ttl: int = 900) -> int:
+    if expires_at_val is None:
+        return default_ttl
+    try:
+        if isinstance(expires_at_val, str):
+            raw = expires_at_val.strip()
+            if raw.endswith("Z"):
+                raw = raw[:-1] + "+00:00"
+            dt = datetime.fromisoformat(raw)
+        else:
+            dt = expires_at_val
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return max(0, int((dt - utcnow()).total_seconds()))
+    except Exception:
+        return default_ttl
 
 
 def extract_caller_context(request: Request) -> tuple[str | None, str | None, str, str | None, str]:
@@ -205,6 +340,87 @@ class UploadUrlRequestBody(BaseModel):
     source: Literal["CAMERA_MEDIAPIPE", "STATIC_UPLOAD"] = "STATIC_UPLOAD"
     pose_score: float = Field(default=1.0, alias="poseScore", ge=0.0, le=1.0)
     privacy_consent: Any = Field(default=False, alias="privacyConsent")
+    file_header_base64: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "fileHeaderBase64",
+            "imageDataUrl",
+            "personImageDataUrl",
+            "fileBase64",
+        ),
+    )
+
+
+class SynthesizeGarmentBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    product_id: str = Field(default="", alias="productId")
+    variant_id: str = Field(default="", alias="variantId")
+    slot: str = Field(default="upper")
+    name: str = Field(default="")
+    garment_image_url: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "garmentImageUrl",
+            "cleanGarmentUrl768x1024",
+            "garment_image_url",
+        ),
+    )
+    color_hex: str | None = Field(default=None, alias="colorHex")
+    color_name: str | None = Field(default=None, alias="colorName")
+
+
+class SynthesizeRequestBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    person_image_data_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "personImageDataUrl",
+            "personImageBase64",
+            "imageDataUrl",
+            "person_image_data_url",
+        ),
+    )
+    person_object_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "personObjectKey",
+            "objectKey",
+            "person_object_key",
+        ),
+    )
+    temp_image_id: str | None = Field(default=None, alias="tempImageId")
+    person_frame_hash: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "personFrameHash",
+            "sha256Hash",
+            "person_frame_hash",
+        ),
+    )
+    mode: str = Field(default="SINGLE")
+    lighting_preset: Literal["morning", "atelier", "evening"] = Field(
+        default="atelier",
+        alias="lightingPreset",
+    )
+    privacy_consent: Any = Field(default=False, alias="privacyConsent")
+    pose_landmarks: Any = Field(default=None, alias="poseLandmarks")
+    garments: list[SynthesizeGarmentBody] = Field(min_length=1)
+    simulate_failure: bool = Field(default=False, alias="simulateFailure")
+
+
+class PurgeNowRequestBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    force_before_iso: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("force_before_iso", "forceBeforeIso"),
+    )
+    session_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("session_id", "sessionId", "jobId", "job_id"),
+    )
 
 
 class TryOnPosePointModel(BaseModel):
@@ -264,28 +480,32 @@ class CreateBookmarkRequestBody(BaseModel):
     label: str | None = Field(default=None, max_length=120)
 
 
+SIGNAL_TYPES = Literal[
+    "OPEN_MODAL",
+    "TRYON_COMPLETED",
+    "SIZE_ADVISED",
+    "ADD_TO_CART_AFTER_TRYON",
+    "PURCHASE_AFTER_TRYON",
+    "MO_PHONG_THU",
+    "THU_THANH_CONG",
+    "THEM_GIO_SAU_THU",
+    "MUA_SAU_THU",
+]
+
+
 class CreateSignalRequestBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     product_id: str = Field(alias="productId", min_length=1)
-    sku_id: str | None = Field(default=None, alias="skuId")
+    sku_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("skuId", "variantId", "sku_id", "variant_id"),
+    )
     sku_code: str | None = Field(default=None, alias="skuCode")
     size_code: str | None = Field(default=None, alias="sizeCode")
     session_id: str | None = Field(default=None, alias="sessionId")
-    signal_type: Literal[
-        "OPEN_MODAL",
-        "TRYON_COMPLETED",
-        "SIZE_ADVISED",
-        "ADD_TO_CART_AFTER_TRYON",
-        "PURCHASE_AFTER_TRYON",
-    ] | None = Field(default=None, alias="signalType")
-    event_type: Literal[
-        "OPEN_MODAL",
-        "TRYON_COMPLETED",
-        "SIZE_ADVISED",
-        "ADD_TO_CART_AFTER_TRYON",
-        "PURCHASE_AFTER_TRYON",
-    ] | None = Field(default=None, alias="eventType")
+    signal_type: SIGNAL_TYPES | None = Field(default=None, alias="signalType")
+    event_type: SIGNAL_TYPES | None = Field(default=None, alias="eventType")
 
 
 class LookbookGenerateRequestBody(BaseModel):
@@ -662,6 +882,35 @@ def _render_season_restyle_sync(
 # =============================================================================
 
 
+@v1_router.get("/health")
+async def get_v1_tryon_health(request: Request) -> JSONResponse:
+    """Fast (< 5ms) health & broker/database diagnostics endpoint."""
+    t0 = time.perf_counter()
+    settings, db, _, _, provider, worker, _ = _get_services(request)
+    latency_ms = max(0, int(round((time.perf_counter() - t0) * 1000)))
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "status": "UP",
+            "service": settings.service_name,
+            "version": settings.service_version,
+            "port": settings.ai_tryon_port,
+            "latencyMs": latency_ms,
+            "provider": settings.vton_provider,
+            "providerType": provider.provider_type,
+            "database": db.db_name,
+            "databaseDialect": db.database_dialect,
+            "dbMode": db.db_mode,
+            "workerTransport": worker.worker_transport,
+            "rabbitmqConnected": worker.rabbitmq_connected,
+            "retryTopology": worker.topology.as_dict(),
+            "correlationId": getattr(request.state, "correlation_id", ""),
+            "traceparent": getattr(request.state, "traceparent", ""),
+            "timestamp": utcnow().isoformat(),
+        },
+    )
+
+
 @v1_router.get("/quota")
 async def get_quota(request: Request) -> JSONResponse:
     _, _, _, cache_quota, _, _, _ = _get_services(request)
@@ -716,6 +965,16 @@ async def create_upload_url(
             code="VALIDATION_ERROR",
             message=f"fileSizeBytes must be between 1 and {MAX_UPLOAD_BYTES} bytes (10 MB).",
         )
+
+    if body.file_header_base64:
+        sample_bytes = _decode_image_data_url(body.file_header_base64)
+        magic = validate_magic_bytes(sample_bytes)
+        if not magic.valid:
+            raise TryOnApiError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="INVALID_IMAGE_MAGIC_BYTES",
+                message=magic.error or "Invalid or spoofed image Magic Bytes rejected.",
+            )
 
     quota_snap = await cache_quota.get_dual_quota(
         user_id=user_id,
@@ -776,6 +1035,821 @@ async def create_upload_url(
             "purgeAt": purge_at.isoformat(),
             "remainingQuota": quota_snap.remaining_quota,
             "dailyLimit": quota_snap.daily_limit,
+        },
+        request=request,
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@v1_router.post("/upload")
+async def direct_upload_portrait(request: Request) -> JSONResponse:
+    """
+    Stage 2 direct portrait upload supporting BOTH multipart/form-data and JSON base64.
+    Strictly enforces privacyConsent=true, <= 10MB, and real JPEG/PNG/WebP Magic Bytes.
+    """
+    settings, db, minio, cache_quota, _, _, _ = _get_services(request)
+    user_id, guest_session_id, client_ip, loyalty_tier, _ = extract_caller_context(request)
+
+    content_type_hdr = (request.headers.get("content-type") or "").lower()
+    raw_bytes: bytes = b""
+    consent_ok = False
+    source_val = "STATIC_UPLOAD"
+
+    if "multipart/form-data" in content_type_hdr:
+        form = await request.form()
+        raw_consent = form.get("privacyConsent")
+        consent_ok = str(raw_consent or "").strip().lower() in ("true", "1", "yes")
+        source_val = str(form.get("source") or "STATIC_UPLOAD").strip() or "STATIC_UPLOAD"
+        uploaded_file = form.get("file")
+        if uploaded_file is None or not hasattr(uploaded_file, "read"):
+            raise TryOnApiError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="INVALID_IMAGE_MAGIC_BYTES",
+                message="Thiếu tệp ảnh tải lên (multipart field 'file').",
+            )
+        raw_bytes = await uploaded_file.read()  # type: ignore[union-attr]
+    elif content_type_hdr.startswith("image/") or "application/octet-stream" in content_type_hdr:
+        raw_consent = (
+            request.query_params.get("privacyConsent")
+            or request.headers.get("x-privacy-consent")
+            or ""
+        )
+        consent_ok = str(raw_consent).strip().lower() in ("true", "1", "yes")
+        raw_bytes = await request.body()
+    else:
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise TryOnApiError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="VALIDATION_ERROR",
+                message="Invalid JSON payload for /v1/tryon/upload.",
+            ) from exc
+        if not isinstance(payload, dict):
+            raise TryOnApiError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="VALIDATION_ERROR",
+                message="JSON body must be an object.",
+            )
+        consent_ok = payload.get("privacyConsent") is True
+        source_val = str(payload.get("source") or "STATIC_UPLOAD").strip() or "STATIC_UPLOAD"
+        raw_b64 = (
+            payload.get("personImageDataUrl")
+            or payload.get("imageDataUrl")
+            or payload.get("fileBase64")
+            or ""
+        )
+        raw_bytes = _decode_image_data_url(str(raw_b64))
+
+    if not consent_ok:
+        raise TryOnApiError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="PRIVACY_CONSENT_REQUIRED",
+            message=(
+                "Cần xác nhận đồng ý chính sách bảo mật 15 phút (privacyConsent=true) "
+                "trước khi tải ảnh chân dung lên."
+            ),
+        )
+
+    if not raw_bytes or len(raw_bytes) > MAX_UPLOAD_BYTES:
+        raise TryOnApiError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="FILE_TOO_LARGE" if len(raw_bytes) > MAX_UPLOAD_BYTES else "INVALID_IMAGE_MAGIC_BYTES",
+            message=f"Kích thước ảnh phải từ 1 byte đến {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+
+    magic = validate_magic_bytes(raw_bytes)
+    if not magic.valid:
+        raise TryOnApiError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="INVALID_IMAGE_MAGIC_BYTES",
+            message=magic.error or "Tệp tải lên không đúng định dạng ảnh thực (Magic Bytes).",
+        )
+
+    person_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+    norm_bytes, norm_mime, norm_ext = await asyncio.to_thread(
+        _normalize_portrait_768x1024_bytes,
+        raw_bytes,
+        magic.detected_mime,
+        magic.extension,
+    )
+
+    now = utcnow()
+    temp_image_id = str(uuid4())
+    object_key = f"uploads/{temp_image_id}.{norm_ext}"
+    purge_at = now + timedelta(minutes=settings.tryon_purge_ttl_minutes)
+
+    await minio.ensure_buckets()
+    await minio.put_object_bytes(
+        key=object_key,
+        data=norm_bytes,
+        content_type=norm_mime,
+    )
+
+    async with db.session() as db_sess:
+        db_sess.add(
+            TempUserImage(
+                id=temp_image_id,
+                user_id=user_id,
+                guest_session_id=guest_session_id,
+                ip_address=client_ip,
+                source=source_val[:32],
+                minio_object_key=object_key,
+                sha256_hash=person_sha256,
+                pose_score=1.0,
+                privacy_consent=True,
+                expires_at=purge_at,
+                is_purged=False,
+                purged_at=None,
+                created_at=now,
+            )
+        )
+        await db_sess.commit()
+
+    quota_snap = await cache_quota.get_dual_quota(
+        user_id=user_id,
+        ip_address=client_ip,
+        loyalty_tier=loyalty_tier,
+    )
+
+    return build_stage2_response(
+        {
+            "tempImageId": temp_image_id,
+            "objectKey": object_key,
+            "personObjectKey": object_key,
+            "personFrameHash": person_sha256,
+            "sha256Hash": person_sha256,
+            "contentType": norm_mime,
+            "width": 768,
+            "height": 1024,
+            "expiresAt": purge_at.isoformat(),
+            "expiresInSeconds": settings.tryon_presign_get_ttl_seconds,
+            "quotaRemaining": quota_snap.remaining_quota,
+            "remainingQuota": quota_snap.remaining_quota,
+        },
+        request=request,
+        status_code=status.HTTP_200_OK,
+    )
+
+
+# =============================================================================
+# 1B. Stage 2 Async Synthesis Endpoints (/synthesize, /jobs, /jobs/{id}, /cancel)
+# =============================================================================
+
+
+async def _handle_stage2_synthesize(
+    request: Request,
+    body: SynthesizeRequestBody,
+) -> JSONResponse:
+    settings, db, minio, cache_quota, _provider, worker, _ = _get_services(request)
+    user_id, guest_session_id, client_ip, loyalty_tier, _ = extract_caller_context(request)
+    correlation_id = getattr(request.state, "correlation_id", "")
+
+    if body.privacy_consent is not True:
+        raise TryOnApiError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="PRIVACY_CONSENT_REQUIRED",
+            message=(
+                "Cần xác nhận đồng ý chính sách bảo mật 15 phút (privacyConsent=true) "
+                "trước khi tạo ảnh thử đồ AI."
+            ),
+        )
+
+    raw_bytes: bytes | None = None
+    existing_object_key: str | None = None
+    existing_temp_image_id: str | None = body.temp_image_id
+
+    if body.person_image_data_url:
+        raw_bytes = _decode_image_data_url(body.person_image_data_url)
+        magic = validate_magic_bytes(raw_bytes)
+        if not magic.valid:
+            raise TryOnApiError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="INVALID_IMAGE_MAGIC_BYTES",
+                message=magic.error or "Ảnh tải lên sai Magic Bytes (chỉ chấp nhận JPEG, PNG, WebP thực).",
+            )
+        person_frame_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+        detected_mime = magic.detected_mime
+        detected_ext = magic.extension
+    elif body.person_object_key:
+        existing_object_key = body.person_object_key.strip()
+        raw_bytes = await minio.get_object_bytes(key=existing_object_key)
+        if not raw_bytes:
+            raise TryOnApiError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="INVALID_IMAGE_MAGIC_BYTES",
+                message="Không tìm thấy ảnh chân dung hợp lệ trong atelier-private-tryon.",
+            )
+        if len(raw_bytes) > MAX_UPLOAD_BYTES:
+            await minio.delete_object(key=existing_object_key)
+            raise TryOnApiError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="FILE_TOO_LARGE",
+                message="Ảnh chân dung vượt quá giới hạn 10 MB.",
+            )
+        magic = validate_magic_bytes(raw_bytes)
+        if not magic.valid:
+            await minio.delete_object(key=existing_object_key)
+            raise TryOnApiError(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                code="INVALID_IMAGE_MAGIC_BYTES",
+                message=magic.error or "Ảnh giả mạo Magic Bytes đã bị từ chối và xóa ngay lập tức.",
+            )
+        person_frame_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+        detected_mime = magic.detected_mime
+        detected_ext = magic.extension
+    else:
+        raise TryOnApiError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="VALIDATION_ERROR",
+            message="Cần cung cấp personImageDataUrl hoặc personObjectKey để thử đồ AI.",
+        )
+
+    # Normalize & physically sort garments (UPPER/ONE_PIECE -> LOWER -> OUTERWEAR)
+    garment_dicts: list[dict[str, Any]] = []
+    for g in body.garments:
+        garment_dicts.append(
+            {
+                "productId": g.product_id.strip(),
+                "variantId": g.variant_id.strip(),
+                "slot": normalize_garment_slot(g.slot),
+                "name": g.name.strip(),
+                "garmentImageUrl": g.garment_image_url.strip(),
+                "colorHex": g.color_hex.strip() if g.color_hex else None,
+                "colorName": g.color_name.strip() if g.color_name else None,
+            }
+        )
+    ordered_garments = sort_garments_physically(garment_dicts)[:3]
+    step_total = len(ordered_garments)
+    raw_mode = (body.mode or "SINGLE").strip().upper()
+    effective_mode = "OUTFIT" if (raw_mode in ("OUTFIT", "MIX_MATCH_OUTFIT") or step_total >= 2) else "SINGLE"
+
+    cache_key = compute_v2_cache_key(
+        person_frame_sha256=person_frame_sha256,
+        garments=ordered_garments,
+        lighting_preset=body.lighting_preset,
+    )
+    cache_digest = cache_key.split(":")[-1]
+    now = utcnow()
+
+    # 1. Check Redis `tryon:v2:` Content-Hash Cache BEFORE quota deduction (< 300ms, ZERO quota deduction!)
+    if not body.simulate_failure:
+        cached = await cache_quota.get_cached(cache_key)
+        cached_object_key = (
+            str(cached.get("resultObjectKey"))
+            if isinstance(cached, dict) and cached.get("resultObjectKey")
+            else None
+        )
+        if cached_object_key and await minio.head_object(key=cached_object_key):
+            quota_snap = await cache_quota.get_dual_quota(
+                user_id=user_id,
+                ip_address=client_ip,
+                loyalty_tier=loyalty_tier,
+            )
+            cached_job_id = str(
+                cached.get("jobId") or cached.get("sessionId") or str(uuid4())
+            )
+            expires_at_iso = str(
+                cached.get("expiresAt")
+                or (now + timedelta(minutes=settings.tryon_purge_ttl_minutes)).isoformat()
+            )
+            expires_in_seconds = _compute_expires_in_seconds(
+                expires_at_iso,
+                default_ttl=settings.tryon_presign_get_ttl_seconds,
+            )
+            if expires_in_seconds <= 0:
+                expires_in_seconds = settings.tryon_presign_get_ttl_seconds
+            result_url = await minio.generate_presigned_get_url(
+                key=cached_object_key,
+                expires_in=settings.tryon_presign_get_ttl_seconds,
+            )
+            cached_provider = str(cached.get("providerUsed") or "CACHE_HIT")
+            return build_stage2_response(
+                {
+                    "jobId": cached_job_id,
+                    "sessionId": cached_job_id,
+                    "status": "COMPLETED",
+                    "cacheHit": True,
+                    "cacheKey": cache_key,
+                    "progressPct": 100,
+                    "stageLabel": "Tức thì từ bộ nhớ đệm",
+                    "stepCurrent": step_total,
+                    "stepTotal": step_total,
+                    "resultUrl": result_url,
+                    "resultImageUrl": result_url,
+                    "providerUsed": cached_provider,
+                    "providerBadge": CACHE_HIT_BADGE,
+                    "providerDisplayBadge": CACHE_HIT_BADGE,
+                    "expiresAt": expires_at_iso,
+                    "expiresInSeconds": expires_in_seconds,
+                    "quotaRemaining": quota_snap.remaining_quota,
+                    "remainingQuota": quota_snap.remaining_quota,
+                },
+                request=request,
+                status_code=status.HTTP_200_OK,
+            )
+
+    # 2. Cache MISS -> Check & atomically reserve Daily/Weekly Quota (429 if exceeded)
+    quota_snap = await cache_quota.deduct_dual_quota(
+        user_id=user_id,
+        ip_address=client_ip,
+        loyalty_tier=loyalty_tier,
+    )
+    if not quota_snap.allowed:
+        raise TryOnApiError(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="QUOTA_EXCEEDED",
+            message="Bạn đã dùng hết lượt thử đồ AI hôm nay. Vui lòng thử lại vào ngày mai hoặc xem lại các bộ đã lưu!",
+            details={
+                "reason": quota_snap.reason,
+                "quotaRemaining": quota_snap.remaining_quota,
+                "remainingQuota": quota_snap.remaining_quota,
+                "dailyLimit": quota_snap.daily_limit,
+                "ipRemaining": quota_snap.ip_remaining,
+            },
+        )
+
+    # 3. Store normalized 768x1024 original portrait in locked-private MinIO bucket
+    await minio.ensure_buckets()
+    expires_at = now + timedelta(minutes=settings.tryon_purge_ttl_minutes)
+    expires_at_iso = expires_at.isoformat()
+
+    if existing_object_key:
+        object_key = existing_object_key
+        temp_image_id = existing_temp_image_id or str(uuid4())
+    else:
+        norm_bytes, norm_mime, norm_ext = await asyncio.to_thread(
+            _normalize_portrait_768x1024_bytes,
+            raw_bytes,
+            detected_mime,
+            detected_ext,
+        )
+        temp_image_id = str(uuid4())
+        object_key = f"uploads/{temp_image_id}.{norm_ext}"
+        await minio.put_object_bytes(
+            key=object_key,
+            data=norm_bytes,
+            content_type=norm_mime,
+        )
+
+    # Extract slot-specific product/variant IDs for relational DB compatibility
+    upper_pid = upper_vid = lower_pid = lower_vid = one_piece_pid = one_piece_vid = None
+    for g in ordered_garments:
+        sl = g["slot"]
+        pid = g["productId"] or None
+        vid = g["variantId"] or None
+        if sl in ("upper", "outerwear") and not upper_pid:
+            upper_pid, upper_vid = pid, vid
+        elif sl == "lower" and not lower_pid:
+            lower_pid, lower_vid = pid, vid
+        elif sl == "onePiece" and not one_piece_pid:
+            one_piece_pid, one_piece_vid = pid, vid
+
+    job_id = str(uuid4())
+    async with db.session() as db_sess:
+        existing_temp_row = await db_sess.get(TempUserImage, temp_image_id)
+        if existing_temp_row is None:
+            db_sess.add(
+                TempUserImage(
+                    id=temp_image_id,
+                    user_id=user_id,
+                    guest_session_id=guest_session_id,
+                    ip_address=client_ip,
+                    source="STATIC_UPLOAD",
+                    minio_object_key=object_key,
+                    sha256_hash=person_frame_sha256,
+                    pose_score=1.0,
+                    privacy_consent=True,
+                    expires_at=expires_at,
+                    is_purged=False,
+                    purged_at=None,
+                    created_at=now,
+                )
+            )
+            await db_sess.flush()
+
+        db_sess.add(
+            TryOnSession(
+                id=job_id,
+                user_id=user_id,
+                guest_session_id=guest_session_id,
+                temp_image_id=temp_image_id,
+                mode=effective_mode,
+                upper_product_id=upper_pid,
+                lower_product_id=lower_pid,
+                one_piece_product_id=one_piece_pid,
+                provider_used="QUEUED",
+                provider_display_badge=None,
+                status="QUEUED",
+                progress_pct=5,
+                step_order=1,
+                total_steps=step_total,
+                step_message="Đang xếp hàng xử lý phòng thử đồ AI...",
+                total_duration_ms=None,
+                error_code=None,
+                error_message=None,
+                cache_key=cache_key,
+                lighting_preset=body.lighting_preset,
+                expires_at=expires_at,
+                is_purged=False,
+                purged_at=None,
+                created_at=now,
+                completed_at=None,
+            )
+        )
+        await db_sess.flush()
+
+        for step_idx, g in enumerate(ordered_garments, start=1):
+            sl = g["slot"]
+            cat = "LOWER" if sl == "lower" else ("OVERALL" if sl == "onePiece" else "UPPER")
+            db_sess.add(
+                TryOnJob(
+                    id=str(uuid4()),
+                    session_id=job_id,
+                    step_order=step_idx,
+                    product_id=g["productId"] or f"garment-{sl}",
+                    garment_category=cat,
+                    cache_hash=cache_digest,
+                    status="QUEUED",
+                    estimated_cost_usd=0.0,
+                    created_at=now,
+                )
+            )
+
+        # Record anonymous MO_PHONG_THU demand signal (ZERO personal image!)
+        seen_pids: set[str] = set()
+        for g in ordered_garments:
+            pid = g["productId"]
+            if pid and pid not in seen_pids:
+                seen_pids.add(pid)
+                db_sess.add(
+                    TryOnDemandEvent(
+                        id=str(uuid4()),
+                        product_id=pid,
+                        sku_id=g["variantId"] or None,
+                        session_id=job_id,
+                        user_id=user_id,
+                        signal_type="MO_PHONG_THU",
+                        created_at=now,
+                    )
+                )
+        await db_sess.commit()
+
+    queued_payload: dict[str, Any] = {
+        "jobId": job_id,
+        "sessionId": job_id,
+        "status": "QUEUED",
+        "cacheHit": False,
+        "cacheKey": cache_key,
+        "progressPct": 5,
+        "stageLabel": "Đang xếp hàng xử lý phòng thử đồ AI...",
+        "stepCurrent": 1,
+        "stepTotal": step_total,
+        "resultUrl": None,
+        "resultImageUrl": None,
+        "providerUsed": None,
+        "providerBadge": None,
+        "expiresAt": expires_at_iso,
+        "expiresInSeconds": settings.tryon_presign_get_ttl_seconds,
+        "quotaRemaining": quota_snap.remaining_quota,
+        "remainingQuota": quota_snap.remaining_quota,
+    }
+    await cache_quota.set_job_state(
+        job_id,
+        {
+            **queued_payload,
+            "errorCode": None,
+            "errorMessage": None,
+        },
+        ttl_seconds=settings.tryon_presign_get_ttl_seconds,
+    )
+
+    storefront_url = (
+        getattr(settings, "storefront_url", None) or "http://127.0.0.1:3000"
+    )
+    await worker.enqueue(
+        TryOnQueuedTask(
+            session_id=job_id,
+            temp_image_id=temp_image_id,
+            object_key=object_key,
+            cache_hash=cache_digest,
+            mode=effective_mode,
+            upper_product_id=upper_pid,
+            upper_variant_id=upper_vid,
+            lower_product_id=lower_pid,
+            lower_variant_id=lower_vid,
+            one_piece_product_id=one_piece_pid,
+            one_piece_variant_id=one_piece_vid,
+            user_id=user_id,
+            guest_session_id=guest_session_id,
+            ip_address=client_ip,
+            loyalty_tier=loyalty_tier,
+            correlation_id=correlation_id,
+            traceparent=getattr(request.state, "traceparent", ""),
+            simulate_failure=bool(body.simulate_failure),
+            pose_landmarks=body.pose_landmarks,
+            is_stage2=True,
+            cache_key=cache_key,
+            person_frame_sha256=person_frame_sha256,
+            lighting_preset=body.lighting_preset,
+            garments=tuple(ordered_garments),
+            storefront_url=storefront_url,
+        )
+    )
+
+    return build_stage2_response(
+        queued_payload,
+        request=request,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+
+
+@v1_router.post("/synthesize")
+async def synthesize_tryon_v2(
+    request: Request,
+    body: SynthesizeRequestBody,
+) -> JSONResponse:
+    """Stage 2 Async VTON Synthesis endpoint (200 OK on Redis cache HIT, 202 Accepted on MISS)."""
+    return await _handle_stage2_synthesize(request, body)
+
+
+@v1_router.post("/jobs")
+async def create_tryon_job_alias(
+    request: Request,
+    body: SynthesizeRequestBody,
+) -> JSONResponse:
+    """Alias for `POST /v1/tryon/synthesize`."""
+    return await _handle_stage2_synthesize(request, body)
+
+
+@v1_router.get("/jobs/{job_id}")
+async def get_tryon_job_status(
+    job_id: str,
+    request: Request,
+) -> JSONResponse:
+    """Stage 2 live job polling fallback endpoint (called every ~1.2s alongside Socket.io)."""
+    settings, db, minio, cache_quota, _, _, _ = _get_services(request)
+    user_id, guest_session_id, client_ip, loyalty_tier, _ = extract_caller_context(request)
+    is_privileged = is_privileged_tryon_caller(request, settings)
+
+    live_state = await cache_quota.get_job_state(job_id)
+
+    async with db.session() as db_sess:
+        sess_row = await db_sess.get(TryOnSession, job_id)
+        if sess_row is None and live_state is None:
+            raise TryOnApiError(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="NOT_FOUND",
+                message=f"Try-on job '{job_id}' not found.",
+            )
+
+        if sess_row is not None and not is_privileged:
+            if sess_row.user_id and (not user_id or user_id != sess_row.user_id):
+                raise TryOnApiError(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    code="FORBIDDEN",
+                    message="Access denied: you do not have permission to view this try-on job.",
+                )
+            if (
+                not sess_row.user_id
+                and sess_row.guest_session_id
+                and (not guest_session_id or guest_session_id != sess_row.guest_session_id)
+            ):
+                raise TryOnApiError(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    code="FORBIDDEN",
+                    message="Access denied: guest session mismatch for this try-on job.",
+                )
+
+        temp_img = (
+            await db_sess.get(TempUserImage, sess_row.temp_image_id)
+            if sess_row is not None
+            else None
+        )
+        result_row = (
+            (
+                await db_sess.execute(
+                    select(TryOnResult).where(TryOnResult.session_id == job_id)
+                )
+            ).scalar_one_or_none()
+            if sess_row is not None
+            else None
+        )
+
+    is_purged = bool(
+        (sess_row is not None and sess_row.is_purged)
+        or (result_row is not None and result_row.is_purged)
+        or (temp_img is not None and temp_img.is_purged)
+    )
+
+    quota_snap = await cache_quota.get_dual_quota(
+        user_id=user_id or (sess_row.user_id if sess_row else None),
+        ip_address=client_ip,
+        loyalty_tier=loyalty_tier,
+    )
+
+    # Derive canonical status & fields merging DB authority + Redis live progress
+    raw_status = (
+        sess_row.status
+        if sess_row is not None
+        else str(live_state.get("status") if live_state else "QUEUED")
+    )
+    if raw_status in ("PROCESSING_STEP_1", "PROCESSING_STEP_2"):
+        normalized_status = "PROCESSING"
+    else:
+        normalized_status = raw_status
+
+    progress_pct = (
+        int(sess_row.progress_pct)
+        if sess_row is not None
+        else int(live_state.get("progressPct", 0) if live_state else 0)
+    )
+    stage_label = (
+        "Ảnh đã được tự động xóa khỏi hệ thống sau 15 phút bảo mật."
+        if is_purged
+        else (
+            (sess_row.step_message if sess_row and sess_row.step_message else None)
+            or (str(live_state.get("stageLabel")) if live_state and live_state.get("stageLabel") else "")
+        )
+    )
+    step_current = max(
+        1,
+        int(sess_row.step_order)
+        if sess_row is not None and sess_row.step_order > 0
+        else int(live_state.get("stepCurrent", 1) if live_state else 1),
+    )
+    step_total = max(
+        1,
+        int(sess_row.total_steps)
+        if sess_row is not None and sess_row.total_steps > 0
+        else int(live_state.get("stepTotal", 1) if live_state else 1),
+    )
+
+    expires_at_dt = (
+        (result_row.expires_at if result_row is not None else None)
+        or (sess_row.expires_at if sess_row is not None else None)
+        or (temp_img.expires_at if temp_img is not None else None)
+    )
+    expires_at_iso = (
+        expires_at_dt.isoformat()
+        if expires_at_dt is not None
+        else (str(live_state.get("expiresAt")) if live_state and live_state.get("expiresAt") else None)
+    )
+    expires_in_seconds = (
+        0
+        if is_purged
+        else _compute_expires_in_seconds(
+            expires_at_dt or expires_at_iso,
+            default_ttl=settings.tryon_presign_get_ttl_seconds,
+        )
+    )
+
+    result_url: str | None = None
+    if normalized_status == "COMPLETED" and not is_purged:
+        if result_row is not None and result_row.result_object_key:
+            result_url = await minio.generate_presigned_get_url(
+                key=result_row.result_object_key,
+                expires_in=settings.tryon_presign_get_ttl_seconds,
+            )
+        elif live_state and live_state.get("resultUrl"):
+            result_url = str(live_state["resultUrl"])
+
+    provider_used = (
+        (sess_row.provider_used if sess_row and sess_row.provider_used not in ("", "QUEUED") else None)
+        or (str(live_state.get("providerUsed")) if live_state and live_state.get("providerUsed") else None)
+    )
+    provider_badge = (
+        (sess_row.provider_display_badge if sess_row and sess_row.provider_display_badge else None)
+        or (str(live_state.get("providerBadge")) if live_state and live_state.get("providerBadge") else None)
+        or (get_provider_display_badge(provider_used) if provider_used else None)
+    )
+    cache_hit = bool(
+        (sess_row is not None and sess_row.provider_used == "CACHE_HIT")
+        or (live_state is not None and live_state.get("cacheHit"))
+    )
+
+    return build_stage2_response(
+        {
+            "jobId": job_id,
+            "sessionId": job_id,
+            "status": normalized_status,
+            "progressPct": progress_pct,
+            "stageLabel": stage_label,
+            "stepCurrent": step_current,
+            "stepTotal": step_total,
+            "resultUrl": result_url,
+            "resultImageUrl": result_url,
+            "providerUsed": provider_used,
+            "providerBadge": provider_badge,
+            "providerDisplayBadge": provider_badge,
+            "cacheHit": cache_hit,
+            "cacheKey": (
+                (sess_row.cache_key if sess_row else None)
+                or (live_state.get("cacheKey") if live_state else None)
+            ),
+            "errorCode": (
+                (sess_row.error_code if sess_row else None)
+                or (live_state.get("errorCode") if live_state else None)
+            ),
+            "errorMessage": (
+                (sess_row.error_message if sess_row else None)
+                or (live_state.get("errorMessage") if live_state else None)
+            ),
+            "expiresAt": expires_at_iso,
+            "expiresInSeconds": expires_in_seconds,
+            "quotaRemaining": quota_snap.remaining_quota,
+            "remainingQuota": quota_snap.remaining_quota,
+            "isPurged": is_purged,
+        },
+        request=request,
+        status_code=status.HTTP_200_OK,
+    )
+
+
+@v1_router.post("/jobs/{job_id}/cancel")
+async def cancel_tryon_job(
+    job_id: str,
+    request: Request,
+) -> JSONResponse:
+    """Cancel an in-flight Stage 2 try-on job and refund +1 quota if not yet completed."""
+    _, db, _, cache_quota, _, _, _ = _get_services(request)
+    user_id, _, client_ip, loyalty_tier, _ = extract_caller_context(request)
+
+    await cache_quota.mark_job_cancelled(job_id)
+
+    quota_refunded = False
+    final_status = "CANCELLED"
+    owner_user_id = user_id
+
+    async with db.session() as db_sess:
+        sess_row = await db_sess.get(TryOnSession, job_id)
+        if sess_row is None:
+            raise TryOnApiError(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="NOT_FOUND",
+                message=f"Try-on job '{job_id}' not found.",
+            )
+        owner_user_id = sess_row.user_id or user_id
+        if sess_row.status not in ("COMPLETED", "FAILED", "CANCELLED"):
+            sess_row.status = "CANCELLED"
+            sess_row.error_code = "JOB_CANCELLED"
+            sess_row.error_message = "Tác vụ thử đồ đã được hủy bởi người dùng."
+            sess_row.step_message = "Đã hủy tác vụ thử đồ — Đã hoàn trả +1 lượt thử AI"
+            sess_row.completed_at = utcnow()
+            jobs_res = await db_sess.execute(
+                select(TryOnJob).where(TryOnJob.session_id == job_id)
+            )
+            for j in jobs_res.scalars().all():
+                if j.status in ("QUEUED", "PROCESSING"):
+                    j.status = "CANCELLED"
+            await db_sess.commit()
+            quota_refunded = True
+        else:
+            final_status = sess_row.status
+
+    if quota_refunded:
+        quota_snap = await cache_quota.refund_quota(
+            owner_user_id,
+            client_ip,
+            loyalty_tier=loyalty_tier,
+            job_id=job_id,
+        )
+        await cache_quota.set_job_state(
+            job_id,
+            {
+                "jobId": job_id,
+                "sessionId": job_id,
+                "status": "CANCELLED",
+                "progressPct": 0,
+                "stageLabel": "Đã hủy tác vụ thử đồ",
+                "stepCurrent": 0,
+                "stepTotal": 1,
+                "resultUrl": None,
+                "providerUsed": None,
+                "providerBadge": None,
+                "cacheHit": False,
+                "errorCode": "JOB_CANCELLED",
+                "errorMessage": "Tác vụ thử đồ đã được hủy bởi người dùng.",
+                "expiresInSeconds": 0,
+                "quotaRemaining": quota_snap.remaining_quota,
+            },
+            ttl_seconds=300,
+        )
+    else:
+        quota_snap = await cache_quota.get_dual_quota(
+            user_id=owner_user_id,
+            ip_address=client_ip,
+            loyalty_tier=loyalty_tier,
+        )
+
+    return build_stage2_response(
+        {
+            "jobId": job_id,
+            "sessionId": job_id,
+            "status": final_status,
+            "quotaRefunded": quota_refunded,
+            "quotaRemaining": quota_snap.remaining_quota,
+            "remainingQuota": quota_snap.remaining_quota,
         },
         request=request,
         status_code=status.HTTP_200_OK,
@@ -1410,7 +2484,7 @@ async def generate_lookbook(
     request: Request,
     body: LookbookGenerateRequestBody,
 ) -> JSONResponse:
-    """Generate a 960x1280 editorial Lookbook WebP on a curated virtual model and upload to atelier-public."""
+    """Generate a 768x1024 editorial Lookbook WebP via multi-tier AutoVTONProvider on a curated virtual model and upload to atelier-public."""
     code = body.virtual_model_code.strip()
     if code not in VIRTUAL_STUDIO_MODELS_BY_CODE:
         raise TryOnApiError(
@@ -1626,7 +2700,14 @@ async def get_demand_summary(
                 select(TryOnDemandEvent).where(
                     TryOnDemandEvent.created_at >= cutoff,
                     TryOnDemandEvent.signal_type.in_(
-                        ["TRYON_COMPLETED", "ADD_TO_CART_AFTER_TRYON", "PURCHASE_AFTER_TRYON"]
+                        [
+                            "TRYON_COMPLETED",
+                            "THU_THANH_CONG",
+                            "ADD_TO_CART_AFTER_TRYON",
+                            "THEM_GIO_SAU_THU",
+                            "PURCHASE_AFTER_TRYON",
+                            "MUA_SAU_THU",
+                        ]
                     ),
                 )
             )
@@ -1648,11 +2729,11 @@ async def get_demand_summary(
             }
             grouped[key] = entry
 
-        if row.signal_type == "TRYON_COMPLETED":
+        if row.signal_type in ("TRYON_COMPLETED", "THU_THANH_CONG"):
             entry["tryOnSessions"] += 1
-        elif row.signal_type == "ADD_TO_CART_AFTER_TRYON":
+        elif row.signal_type in ("ADD_TO_CART_AFTER_TRYON", "THEM_GIO_SAU_THU"):
             entry["addToCartCount"] += 1
-        elif row.signal_type == "PURCHASE_AFTER_TRYON":
+        elif row.signal_type in ("PURCHASE_AFTER_TRYON", "MUA_SAU_THU"):
             entry["purchaseCount"] += 1
 
     summary_items: list[dict[str, Any]] = []
@@ -1723,7 +2804,7 @@ async def get_tryon_ops_metrics(request: Request) -> JSONResponse:
             (
                 await db_sess.execute(
                     select(func.count(TryOnSession.id)).where(
-                        TryOnSession.provider_used == "FAL_CATVTON"
+                        TryOnSession.provider_used.in_(["FAL_CATVTON", "fal", "FASHN_VTON", "fashn"])
                     )
                 )
             ).scalar_one()
@@ -1732,7 +2813,7 @@ async def get_tryon_ops_metrics(request: Request) -> JSONResponse:
             (
                 await db_sess.execute(
                     select(func.count(TryOnSession.id)).where(
-                        TryOnSession.provider_used == "HF_GRADIO_VTON"
+                        TryOnSession.provider_used.in_(["HF_GRADIO_VTON", "catvton", "hf_gradio"])
                     )
                 )
             ).scalar_one()
@@ -1741,7 +2822,9 @@ async def get_tryon_ops_metrics(request: Request) -> JSONResponse:
             (
                 await db_sess.execute(
                     select(func.count(TryOnSession.id)).where(
-                        TryOnSession.provider_used == "SMART_POSE_WARP"
+                        TryOnSession.provider_used.in_(
+                            ["SMART_POSE_WARP", "PHOTOMETRIC_INPAINT", "photometric_inpaint", "LOCAL_GPU_VTON", "local_gpu"]
+                        )
                     )
                 )
             ).scalar_one()
@@ -1767,7 +2850,9 @@ async def get_tryon_ops_metrics(request: Request) -> JSONResponse:
             (
                 await db_sess.execute(
                     select(func.count(TryOnDemandEvent.id)).where(
-                        TryOnDemandEvent.signal_type == "ADD_TO_CART_AFTER_TRYON"
+                        TryOnDemandEvent.signal_type.in_(
+                            ["ADD_TO_CART_AFTER_TRYON", "THEM_GIO_SAU_THU"]
+                        )
                     )
                 )
             ).scalar_one()
@@ -1816,11 +2901,58 @@ async def get_tryon_ops_metrics(request: Request) -> JSONResponse:
 # =============================================================================
 
 
+def _assert_internal_secret(request: Request, settings: Settings) -> None:
+    provided_secret = (request.headers.get("x-internal-secret") or "").strip()
+    expected_secret = (settings.internal_service_secret or "").strip()
+    if (
+        not provided_secret
+        or not expected_secret
+        or not hmac.compare_digest(provided_secret, expected_secret)
+    ):
+        raise TryOnApiError(
+            status_code=status.HTTP_403_FORBIDDEN,
+            code="FORBIDDEN",
+            message="Invalid or missing x-internal-secret header.",
+        )
+
+
 @internal_router.post("/run-purge")
 async def run_auto_purge_now(request: Request) -> JSONResponse:
-    _, _, _, _, _, _, auto_purge = _get_services(request)
+    settings, _, _, _, _, _, auto_purge = _get_services(request)
+    _assert_internal_secret(request, settings)
     report = await auto_purge.run_once()
     return build_api_response(report.as_dict(), request=request)
+
+
+@internal_router.post("/purge-now")
+async def purge_now_internal(
+    request: Request,
+    body: PurgeNowRequestBody | None = None,
+) -> JSONResponse:
+    """
+    Stage 2 internal purge endpoint (requires valid `x-internal-secret`).
+    Accepts optional `force_before_iso` / `forceBeforeIso` and `session_id` / `sessionId`.
+    Returns `{ purgedSessions, deletedObjects, ... }`.
+    """
+    settings, _, _, _, _, _, auto_purge = _get_services(request)
+    _assert_internal_secret(request, settings)
+
+    force_before_iso = body.force_before_iso if body else None
+    session_id = body.session_id if body else None
+    if force_before_iso is None:
+        force_before_iso = request.query_params.get("force_before_iso") or request.query_params.get(
+            "forceBeforeIso"
+        )
+    if session_id is None:
+        session_id = request.query_params.get("session_id") or request.query_params.get(
+            "sessionId"
+        )
+
+    report = await auto_purge.run_once(
+        force_before_iso=force_before_iso,
+        session_id=session_id,
+    )
+    return build_stage2_response(report.as_dict(), request=request)
 
 
 @internal_router.post("/test-expire-session")
@@ -1835,6 +2967,7 @@ async def test_expire_session(
             code="FORBIDDEN",
             message="test-expire-session is disabled in production.",
         )
+    _assert_internal_secret(request, settings)
     res = await auto_purge.expire_session_for_test(
         session_id=body.session_id if body else None,
         temp_image_id=body.temp_image_id if body else None,

@@ -1,6 +1,8 @@
+import * as crypto from 'node:crypto';
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
@@ -10,13 +12,14 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import multer from 'multer';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import {
   createApiResponse,
   ErrorCode,
@@ -39,6 +42,7 @@ import {
   type RegisterSeedAssetsResult,
   type SpatialMetadataMap,
   type UpdateSpatialMetadataResult,
+  type ValidateGarmentServiceResult,
 } from './media.service';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -147,6 +151,15 @@ function decodeBase64Upload(rawBase64: string): { buffer: Buffer; dataUriMimeTyp
   };
 }
 
+function timingSafeSecretEquals(provided: string, expected: string): boolean {
+  const bufA = Buffer.from(provided, 'utf8');
+  const bufB = Buffer.from(expected, 'utf8');
+  if (bufA.length !== bufB.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 @Controller('v1/media')
 export class MediaController {
   constructor(
@@ -154,10 +167,23 @@ export class MediaController {
     private readonly mediaService: MediaService,
   ) {}
 
+  private assertInternalSecret(headers: HeaderBag): void {
+    const provided = readSingleHeader(headers, 'x-internal-secret');
+    const expected = this.config.internalServiceSecret;
+    if (!provided || !expected || !timingSafeSecretEquals(provided, expected)) {
+      throw new MediaApiException(
+        HttpStatus.FORBIDDEN,
+        ErrorCode.FORBIDDEN,
+        'Thiếu hoặc sai mã xác thực nội bộ (x-internal-secret). / Invalid or missing x-internal-secret header.',
+      );
+    }
+  }
+
   @Get('internal/spatial-map')
   async getInternalSpatialMap(
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<SpatialMetadataMap>> {
+    this.assertInternalSecret(headers);
     const correlationId = getOrCreateCorrelationId(headers);
     const data = await this.mediaService.getSpatialMetadataMap();
     return createApiResponse(data, {
@@ -172,6 +198,7 @@ export class MediaController {
     @Body() body: Record<string, unknown>,
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<RegisterSeedAssetsResult>> {
+    this.assertInternalSecret(headers);
     const correlationId = getOrCreateCorrelationId(headers);
     const data = await this.mediaService.registerSeedAssets(body);
     return createApiResponse(data, {
@@ -280,6 +307,100 @@ export class MediaController {
     });
   }
 
+  @Post('validate-garment')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    AnyFilesInterceptor({
+      storage: multer.memoryStorage(),
+      limits: {
+        fileSize: 15 * 1024 * 1024,
+        files: 2,
+      },
+    }),
+  )
+  async validateGarment(
+    @UploadedFiles() files: UploadedFilePayload[] | undefined,
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<ValidateGarmentServiceResult>> {
+    const actor = extractActorContext(headers);
+
+    const multipartFile =
+      Array.isArray(files) && files.length > 0
+        ? (files.find((f) => f.fieldname === 'file' || f.fieldname === 'image') ?? files[0])
+        : undefined;
+
+    let buffer: Buffer | undefined;
+    let filename: string | undefined;
+    let mimeType: string | undefined;
+    let assetId: string | undefined;
+    let bucket: string | undefined;
+    let objectKey: string | undefined;
+
+    if (multipartFile) {
+      buffer = multipartFile.buffer;
+      filename = multipartFile.originalname || 'garment.png';
+      mimeType = multipartFile.mimetype || inferMimeTypeFromFileName(filename);
+    } else if (Buffer.isBuffer(body)) {
+      buffer = body;
+      mimeType = readSingleHeader(headers, 'content-type') ?? 'application/octet-stream';
+    } else if (Buffer.isBuffer(req.body)) {
+      buffer = req.body;
+      mimeType = readSingleHeader(headers, 'content-type') ?? 'application/octet-stream';
+    } else if (body && typeof body === 'object' && !Array.isArray(body)) {
+      const payload = body as Record<string, unknown>;
+      const rawBase64 =
+        typeof payload.imageBase64 === 'string' && payload.imageBase64.trim().length > 0
+          ? payload.imageBase64
+          : typeof payload.fileBase64 === 'string' && payload.fileBase64.trim().length > 0
+            ? payload.fileBase64
+            : typeof payload.dataUrl === 'string' && payload.dataUrl.trim().length > 0
+              ? payload.dataUrl
+              : null;
+
+      filename =
+        (typeof payload.filename === 'string' && payload.filename.trim()) ||
+        (typeof payload.fileName === 'string' && payload.fileName.trim()) ||
+        undefined;
+      mimeType =
+        (typeof payload.mimeType === 'string' && payload.mimeType.trim()) || undefined;
+
+      if (rawBase64) {
+        const decoded = decodeBase64Upload(rawBase64);
+        buffer = decoded.buffer;
+        mimeType = mimeType ?? decoded.dataUriMimeType ?? (filename ? inferMimeTypeFromFileName(filename) : undefined);
+      } else {
+        if (typeof payload.assetId === 'string' && payload.assetId.trim().length > 0) {
+          assetId = payload.assetId.trim();
+        }
+        if (typeof payload.bucket === 'string' && payload.bucket.trim().length > 0) {
+          bucket = payload.bucket.trim();
+        }
+        if (typeof payload.objectKey === 'string' && payload.objectKey.trim().length > 0) {
+          objectKey = payload.objectKey.trim();
+        }
+      }
+    }
+
+    const result = await this.mediaService.validateGarment(
+      {
+        buffer,
+        filename,
+        mimeType,
+        assetId,
+        bucket,
+        objectKey,
+      },
+      actor,
+    );
+
+    return createApiResponse(result, {
+      correlationId: actor.correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
   @Get('public/:bucket')
   async streamPublicBucketRoot(
     @Param('bucket') bucket: string,
@@ -342,16 +463,18 @@ export class MediaController {
     @Query('supplierId') supplierId: string | undefined,
     @Query('page') page: string | undefined,
     @Query('pageSize') pageSize: string | undefined,
+    @Query('limit') limit: string | undefined,
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<ListMediaResult>> {
     const actor = extractActorContext(headers);
+    const rawLimit = pageSize ?? limit;
     const data = await this.mediaService.listAssets(
       {
         assetType,
         status,
         supplierId,
         page: page ? Number.parseInt(page, 10) : undefined,
-        pageSize: pageSize ? Number.parseInt(pageSize, 10) : undefined,
+        pageSize: rawLimit ? Number.parseInt(rawLimit, 10) : undefined,
       },
       actor,
     );
@@ -368,6 +491,19 @@ export class MediaController {
   ): Promise<ApiResponse<MediaAssetDto>> {
     const actor = extractActorContext(headers);
     const data = await this.mediaService.getAssetById(assetId, actor);
+    return createApiResponse(data, {
+      correlationId: actor.correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Delete(':assetId')
+  async deleteAsset(
+    @Param('assetId') assetId: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<{ deleted: true; assetId: string }>> {
+    const actor = extractActorContext(headers);
+    const data = await this.mediaService.deleteAsset(assetId, actor);
     return createApiResponse(data, {
       correlationId: actor.correlationId,
       service: SERVICE_NAME,

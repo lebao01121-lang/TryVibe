@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import { useMotionState } from '@atelier/motion-kit';
+import { useAdaptivePerformance } from '@/lib/performance/AdaptivePerformanceProvider';
 
 interface GlintSpark {
   x: number;
@@ -18,38 +19,49 @@ export function GlintsCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pathname = usePathname();
   const { cameraActive, reducedMotion } = useMotionState();
+  const { tier, isLowPower } = useAdaptivePerformance();
 
   const isDisabledRoute =
     pathname.startsWith('/thanh-toan') || pathname.startsWith('/tai-khoan');
+  const shouldUnmount =
+    isLowPower ||
+    tier === 'LOW' ||
+    cameraActive ||
+    reducedMotion ||
+    isDisabledRoute;
 
   useEffect(() => {
+    if (shouldUnmount) return undefined;
+
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return undefined;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) return undefined;
 
     const isCoarsePointer =
       typeof window !== 'undefined' &&
       window.matchMedia('(pointer: coarse)').matches;
 
-    if (cameraActive || reducedMotion || isDisabledRoute || isCoarsePointer) {
+    if (isCoarsePointer) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       canvas.dataset.paused = 'true';
-      return;
+      return undefined;
     }
 
     canvas.dataset.paused = 'false';
 
+    const maxDpr = tier === 'MEDIUM' ? 1 : 1.5;
+    const maxSparks = tier === 'MEDIUM' ? 8 : 14;
     let width = window.innerWidth;
     let height = window.innerHeight;
-    let dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    let dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
     let rafId = 0;
     let lastTime = performance.now();
     let spawnAccumulator = 0;
     const sparks: GlintSpark[] = [];
 
     const resize = () => {
-      dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
       width = window.innerWidth;
       height = window.innerHeight;
       canvas.width = Math.round(width * dpr);
@@ -82,7 +94,8 @@ export function GlintsCanvas() {
     const drawFrame = (now: number) => {
       if (
         document.hidden ||
-        document.body.dataset.cameraActive === 'true'
+        document.body.dataset.cameraActive === 'true' ||
+        document.documentElement.dataset.perfTier === 'LOW'
       ) {
         rafId = 0;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -97,7 +110,7 @@ export function GlintsCanvas() {
       if (spawnAccumulator > 0.28) {
         spawnAccumulator = 0;
         const targets = collectVisibleTargets();
-        if (targets.length > 0 && sparks.length < 14) {
+        if (targets.length > 0 && sparks.length < maxSparks) {
           const picked = targets[Math.floor(Math.random() * targets.length)]!;
           sparks.push({
             x: picked.left + (0.12 + Math.random() * 0.76) * picked.width,
@@ -162,7 +175,12 @@ export function GlintsCanvas() {
     };
 
     const startLoop = () => {
-      if (!rafId && !document.hidden) {
+      if (
+        !rafId &&
+        !document.hidden &&
+        document.body.dataset.cameraActive !== 'true' &&
+        document.documentElement.dataset.perfTier !== 'LOW'
+      ) {
         lastTime = performance.now();
         canvas.dataset.paused = 'false';
         rafId = window.requestAnimationFrame(drawFrame);
@@ -175,6 +193,7 @@ export function GlintsCanvas() {
           window.cancelAnimationFrame(rafId);
           rafId = 0;
         }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         canvas.dataset.paused = 'true';
       } else {
         startLoop();
@@ -189,14 +208,21 @@ export function GlintsCanvas() {
       resizeObserver.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.width = 0;
+      canvas.height = 0;
     };
-  }, [cameraActive, reducedMotion, isDisabledRoute]);
+  }, [shouldUnmount, tier]);
+
+  if (shouldUnmount) {
+    return null;
+  }
 
   return (
     <canvas
       ref={canvasRef}
       className="glints"
       id="glints"
+      data-perf-tier={tier}
       aria-hidden="true"
     />
   );

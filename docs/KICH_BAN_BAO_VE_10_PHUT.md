@@ -97,7 +97,7 @@
 **Cửa sổ trình diễn**: Admin Portal (`:3001`)
 
 1. **AI Lookbook Studio 1-Click Attach (`8:00 – 8:40`)**:
-   - Đăng nhập **`admin@atelier.local` (`SUPER_ADMIN` + 2FA)**, mở tab **`AI Lookbook Studio`**.
+   - Đăng nhập **`lebao01121@gmail.com` (`SUPER_ADMIN` + 2FA)**, mở tab **`AI Lookbook Studio`**.
    - Chọn 1 sản phẩm có ảnh phẳng `3:4`, chọn 1 trong **5 người mẫu ảo Studio**, nhấn **"Sinh ảnh Lookbook AI"** → sau khi xem trước, nhấn **"Gắn làm ảnh trưng bày sản phẩm"** → mở lại PDP trên Storefront chứng minh ảnh mới hiển thị tức thì qua On-Demand ISR.
 2. **AI Ops, Cụm 11 Microservices & Hàng đợi Lỗi `*.dlq` (`8:40 – 9:30`)**:
    - Mở tab **`AI Ops, Health & DLQ`**:

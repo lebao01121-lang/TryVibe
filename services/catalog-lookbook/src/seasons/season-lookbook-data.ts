@@ -102,9 +102,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'TOP',
         productSlug: 'ao-so-mi-lua-to-tam-tam-xuan',
-        pinPosition: { xPercent: 43.1, yPercent: 47.8 },
+        pinPosition: { xPercent: 46.0, yPercent: 36.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-top.png',
-        maskBbox: { x: 0.2948, y: 0.3183, w: 0.3115, h: 0.2525 },
+        maskBbox: { x: 0.2927, y: 0.3183, w: 0.5083, h: 0.3767 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.45, shadowDepth: 0.34 },
         variants: [
           {
@@ -144,9 +144,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'BOTTOM',
         productSlug: 'chan-vay-xep-ly-midi-cap-cao',
-        pinPosition: { xPercent: 54.9, yPercent: 77.4 },
+        pinPosition: { xPercent: 42.0, yPercent: 75.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-bottom.png',
-        maskBbox: { x: 0.2469, y: 0.5708, w: 0.4531, h: 0.37 },
+        maskBbox: { x: 0.2469, y: 0.62, w: 0.4688, h: 0.3767 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.36, shadowDepth: 0.38 },
         variants: [
           {
@@ -186,9 +186,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ACCESSORY',
         productSlug: 'vi-cam-tay-clutch-champagne',
-        pinPosition: { xPercent: 71.0, yPercent: 61.7 },
+        pinPosition: { xPercent: 60.0, yPercent: 56.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-accessory.png',
-        maskBbox: { x: 0.5219, y: 0.5483, w: 0.2531, h: 0.12 },
+        maskBbox: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.52, shadowDepth: 0.34 },
         variants: [
           {
@@ -233,9 +233,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'TOP',
         productSlug: 'ao-so-mi-lua-to-tam-bao-loc',
-        pinPosition: { xPercent: 39.3, yPercent: 53.9 },
+        pinPosition: { xPercent: 38.0, yPercent: 55.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/ha-pho-co-mask-top.png',
-        maskBbox: { x: 0.1104, y: 0.2983, w: 0.6385, h: 0.3425 },
+        maskBbox: { x: 0.1052, y: 0.3025, w: 0.6615, h: 0.4275 },
         materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.16, shadowDepth: 0.28 },
         variants: [
           {
@@ -267,9 +267,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'BOTTOM',
         productSlug: 'quan-culottes-linen-huu-co',
-        pinPosition: { xPercent: 53.8, yPercent: 84.1 },
+        pinPosition: { xPercent: 52.0, yPercent: 75.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/ha-pho-co-mask-bottom.png',
-        maskBbox: { x: 0.3385, y: 0.6408, w: 0.4437, h: 0.3575 },
+        maskBbox: { x: 0.35, y: 0.6442, w: 0.4229, h: 0.3542 },
         materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.14, shadowDepth: 0.30 },
         variants: [
           {
@@ -301,9 +301,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ACCESSORY',
         productSlug: 'khan-lua-hoa-tiet-tam-xuan',
-        pinPosition: { xPercent: 49.5, yPercent: 34.1 },
+        pinPosition: { xPercent: 56.0, yPercent: 36.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/ha-pho-co-mask-accessory.png',
-        maskBbox: { x: 0.3385, y: 0.3183, w: 0.2271, h: 0.0942 },
+        maskBbox: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.42, shadowDepth: 0.26 },
         variants: [
           {
@@ -348,9 +348,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ONE_PIECE',
         productSlug: 'dam-midi-linen-phoi-dai',
-        pinPosition: { xPercent: 57.0, yPercent: 82.5 },
+        pinPosition: { xPercent: 56.0, yPercent: 57.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/resort-ban-mai-mask-one_piece.png',
-        maskBbox: { x: 0.3448, y: 0.375, w: 0.4354, h: 0.6217 },
+        maskBbox: { x: 0.3458, y: 0.3775, w: 0.4417, h: 0.6192 },
         materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.20, shadowDepth: 0.30 },
         variants: [
           {
@@ -382,9 +382,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'OUTERWEAR',
         productSlug: 'ao-cardigan-len-merino-khuy-sung',
-        pinPosition: { xPercent: 31.2, yPercent: 68.3 },
+        pinPosition: { xPercent: 28.0, yPercent: 38.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/resort-ban-mai-mask-outerwear.png',
-        maskBbox: { x: 0.0521, y: 0.4483, w: 0.7406, h: 0.5492 },
+        maskBbox: { x: 0.0521, y: 0.4492, w: 0.3563, h: 0.5483 },
         materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.16, shadowDepth: 0.34 },
         variants: [
           {
@@ -416,9 +416,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ACCESSORY',
         productSlug: 'khan-lua-hoa-tiet-tam-xuan',
-        pinPosition: { xPercent: 67.1, yPercent: 86.0 },
+        pinPosition: { xPercent: 46.0, yPercent: 75.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/resort-ban-mai-mask-accessory.png',
-        maskBbox: { x: 0.4229, y: 0.7667, w: 0.275, h: 0.1742 },
+        maskBbox: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.42, shadowDepth: 0.26 },
         variants: [
           {
@@ -463,9 +463,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'OUTERWEAR',
         productSlug: 'ao-blazer-linen-dang-suong',
-        pinPosition: { xPercent: 44.2, yPercent: 57.4 },
+        pinPosition: { xPercent: 36.0, yPercent: 36.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/thu-hoang-hon-mask-outerwear.png',
-        maskBbox: { x: 0.1885, y: 0.3058, w: 0.5385, h: 0.4858 },
+        maskBbox: { x: 0.1656, y: 0.3058, w: 0.5958, h: 0.6917 },
         materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.18, shadowDepth: 0.35 },
         variants: [
           {
@@ -497,9 +497,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'BOTTOM',
         productSlug: 'quan-tay-ong-suong-xep-ly-doi',
-        pinPosition: { xPercent: 60.4, yPercent: 87.6 },
+        pinPosition: { xPercent: 48.0, yPercent: 76.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/thu-hoang-hon-mask-bottom.png',
-        maskBbox: { x: 0.1656, y: 0.7758, w: 0.549, h: 0.2217 },
+        maskBbox: { x: 0.4531, y: 0.7117, w: 0.2604, h: 0.2858 },
         materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.18, shadowDepth: 0.36 },
         variants: [
           {
@@ -531,9 +531,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ACCESSORY',
         productSlug: 'that-lung-da-khoa-dong',
-        pinPosition: { xPercent: 66.2, yPercent: 61.4 },
+        pinPosition: { xPercent: 56.0, yPercent: 58.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/thu-hoang-hon-mask-accessory.png',
-        maskBbox: { x: 0.45, y: 0.5683, w: 0.2427, h: 0.1042 },
+        maskBbox: { x: 0.4521, y: 0.68, w: 0.1948, h: 0.0417 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.50, shadowDepth: 0.36 },
         variants: [
           {
@@ -578,9 +578,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'TOP',
         productSlug: 'ao-len-cashmere-co-lo',
-        pinPosition: { xPercent: 49.8, yPercent: 43.2 },
+        pinPosition: { xPercent: 44.0, yPercent: 36.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/dong-cashmere-mask-top.png',
-        maskBbox: { x: 0.2865, y: 0.27, w: 0.3344, h: 0.4308 },
+        maskBbox: { x: 0.3292, y: 0.2908, w: 0.2469, h: 0.2883 },
         materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.16, shadowDepth: 0.34 },
         variants: [
           {
@@ -612,9 +612,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'OUTERWEAR',
         productSlug: 'ao-khoac-tweed-det-thu-cong',
-        pinPosition: { xPercent: 72.2, yPercent: 43.4 },
+        pinPosition: { xPercent: 64.0, yPercent: 55.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/dong-cashmere-mask-outerwear.png',
-        maskBbox: { x: 0.2833, y: 0.2667, w: 0.5646, h: 0.5142 },
+        maskBbox: { x: 0.2823, y: 0.2675, w: 0.5656, h: 0.6033 },
         materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.20, shadowDepth: 0.40 },
         variants: [
           {
@@ -646,9 +646,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ACCESSORY',
         productSlug: 'vi-cam-tay-clutch-champagne',
-        pinPosition: { xPercent: 71.5, yPercent: 73.5 },
+        pinPosition: { xPercent: 44.0, yPercent: 74.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/dong-cashmere-mask-accessory.png',
-        maskBbox: { x: 0.5229, y: 0.6683, w: 0.251, h: 0.1167 },
+        maskBbox: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.52, shadowDepth: 0.34 },
         variants: [
           {
@@ -693,9 +693,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ONE_PIECE',
         productSlug: 'dam-du-tiec-lua-satin-co-do',
-        pinPosition: { xPercent: 46.5, yPercent: 86.8 },
+        pinPosition: { xPercent: 48.0, yPercent: 38.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/atelier-di-san-mask-one_piece.png',
-        maskBbox: { x: 0.2396, y: 0.3308, w: 0.4479, h: 0.6667 },
+        maskBbox: { x: 0.2396, y: 0.3167, w: 0.4719, h: 0.6808 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.50, shadowDepth: 0.36 },
         variants: [
           {
@@ -727,9 +727,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'OUTERWEAR',
         productSlug: 'ao-kieu-lua-organza-phoi-no',
-        pinPosition: { xPercent: 78.0, yPercent: 59.2 },
+        pinPosition: { xPercent: 70.0, yPercent: 56.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/atelier-di-san-mask-outerwear.png',
-        maskBbox: { x: 0.1969, y: 0.3575, w: 0.6823, h: 0.3567 },
+        maskBbox: { x: 0.1969, y: 0.365, w: 0.6823, h: 0.3658 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.44, shadowDepth: 0.28 },
         variants: [
           {
@@ -761,9 +761,9 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ACCESSORY',
         productSlug: 'vi-cam-tay-clutch-champagne',
-        pinPosition: { xPercent: 73.0, yPercent: 73.7 },
+        pinPosition: { xPercent: 46.0, yPercent: 75.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/atelier-di-san-mask-accessory.png',
-        maskBbox: { x: 0.5469, y: 0.6692, w: 0.2427, h: 0.1175 },
+        maskBbox: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.52, shadowDepth: 0.34 },
         variants: [
           {
@@ -1025,27 +1025,130 @@ function sanitizeOpticalProfile(
   return { sheen, specularIntensity, shadowDepth };
 }
 
+export interface SeasonSwatchEntry {
+  name: string;
+  hex: string;
+  fabricNote?: string | null;
+  colorKey?: string | null;
+  sheen?: string | null;
+}
+
 export interface SeasonDbRow {
   id: string;
   slug: string;
   months: string;
   title: string;
+  season_tag?: string | null;
   subtitle: string;
+  palette_hex?: string | null;
   hero_image_url: string | null;
   is_current: boolean;
   sort_order: number;
+  code?: string | null;
+  short_name?: string | null;
+  material_headline?: string | null;
+  swatches_jsonb?: unknown;
+  palette_jsonb?: unknown;
+  lookbook_meta_jsonb?: unknown;
+  spu_ids_jsonb?: unknown;
+  product_slugs_jsonb?: unknown;
+  is_active?: boolean | null;
+  updated_at?: Date | string | null;
+}
+
+export interface HydratedSeasonCollectionDto extends SeasonalCollectionDto {
+  code: string;
+  subtitle: string;
+  seasonTag: string;
+  seasonOrder: number;
+  paletteHex: string;
+  heroImageUrl: string | null;
+  swatches: SeasonSwatchEntry[];
+  paletteJsonb: SeasonSwatchEntry[];
+  lookbookMeta: Record<string, unknown>;
+  spuIds: string[];
+  isActive: boolean;
+  updatedAt?: string;
+}
+
+function parseSeasonJson<T>(raw: unknown, fallback: T): T {
+  if (raw === null || raw === undefined) {
+    return fallback;
+  }
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  return raw as T;
+}
+
+function normalizeSwatchesList(raw: unknown): SeasonSwatchEntry[] {
+  const parsed = parseSeasonJson<unknown>(raw, []);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  const out: SeasonSwatchEntry[] = [];
+  for (const item of parsed) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const name = String(rec.name ?? rec.colorName ?? rec.label ?? '').trim();
+    const hex = String(rec.hex ?? rec.colorHex ?? '').trim();
+    if (!name && !hex) continue;
+    out.push({
+      name: name || hex,
+      hex: hex || '#B08A4A',
+      ...(rec.fabricNote !== undefined
+        ? { fabricNote: rec.fabricNote === null ? null : String(rec.fabricNote) }
+        : {}),
+      ...(rec.colorKey !== undefined
+        ? { colorKey: rec.colorKey === null ? null : String(rec.colorKey) }
+        : {}),
+      ...(rec.sheen !== undefined
+        ? { sheen: rec.sheen === null ? null : String(rec.sheen) }
+        : {}),
+    });
+  }
+  return out;
 }
 
 export function hydrateSeasonCollectionDto(
   row: SeasonDbRow,
   cleanProducts: readonly ProductSpuDto[],
   manifestBySlug: Map<string, ManifestSeasonEntry>,
-): SeasonalCollectionDto {
+): HydratedSeasonCollectionDto {
   const canonical = CANONICAL_SEASONS_METADATA[row.slug];
   const manifest = manifestBySlug.get(row.slug);
   const productBySlug = new Map<string, ProductSpuDto>(
     cleanProducts.map((p) => [p.slug, p]),
   );
+  const productById = new Map<string, ProductSpuDto>(
+    cleanProducts.map((p) => [p.id, p]),
+  );
+
+  const dbSpuIds = parseSeasonJson<unknown[]>(row.spu_ids_jsonb, [])
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+  const dbProductSlugs = parseSeasonJson<unknown[]>(row.product_slugs_jsonb, [])
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+
+  const dbLinkedProducts: ProductSpuDto[] = [];
+  const seenDbProdIds = new Set<string>();
+  for (const spuId of dbSpuIds) {
+    const prod = productById.get(spuId);
+    if (prod && !seenDbProdIds.has(prod.id)) {
+      seenDbProdIds.add(prod.id);
+      dbLinkedProducts.push(prod);
+    }
+  }
+  for (const pSlug of dbProductSlugs) {
+    const prod = productBySlug.get(pSlug);
+    if (prod && !seenDbProdIds.has(prod.id)) {
+      seenDbProdIds.add(prod.id);
+      dbLinkedProducts.push(prod);
+    }
+  }
 
   const seasonMatchedProducts = cleanProducts.filter((p) =>
     p.seasonSlugs.includes(row.slug),
@@ -1077,6 +1180,11 @@ export function hydrateSeasonCollectionDto(
   const wearableSlots: SeasonWearableSlot[] = [];
   const heroProductsMap = new Map<string, ProductSpuDto>();
 
+  // Prioritize explicitly linked DB SPUs when present
+  for (const prod of dbLinkedProducts) {
+    heroProductsMap.set(prod.slug, prod);
+  }
+
   for (const { manifestSlot, fallbackSlot } of sourceSlots) {
     const slotKey = sanitizeSlotKey(manifestSlot?.slotKey, fallbackSlot.slotKey);
     const desiredSlug = (manifestSlot?.productSlug || fallbackSlot.productSlug).trim();
@@ -1085,7 +1193,7 @@ export function hydrateSeasonCollectionDto(
       seasonMatchedProducts[wearableSlots.length] ??
       cleanProducts[0];
 
-    if (dbProduct) {
+    if (dbProduct && dbLinkedProducts.length === 0) {
       heroProductsMap.set(dbProduct.slug, dbProduct);
     }
 
@@ -1206,39 +1314,54 @@ export function hydrateSeasonCollectionDto(
     });
   }
 
-  // Ensure heroProducts always has at least 3 hydrated DB products when catalog is populated
+  // Ensure heroProducts includes season-matched products (and falls back only for canonical seasons with no explicit DB links)
   for (const prod of seasonMatchedProducts) {
-    if (heroProductsMap.size >= 3) break;
+    if (heroProductsMap.size >= 4 && dbLinkedProducts.length === 0) break;
     heroProductsMap.set(prod.slug, prod);
   }
-  for (const prod of cleanProducts) {
-    if (heroProductsMap.size >= 3) break;
-    heroProductsMap.set(prod.slug, prod);
+  if (canonical && dbLinkedProducts.length === 0) {
+    for (const prod of cleanProducts) {
+      if (heroProductsMap.size >= 3) break;
+      heroProductsMap.set(prod.slug, prod);
+    }
   }
-  const heroProducts = Array.from(heroProductsMap.values()).slice(0, 4);
+  const heroProducts = Array.from(heroProductsMap.values()).slice(0, 6);
 
   const allSeasonSlugs = Array.from(
     new Set([
+      ...dbLinkedProducts.map((p) => p.slug),
+      ...dbProductSlugs,
       ...heroProducts.map((p) => p.slug),
       ...seasonMatchedProducts.map((p) => p.slug),
     ]),
   );
+  const allSpuIds = Array.from(
+    new Set([
+      ...dbSpuIds,
+      ...dbLinkedProducts.map((p) => p.id),
+      ...seasonMatchedProducts.map((p) => p.id),
+    ]),
+  );
 
   const shortName =
+    (row.short_name && row.short_name.trim()) ||
     (manifest?.shortName && manifest.shortName.trim()) ||
     canonical?.shortName ||
     row.title;
   const materialHeadline =
+    (row.material_headline && row.material_headline.trim()) ||
     (manifest?.materialHeadline && manifest.materialHeadline.trim()) ||
     canonical?.materialHeadline ||
     row.subtitle;
-  const baseEditorialImageUrl = pickVerifiedVitrineUrl(
-    manifest?.baseEditorialImageUrl,
+  const baseEditorialImageUrl =
+    (row.hero_image_url && row.hero_image_url.trim()) ||
     pickVerifiedVitrineUrl(
-      canonical?.baseEditorialImageUrl,
-      `${VITRINE_URL_PREFIX}lookbooks/${row.slug}-base.webp`,
-    ),
-  );
+      manifest?.baseEditorialImageUrl,
+      pickVerifiedVitrineUrl(
+        canonical?.baseEditorialImageUrl,
+        `${VITRINE_URL_PREFIX}lookbooks/${row.slug}-base.webp`,
+      ),
+    );
 
   const restyleCacheMap: Record<string, string> = {};
   if (manifest?.restyleCacheMap && typeof manifest.restyleCacheMap === 'object') {
@@ -1261,27 +1384,84 @@ export function hydrateSeasonCollectionDto(
         }
       : null;
 
+  const dbSwatches = normalizeSwatchesList(row.swatches_jsonb);
+  const dbPalette = normalizeSwatchesList(row.palette_jsonb);
+  let effectiveSwatches: SeasonSwatchEntry[] =
+    dbSwatches.length > 0 ? dbSwatches : dbPalette;
+  if (effectiveSwatches.length === 0) {
+    const derivedMap = new Map<string, SeasonSwatchEntry>();
+    for (const slot of wearableSlots) {
+      for (const variant of slot.variants) {
+        const key = variant.colorHex.toUpperCase();
+        if (!derivedMap.has(key)) {
+          derivedMap.set(key, {
+            name: variant.colorName,
+            hex: variant.colorHex,
+            fabricNote: variant.fabricSpecText,
+            colorKey: variant.colorKey,
+            sheen: slot.materialOpticalProfile.sheen,
+          });
+        }
+      }
+    }
+    effectiveSwatches =
+      derivedMap.size > 0
+        ? Array.from(derivedMap.values())
+        : [
+            {
+              name: row.season_tag || row.title,
+              hex: row.palette_hex || '#B08A4A',
+              fabricNote: materialHeadline,
+            },
+          ];
+  }
+
+  const rawMeta = parseSeasonJson<Record<string, unknown>>(row.lookbook_meta_jsonb, {});
+  const lookbookMeta: Record<string, unknown> =
+    rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta) ? rawMeta : {};
+
   const isCurrent = Boolean(row.is_current);
+  const sortOrder = Number(row.sort_order ?? 0);
+  const coverUrl = row.hero_image_url ?? baseEditorialImageUrl;
 
   return {
     id: row.id,
+    code: (row.code && row.code.trim()) || row.slug,
     slug: row.slug,
     months: row.months || canonical?.months || 'T1–T2',
     name: row.title || canonical?.name || row.slug,
+    subtitle: row.subtitle || canonical?.note || '',
     shortName,
     materialHeadline,
+    seasonTag: row.season_tag || shortName,
+    paletteHex: row.palette_hex || effectiveSwatches[0]?.hex || '#B08A4A',
     note: row.subtitle || canonical?.note || '',
-    coverAssetUrl: row.hero_image_url ?? baseEditorialImageUrl,
+    coverAssetUrl: coverUrl,
+    heroImageUrl: coverUrl,
     launchAt: null,
     endAt: null,
     isCurrent,
     isCurrentSeason: isCurrent,
     isNow: isCurrent,
-    sortOrder: Number(row.sort_order),
+    isActive: row.is_active !== false,
+    sortOrder,
+    seasonOrder: sortOrder,
+    swatches: effectiveSwatches,
+    paletteJsonb: effectiveSwatches,
+    lookbookMeta,
+    spuIds: allSpuIds,
     productSlugs: allSeasonSlugs,
     productCount: allSeasonSlugs.length,
     featuredProductSlugs: allSeasonSlugs.slice(0, 4),
     interactiveLookbook,
     heroProducts,
+    ...(row.updated_at
+      ? {
+          updatedAt:
+            row.updated_at instanceof Date
+              ? row.updated_at.toISOString()
+              : String(row.updated_at),
+        }
+      : {}),
   };
 }

@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
@@ -6,6 +7,10 @@ import { HTTP_HEADERS } from '@atelier/contracts';
 import {
   correlationIdMiddleware,
   createLogger,
+  createPrometheusHttpMiddleware,
+  getOrCreateMetricsRegistry,
+  initOpenTelemetry,
+  shutdownOpenTelemetry,
   TRACEPARENT_HEADER,
 } from '@atelier/observability';
 import { AppModule } from './app.module';
@@ -15,15 +20,34 @@ async function bootstrap(): Promise<void> {
   const config = loadBffConfig();
   const logger = createLogger(config.serviceName);
 
+  const otel = initOpenTelemetry({
+    serviceName: 'bff',
+    serviceVersion: '3.1.0',
+    environment: config.nodeEnv,
+  });
+  const metricsRegistry = getOrCreateMetricsRegistry('bff');
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn'],
     bodyParser: false,
   });
 
-  app.useBodyParser('json', { limit: '15mb' });
-  app.useBodyParser('urlencoded', { extended: true, limit: '15mb' });
+  app.useBodyParser('json', {
+    limit: '15mb',
+    verify: (req: IncomingMessage, _res: ServerResponse, buf: Buffer) => {
+      (req as IncomingMessage & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+    },
+  });
+  app.useBodyParser('urlencoded', {
+    extended: true,
+    limit: '15mb',
+    verify: (req: IncomingMessage, _res: ServerResponse, buf: Buffer) => {
+      (req as IncomingMessage & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+    },
+  });
   app.use(cookieParser());
   app.use(correlationIdMiddleware);
+  app.use(createPrometheusHttpMiddleware('bff', metricsRegistry));
 
   const allowedOriginSet = new Set(
     config.corsAllowedOrigins.map((origin) => origin.trim().replace(/\/+$/, '')),
@@ -70,6 +94,12 @@ async function bootstrap(): Promise<void> {
   });
 
   app.enableShutdownHooks();
+  process.once('SIGTERM', () => {
+    void shutdownOpenTelemetry();
+  });
+  process.once('SIGINT', () => {
+    void shutdownOpenTelemetry();
+  });
 
   await app.listen(config.port);
 
@@ -78,6 +108,8 @@ async function bootstrap(): Promise<void> {
       port: config.port,
       corsOrigins: config.corsAllowedOrigins,
       realtimeNamespace: '/realtime',
+      otelOtlpEnabled: otel.otlpEnabled,
+      metricsEndpoint: '/metrics',
       authUpstream: config.upstreams.authCustomerUrl,
       catalogUpstream: config.upstreams.catalogLookbookUrl,
       mediaUpstream: config.upstreams.mediaPipelineUrl,

@@ -288,7 +288,7 @@ async function loginAdminWithMailpitMfa() {
   const loginRes = await apiRequest(`${BFF_BASE}/api/v1/auth/login`, {
     method: 'POST',
     headers: { Origin: 'http://localhost:3001' },
-    body: { email: 'admin@atelier.local', password: 'Atelier@2026!' },
+    body: { email: 'lebao01121@gmail.com', password: 'Atelier@2026!' },
   });
   assert.equal(loginRes.status, 200, `Admin login failed: ${loginRes.text}`);
   const preToken = unwrapData(loginRes)?.accessToken;
@@ -298,7 +298,7 @@ async function loginAdminWithMailpitMfa() {
   const sendRes = await apiRequest(`${BFF_BASE}/api/v1/auth/2fa/email-otp/send`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${preToken}`, Origin: 'http://localhost:3001' },
-    body: { email: 'admin@atelier.local', purpose: 'MFA_LOGIN' },
+    body: { email: 'lebao01121@gmail.com', purpose: 'MFA_LOGIN' },
   });
   assert.equal(sendRes.status, 200, `Admin OTP send failed: ${sendRes.text}`);
 
@@ -317,7 +317,7 @@ async function loginAdminWithMailpitMfa() {
     }
     if (!otp) await new Promise((r) => setTimeout(r, 200));
   }
-  assert.ok(otp, 'Could not find 6-digit OTP in Mailpit for admin@atelier.local');
+  assert.ok(otp, 'Could not find 6-digit OTP in Mailpit for lebao01121@gmail.com');
 
   const verifyRes = await apiRequest(`${BFF_BASE}/api/v1/auth/2fa/email-otp/verify`, {
     method: 'POST',

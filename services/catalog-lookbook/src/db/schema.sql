@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS size_charts (
   measurements_jsonb JSONB NOT NULL DEFAULT '[]'::jsonb
 );
 
+ALTER TABLE size_charts ADD COLUMN IF NOT EXISTS category_id UUID NULL REFERENCES categories(id) ON DELETE SET NULL;
+ALTER TABLE size_charts ADD COLUMN IF NOT EXISTS stretch_level TEXT NOT NULL DEFAULT 'NONE';
+ALTER TABLE size_charts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY,
   category_id UUID NOT NULL REFERENCES categories(id),
@@ -47,6 +51,7 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 ALTER TABLE products ADD COLUMN IF NOT EXISTS fit_stats_jsonb JSONB;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE INDEX IF NOT EXISTS idx_products_category_status ON products(category_id, status);
 CREATE INDEX IF NOT EXISTS idx_products_min_price ON products(min_price_vnd);
@@ -87,6 +92,9 @@ CREATE TABLE IF NOT EXISTS skus (
 CREATE INDEX IF NOT EXISTS idx_skus_variant ON skus(variant_id);
 CREATE INDEX IF NOT EXISTS idx_skus_size_stock ON skus(size_code, in_stock);
 
+ALTER TABLE skus ADD COLUMN IF NOT EXISTS barcode TEXT NULL;
+ALTER TABLE skus ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
 CREATE TABLE IF NOT EXISTS occasion_lookbooks (
   id UUID PRIMARY KEY,
   slug TEXT NOT NULL UNIQUE,
@@ -100,6 +108,11 @@ CREATE TABLE IF NOT EXISTS occasion_lookbooks (
   hero_image_url TEXT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0
 );
+
+ALTER TABLE occasion_lookbooks ADD COLUMN IF NOT EXISTS description TEXT NULL;
+ALTER TABLE occasion_lookbooks ADD COLUMN IF NOT EXISTS cover_image_url TEXT NULL;
+ALTER TABLE occasion_lookbooks ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE occasion_lookbooks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS occasion_lookbook_items (
   id UUID PRIMARY KEY,
@@ -122,6 +135,17 @@ CREATE TABLE IF NOT EXISTS seasonal_collections (
   is_current BOOLEAN NOT NULL DEFAULT FALSE,
   sort_order INTEGER NOT NULL DEFAULT 0
 );
+
+ALTER TABLE seasonal_collections ADD COLUMN IF NOT EXISTS code TEXT NULL;
+ALTER TABLE seasonal_collections ADD COLUMN IF NOT EXISTS short_name TEXT NULL;
+ALTER TABLE seasonal_collections ADD COLUMN IF NOT EXISTS material_headline TEXT NULL;
+ALTER TABLE seasonal_collections ADD COLUMN IF NOT EXISTS swatches_jsonb JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE seasonal_collections ADD COLUMN IF NOT EXISTS palette_jsonb JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE seasonal_collections ADD COLUMN IF NOT EXISTS lookbook_meta_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE seasonal_collections ADD COLUMN IF NOT EXISTS spu_ids_jsonb JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE seasonal_collections ADD COLUMN IF NOT EXISTS product_slugs_jsonb JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE seasonal_collections ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE seasonal_collections ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS packaging_options (
   id UUID PRIMARY KEY,

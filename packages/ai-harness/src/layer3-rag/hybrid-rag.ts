@@ -18,6 +18,8 @@ export interface RagCitation {
 export interface FusedRagHit extends RagCitation {
   semanticRank: number | null;
   keywordRank: number | null;
+  vectorScore?: number;
+  keywordScore?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -76,6 +78,8 @@ export function reciprocalRankFusion(
       rrfScore: number;
       semanticRank: number | null;
       keywordRank: number | null;
+      vectorScore: number;
+      keywordScore: number;
       metadata?: Record<string, unknown>;
     }
   >();
@@ -87,6 +91,10 @@ export function reciprocalRankFusion(
     if (existing) {
       existing.rrfScore += contribution;
       existing.semanticRank = existing.semanticRank ?? rank;
+      existing.vectorScore = Math.max(existing.vectorScore, hit.score);
+      if (hit.metadata) {
+        existing.metadata = { ...(existing.metadata ?? {}), ...hit.metadata };
+      }
     } else {
       accumulator.set(hit.sourceId, {
         sourceId: hit.sourceId,
@@ -95,7 +103,9 @@ export function reciprocalRankFusion(
         rrfScore: contribution,
         semanticRank: rank,
         keywordRank: null,
-        metadata: hit.metadata,
+        vectorScore: hit.score,
+        keywordScore: 0,
+        metadata: hit.metadata ? { ...hit.metadata } : undefined,
       });
     }
   });
@@ -107,8 +117,12 @@ export function reciprocalRankFusion(
     if (existing) {
       existing.rrfScore += contribution;
       existing.keywordRank = existing.keywordRank ?? rank;
+      existing.keywordScore = Math.max(existing.keywordScore, hit.score);
       if (!existing.snippet && hit.snippet) {
         existing.snippet = hit.snippet;
+      }
+      if (hit.metadata) {
+        existing.metadata = { ...hit.metadata, ...(existing.metadata ?? {}) };
       }
     } else {
       accumulator.set(hit.sourceId, {
@@ -118,7 +132,9 @@ export function reciprocalRankFusion(
         rrfScore: contribution,
         semanticRank: null,
         keywordRank: rank,
-        metadata: hit.metadata,
+        vectorScore: 0,
+        keywordScore: hit.score,
+        metadata: hit.metadata ? { ...hit.metadata } : undefined,
       });
     }
   });
@@ -131,6 +147,8 @@ export function reciprocalRankFusion(
       score: Number(entry.rrfScore.toFixed(6)),
       semanticRank: entry.semanticRank,
       keywordRank: entry.keywordRank,
+      vectorScore: Number(entry.vectorScore.toFixed(4)),
+      keywordScore: Number(entry.keywordScore.toFixed(4)),
       metadata: entry.metadata,
     }))
     .sort((a, b) => {

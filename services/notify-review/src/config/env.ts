@@ -16,6 +16,10 @@ const DEFAULT_INTERNAL_SERVICE_SECRET = 'Atelier_Internal_Svc_2026!';
 const DEFAULT_OLLAMA_FAST_MODEL = 'qwen2.5:3b';
 const DEFAULT_OLLAMA_KEEP_ALIVE = '30m';
 const DEFAULT_OLLAMA_SENTIMENT_TIMEOUT_MS = 10_000;
+const DEFAULT_REDIS_URL = 'redis://:Atelier_Redis2026!@127.0.0.1:6379';
+const DEFAULT_ZALO_ZNS_API_URL = 'https://business.openapi.zalo.me/message/template';
+const DEFAULT_ZALO_OAUTH_URL = 'https://oauth.zaloapp.com/v4/oa/access_token';
+const DEFAULT_ZALO_ZNS_TIMEOUT_MS = 8_000;
 
 export interface NotifyReviewConfig {
   serviceName: string;
@@ -31,9 +35,32 @@ export interface NotifyReviewConfig {
     host: string;
     port: number;
   };
+  redis: {
+    url: string;
+    configured: boolean;
+  };
+  zaloZns: {
+    appId: string | null;
+    secretKey: string | null;
+    refreshToken: string | null;
+    accessToken: string | null;
+    apiUrl: string;
+    oauthUrl: string;
+    timeoutMs: number;
+    templates: {
+      orderConfirmed: string;
+      orderPacked: string;
+      orderShipped: string;
+      rmaUpdate: string;
+      poSubmitted: string;
+    };
+  };
   infra: {
     smtpHost: string;
     smtpPort: number;
+    smtpSecure: boolean;
+    smtpUser?: string;
+    smtpPass?: string;
     mailpitUiPort: number;
     smtpFrom: string;
     mailpitConfigured: boolean;
@@ -71,6 +98,20 @@ function parsePort(raw: string | undefined, fallback: number): number {
   return parsed;
 }
 
+function parseOptionalBoolean(raw: string | undefined, fallback: boolean): boolean {
+  if (!raw || raw.trim() === '') {
+    return fallback;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') {
+    return true;
+  }
+  if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') {
+    return false;
+  }
+  return fallback;
+}
+
 function parseIsolatedDatabaseTarget(rawUrl: string | undefined): NotifyReviewConfig['database'] {
   const configured = Boolean(rawUrl && rawUrl.trim() !== '');
   const effectiveUrl = configured ? rawUrl!.trim() : DEFAULT_NOTIFY_DB_URL;
@@ -103,8 +144,12 @@ export function loadNotifyReviewConfig(): NotifyReviewConfig {
 
   const smtpHost = process.env.SMTP_HOST?.trim() || '127.0.0.1';
   const smtpPort = parsePort(process.env.SMTP_PORT, 1025);
+  const smtpSecure = parseOptionalBoolean(process.env.SMTP_SECURE, smtpPort === 465);
+  const smtpUser = process.env.SMTP_USER?.trim() || undefined;
+  const smtpPass = process.env.SMTP_PASS?.trim() || undefined;
   const mailpitUiPort = parsePort(process.env.MAILPIT_UI_PORT, 8025);
-  const smtpFrom = process.env.SMTP_FROM?.trim() || 'atelier@fashion-atelier.local';
+  const smtpFrom =
+    process.env.SMTP_FROM?.trim() || smtpUser || 'atelier@fashion-atelier.local';
   const rabbitmqUrl = process.env.RABBITMQ_URL?.trim() || DEFAULT_RABBITMQ_URL;
   const catalogServiceUrl = (
     process.env.CATALOG_SERVICE_URL?.trim() || DEFAULT_CATALOG_SERVICE_URL
@@ -123,6 +168,18 @@ export function loadNotifyReviewConfig(): NotifyReviewConfig {
     process.env.OLLAMA_FAST_MODEL?.trim() || DEFAULT_OLLAMA_FAST_MODEL;
   const ollamaKeepAlive =
     process.env.OLLAMA_KEEP_ALIVE?.trim() || DEFAULT_OLLAMA_KEEP_ALIVE;
+  const redisUrl = process.env.REDIS_URL?.trim() || DEFAULT_REDIS_URL;
+  const zaloZnsApiUrl = (
+    process.env.ZALO_ZNS_API_URL?.trim() || DEFAULT_ZALO_ZNS_API_URL
+  ).replace(/\/+$/, '');
+  const zaloOauthUrl = (
+    process.env.ZALO_OAUTH_URL?.trim() || DEFAULT_ZALO_OAUTH_URL
+  ).replace(/\/+$/, '');
+  const zaloTimeoutParsed = Number.parseInt(process.env.ZALO_ZNS_TIMEOUT_MS?.trim() || '', 10);
+  const zaloTimeoutMs =
+    Number.isFinite(zaloTimeoutParsed) && zaloTimeoutParsed >= 1000
+      ? zaloTimeoutParsed
+      : DEFAULT_ZALO_ZNS_TIMEOUT_MS;
 
   return {
     serviceName: SERVICE_NAME,
@@ -131,9 +188,38 @@ export function loadNotifyReviewConfig(): NotifyReviewConfig {
     nodeEnv: process.env.NODE_ENV ?? 'development',
     internalServiceSecret,
     database: parseIsolatedDatabaseTarget(process.env.NOTIFY_DATABASE_URL),
+    redis: {
+      url: redisUrl,
+      configured: Boolean(process.env.REDIS_URL?.trim()),
+    },
+    zaloZns: {
+      appId: process.env.ZALO_OA_APP_ID?.trim() || null,
+      secretKey: process.env.ZALO_OA_SECRET_KEY?.trim() || null,
+      refreshToken: process.env.ZALO_OA_REFRESH_TOKEN?.trim() || null,
+      accessToken: process.env.ZALO_ZNS_ACCESS_TOKEN?.trim() || null,
+      apiUrl: zaloZnsApiUrl,
+      oauthUrl: zaloOauthUrl,
+      timeoutMs: zaloTimeoutMs,
+      templates: {
+        orderConfirmed:
+          process.env.ZALO_ZNS_TEMPLATE_ORDER_CONFIRMED?.trim() || 'tmpl_order_confirmed_vi',
+        orderPacked:
+          process.env.ZALO_ZNS_TEMPLATE_ORDER_PACKED?.trim() ||
+          process.env.ZALO_ZNS_TEMPLATE_ORDER_SHIPPED?.trim() ||
+          'tmpl_order_packed_vi',
+        orderShipped:
+          process.env.ZALO_ZNS_TEMPLATE_ORDER_SHIPPED?.trim() || 'tmpl_order_shipped_vi',
+        rmaUpdate: process.env.ZALO_ZNS_TEMPLATE_RMA_UPDATE?.trim() || 'tmpl_rma_update_vi',
+        poSubmitted:
+          process.env.ZALO_ZNS_TEMPLATE_PO_SUBMITTED?.trim() || 'tmpl_po_submitted_vi',
+      },
+    },
     infra: {
       smtpHost,
       smtpPort,
+      smtpSecure,
+      ...(smtpUser ? { smtpUser } : {}),
+      ...(smtpPass ? { smtpPass } : {}),
       mailpitUiPort,
       smtpFrom,
       mailpitConfigured: Boolean(process.env.SMTP_HOST?.trim()),

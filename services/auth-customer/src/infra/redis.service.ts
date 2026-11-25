@@ -8,12 +8,17 @@ const LOCKED_PREFIX = 'user:locked:';
 const REVOKED_JTI_PREFIX = 'revoked_jti:';
 const REVOKED_FAMILY_PREFIX = 'revoked_family:';
 const EMAIL_OTP_PREFIX = 'mfa:email_otp:';
+const PASSWORD_RESET_PREFIX = 'auth:pwd_reset:';
 
 @Injectable()
 export class AuthRedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = createLogger('@atelier/auth-customer:redis');
   private readonly client: AtelierRedisClient;
   private readonly fallbackOtpStore = new Map<string, { code: string; expiresAtMs: number }>();
+  private readonly fallbackPasswordResetStore = new Map<
+    string,
+    { value: string; expiresAtMs: number }
+  >();
 
   constructor(@Inject(AUTH_CONFIG_TOKEN) private readonly config: AuthCustomerConfig) {
     this.client = createRedisClient({
@@ -159,6 +164,58 @@ export class AuthRedisService implements OnModuleInit, OnModuleDestroy {
     this.fallbackOtpStore.delete(userId);
     try {
       await this.client.del(`${EMAIL_OTP_PREFIX}${userId}`);
+    } catch {
+      // Ignore Redis cleanup failure
+    }
+  }
+
+  async setPasswordResetKey(
+    keySuffix: string,
+    value: string,
+    ttlSeconds: number = 600,
+  ): Promise<void> {
+    const redisKey = `${PASSWORD_RESET_PREFIX}${keySuffix}`;
+    try {
+      await this.client.set(redisKey, value, ttlSeconds);
+      this.fallbackPasswordResetStore.delete(keySuffix);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, keySuffix },
+        'Redis unavailable for password reset token; using memory fallback',
+      );
+      this.fallbackPasswordResetStore.set(keySuffix, {
+        value,
+        expiresAtMs: Date.now() + ttlSeconds * 1000,
+      });
+    }
+  }
+
+  async getPasswordResetKey(keySuffix: string): Promise<string | null> {
+    const redisKey = `${PASSWORD_RESET_PREFIX}${keySuffix}`;
+    try {
+      const val = await this.client.get(redisKey);
+      if (val !== null) {
+        return val;
+      }
+    } catch {
+      // Fallback below
+    }
+
+    const fallback = this.fallbackPasswordResetStore.get(keySuffix);
+    if (!fallback) {
+      return null;
+    }
+    if (fallback.expiresAtMs <= Date.now()) {
+      this.fallbackPasswordResetStore.delete(keySuffix);
+      return null;
+    }
+    return fallback.value;
+  }
+
+  async deletePasswordResetKey(keySuffix: string): Promise<void> {
+    this.fallbackPasswordResetStore.delete(keySuffix);
+    try {
+      await this.client.del(`${PASSWORD_RESET_PREFIX}${keySuffix}`);
     } catch {
       // Ignore Redis cleanup failure
     }

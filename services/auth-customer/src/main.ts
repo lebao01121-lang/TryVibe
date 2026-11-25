@@ -1,7 +1,13 @@
 import 'reflect-metadata';
 import cookieParser from 'cookie-parser';
 import { NestFactory } from '@nestjs/core';
-import { correlationIdMiddleware, createLogger } from '@atelier/observability';
+import {
+  correlationIdMiddleware,
+  createLogger,
+  createPrometheusHttpMiddleware,
+  createPrometheusMetricsRouteMiddleware,
+  initOpenTelemetry,
+} from '@atelier/observability';
 import { AppModule } from './app.module';
 import { AtelierExceptionFilter } from './common/api-exception';
 import { loadAuthCustomerConfig, SERVICE_NAME } from './config/env';
@@ -9,6 +15,7 @@ import { loadAuthCustomerConfig, SERVICE_NAME } from './config/env';
 async function bootstrap(): Promise<void> {
   const config = loadAuthCustomerConfig();
   const logger = createLogger(config.serviceName);
+  initOpenTelemetry({ serviceName: 'auth-customer', serviceVersion: '3.1.0' });
 
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn'],
@@ -16,6 +23,8 @@ async function bootstrap(): Promise<void> {
 
   app.use(cookieParser());
   app.use(correlationIdMiddleware);
+  app.use(createPrometheusHttpMiddleware('auth-customer'));
+  app.use(createPrometheusMetricsRouteMiddleware());
   app.useGlobalFilters(new AtelierExceptionFilter());
 
   app.enableCors({

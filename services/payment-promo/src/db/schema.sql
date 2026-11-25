@@ -28,9 +28,20 @@ CREATE TABLE IF NOT EXISTS processed_webhooks (
   provider VARCHAR(24) NOT NULL,
   provider_event_id VARCHAR(128) NOT NULL,
   order_code VARCHAR(32),
+  signature_valid BOOLEAN NOT NULL DEFAULT TRUE,
+  signature_header VARCHAR(256),
+  status VARCHAR(32) NOT NULL DEFAULT 'PROCESSED',
+  payload_summary TEXT,
+  raw_payload_jsonb JSONB,
   received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (provider, provider_event_id)
 );
+
+ALTER TABLE processed_webhooks ADD COLUMN IF NOT EXISTS signature_valid BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE processed_webhooks ADD COLUMN IF NOT EXISTS signature_header VARCHAR(256);
+ALTER TABLE processed_webhooks ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'PROCESSED';
+ALTER TABLE processed_webhooks ADD COLUMN IF NOT EXISTS payload_summary TEXT;
+ALTER TABLE processed_webhooks ADD COLUMN IF NOT EXISTS raw_payload_jsonb JSONB;
 
 CREATE TABLE IF NOT EXISTS promotions (
   id UUID PRIMARY KEY,
@@ -51,14 +62,28 @@ CREATE TABLE IF NOT EXISTS promotions (
   used_count INT NOT NULL DEFAULT 0,
   per_user_limit INT NOT NULL DEFAULT 1,
   status VARCHAR(24) NOT NULL DEFAULT 'ACTIVE' CHECK (
-    status IN ('NHAP_AI', 'ACTIVE', 'PAUSED', 'EXPIRED')
+    status IN ('NHAP_AI', 'ACTIVE', 'INACTIVE', 'PAUSED', 'EXPIRED', 'ARCHIVED')
   ),
   created_by_actor_type VARCHAR(24) NOT NULL DEFAULT 'SYSTEM',
+  approved_by VARCHAR(180),
+  approved_at TIMESTAMPTZ,
   start_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   end_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '365 days'),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE promotions ADD COLUMN IF NOT EXISTS approved_by VARCHAR(180);
+ALTER TABLE promotions ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+DO $$
+BEGIN
+  ALTER TABLE promotions DROP CONSTRAINT IF EXISTS promotions_status_check;
+  ALTER TABLE promotions
+    ADD CONSTRAINT promotions_status_check
+    CHECK (status IN ('NHAP_AI', 'ACTIVE', 'INACTIVE', 'PAUSED', 'EXPIRED', 'ARCHIVED'));
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS voucher_redemptions (
   id UUID PRIMARY KEY,

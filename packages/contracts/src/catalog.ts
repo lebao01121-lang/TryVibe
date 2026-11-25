@@ -618,3 +618,171 @@ export const PdpCompositeDtoSchema = z.object({
   reviewsDegraded: z.boolean(),
 });
 export type PdpCompositeDto = z.infer<typeof PdpCompositeDtoSchema>;
+
+// ----------------------------------------------------------------------------
+// Stage P2.1: Occasions, Seasons, Categories, Size Charts & Variants CRUD DTOs
+// ----------------------------------------------------------------------------
+
+export const CreateOccasionDtoSchema = z.object({
+  slug: z.string().trim().min(2).max(120),
+  key: z.string().trim().min(2).max(80).optional(),
+  name: z.string().trim().min(2).max(180),
+  tagline: z.string().trim().max(240).optional(),
+  description: z.string().max(1000).nullable().optional(),
+  themeBg: z.string().trim().min(1).max(32).optional(),
+  themeInk: z.string().trim().min(1).max(32).optional(),
+  themeAccent: z.string().trim().min(1).max(32).optional(),
+  isDark: z.boolean().optional(),
+  badgeTag: z.string().max(80).nullable().optional(),
+  coverImageUrl: z.string().nullable().optional(),
+  heroCutoutUrl: z.string().nullable().optional(),
+  macroImageUrl: z.string().nullable().optional(),
+  sortOrder: z.coerce.number().int().optional(),
+  isActive: z.boolean().optional(),
+  spuIds: z.array(z.string().min(1)).optional(),
+  productSlugs: z.array(z.string().min(1)).optional(),
+});
+export type CreateOccasionDto = z.infer<typeof CreateOccasionDtoSchema>;
+
+export const UpdateOccasionDtoSchema = CreateOccasionDtoSchema.partial();
+export type UpdateOccasionDto = z.infer<typeof UpdateOccasionDtoSchema>;
+
+export const SeasonColorSwatchSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  hex: z.string().trim().min(4).max(16),
+  fabricNote: z.string().max(240).optional(),
+});
+export type SeasonColorSwatch = z.infer<typeof SeasonColorSwatchSchema>;
+
+export const CreateSeasonDtoSchema = z.object({
+  slug: z.string().trim().min(2).max(120),
+  code: z.string().trim().min(2).max(80).optional(),
+  name: z.string().trim().min(2).max(180),
+  shortName: z.string().trim().max(80).optional(),
+  subtitle: z.string().trim().max(240).optional(),
+  months: z.string().trim().max(64).optional(),
+  materialHeadline: z.string().trim().max(240).optional(),
+  note: z.string().max(1000).optional(),
+  seasonOrder: z.coerce.number().int().optional(),
+  sortOrder: z.coerce.number().int().optional(),
+  heroImageUrl: z.string().nullable().optional(),
+  coverAssetUrl: z.string().nullable().optional(),
+  swatches: z.array(SeasonColorSwatchSchema).optional(),
+  paletteJsonb: z.union([z.array(SeasonColorSwatchSchema), z.record(z.unknown())]).optional(),
+  lookbookMeta: z.record(z.unknown()).nullable().optional(),
+  isCurrent: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+  spuIds: z.array(z.string().min(1)).optional(),
+  productSlugs: z.array(z.string().min(1)).optional(),
+});
+export type CreateSeasonDto = z.infer<typeof CreateSeasonDtoSchema>;
+
+export const UpdateSeasonDtoSchema = CreateSeasonDtoSchema.partial();
+export type UpdateSeasonDto = z.infer<typeof UpdateSeasonDtoSchema>;
+
+export const CreateCategoryDtoSchema = z.object({
+  parentId: z.string().min(1).nullable().optional(),
+  slug: z.string().trim().min(2).max(120),
+  name: z.string().trim().min(2).max(180),
+  description: z.string().max(1000).nullable().optional(),
+  sortOrder: z.coerce.number().int().default(0),
+  isActive: z.boolean().default(true),
+});
+export type CreateCategoryDto = z.infer<typeof CreateCategoryDtoSchema>;
+
+export const UpdateCategoryDtoSchema = CreateCategoryDtoSchema.partial();
+export type UpdateCategoryDto = z.infer<typeof UpdateCategoryDtoSchema>;
+
+export const SizeChartStretchLevelInputSchema = z.enum([
+  'NONE',
+  'LOW',
+  'LIGHT',
+  'MEDIUM',
+  'HIGH',
+]);
+export type SizeChartStretchLevelInput = z.infer<typeof SizeChartStretchLevelInputSchema>;
+
+export const SizeChartRowInputSchema = z.object({
+  sizeCode: SizeCodeSchema,
+  heightMinCm: z.coerce.number().min(100).max(240).optional(),
+  heightMaxCm: z.coerce.number().min(100).max(240).optional(),
+  weightMinKg: z.coerce.number().min(20).max(220).optional(),
+  weightMaxKg: z.coerce.number().min(20).max(220).optional(),
+  chestMinCm: z.coerce.number().nullable().optional(),
+  chestMaxCm: z.coerce.number().nullable().optional(),
+  bustCm: z.coerce.number().nullable().optional(),
+  waistMinCm: z.coerce.number().nullable().optional(),
+  waistMaxCm: z.coerce.number().nullable().optional(),
+  waistCm: z.coerce.number().nullable().optional(),
+  hipMinCm: z.coerce.number().nullable().optional(),
+  hipMaxCm: z.coerce.number().nullable().optional(),
+  hipCm: z.coerce.number().nullable().optional(),
+  shoulderCm: z.coerce.number().nullable().optional(),
+  lengthCm: z.coerce.number().nullable().optional(),
+});
+export type SizeChartRowInput = z.infer<typeof SizeChartRowInputSchema>;
+
+export const CreateSizeChartDtoSchema = z.object({
+  code: z.string().trim().min(2).max(80).optional(),
+  name: z.string().trim().min(2).max(180),
+  categoryId: z.string().min(1).nullable().optional(),
+  garmentCategory: z.string().trim().min(1).max(80).optional(),
+  garmentType: z.string().trim().min(1).max(80).optional(),
+  gender: GenderSchema.default(Gender.UNISEX),
+  stretchLevel: SizeChartStretchLevelInputSchema.optional(),
+  fitNote: z.string().max(1000).nullable().optional(),
+  fitNotes: z.string().max(1000).nullable().optional(),
+  sizeCode: SizeCodeSchema.optional(),
+  chestMin: z.coerce.number().nullable().optional(),
+  chestMax: z.coerce.number().nullable().optional(),
+  waistMin: z.coerce.number().nullable().optional(),
+  waistMax: z.coerce.number().nullable().optional(),
+  hipMin: z.coerce.number().nullable().optional(),
+  hipMax: z.coerce.number().nullable().optional(),
+  shoulderCm: z.coerce.number().nullable().optional(),
+  weightMinKg: z.coerce.number().nullable().optional(),
+  weightMaxKg: z.coerce.number().nullable().optional(),
+  heightMinCm: z.coerce.number().nullable().optional(),
+  heightMaxCm: z.coerce.number().nullable().optional(),
+  rows: z.array(SizeChartRowInputSchema).optional(),
+});
+export type CreateSizeChartDto = z.infer<typeof CreateSizeChartDtoSchema>;
+
+export const UpdateSizeChartDtoSchema = CreateSizeChartDtoSchema.partial();
+export type UpdateSizeChartDto = z.infer<typeof UpdateSizeChartDtoSchema>;
+
+export const CreateProductVariantDtoSchema = z.object({
+  sku: z.string().trim().min(2).max(80).optional(),
+  skuCode: z.string().trim().min(2).max(80).optional(),
+  size: SizeCodeSchema.optional(),
+  sizeCode: SizeCodeSchema.optional(),
+  colorName: z.string().trim().min(1).max(100),
+  colorHex: z.string().trim().min(4).max(16).default('#1C1410'),
+  priceVnd: z.coerce.number().int().nonnegative().optional(),
+  basePriceVnd: z.coerce.number().int().nonnegative().optional(),
+  salePriceVnd: z.coerce.number().int().nonnegative().optional(),
+  costPriceVnd: z.coerce.number().int().nonnegative().optional(),
+  barcode: z.string().trim().max(80).nullable().optional(),
+  weightGrams: z.coerce.number().int().nonnegative().default(350),
+  isActive: z.boolean().default(true),
+  isReturnable: z.boolean().default(true),
+  lookbookMainUrl: z.string().nullable().optional(),
+});
+export type CreateProductVariantDto = z.infer<typeof CreateProductVariantDtoSchema>;
+
+export const AttachMediaToProductDtoSchema = z.object({
+  productId: z.string().min(1),
+  variantId: z.string().min(1).nullable().optional(),
+  assetId: z.string().min(1).optional(),
+  url: z.string().min(1).optional(),
+  slot: z
+    .enum([
+      'LOOKBOOK_MAIN',
+      'RACK_FRONT',
+      'RACK_BACK',
+      'STUDIO_LAYER',
+      'TRYON_FLAT',
+    ])
+    .default('LOOKBOOK_MAIN'),
+});
+export type AttachMediaToProductDto = z.infer<typeof AttachMediaToProductDtoSchema>;

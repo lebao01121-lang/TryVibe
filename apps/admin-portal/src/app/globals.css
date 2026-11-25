@@ -11,13 +11,37 @@
   --adm-gold-deep: var(--gold-deep, #8A672C);
   --adm-ink: var(--ink, #2B2019);
   --adm-muted: var(--muted, #7A6A5B);
+
+  /* Enterprise Command Shell Semantic Tokens (Default: Kem Atelier Light) */
+  --adm-sidebar-bg: #16100C;
+  --adm-sidebar-border: rgba(176, 138, 74, 0.2);
+  --adm-canvas: #F7F1E6;
+  --adm-surface: #FFFDF9;
+  --adm-surface-subtle: #FBF7EF;
+  --adm-topbar-bg: rgba(255, 253, 249, 0.92);
+  --adm-border: rgba(176, 138, 74, 0.24);
+  --adm-border-strong: rgba(176, 138, 74, 0.45);
+  --adm-text: #1C1410;
+  --adm-text-muted: #7A6A5B;
+}
+
+.atelier-admin-dark {
+  --adm-canvas: #110C09;
+  --adm-surface: #1A130E;
+  --adm-surface-subtle: #231912;
+  --adm-topbar-bg: rgba(22, 16, 12, 0.92);
+  --adm-border: rgba(235, 207, 143, 0.16);
+  --adm-border-strong: rgba(235, 207, 143, 0.34);
+  --adm-text: #FBF7EF;
+  --adm-text-muted: #C2B3A3;
 }
 
 body {
-  background-color: var(--adm-ivory);
+  background-color: var(--adm-canvas);
   color: var(--adm-ink);
   font-family: var(--sans, var(--font-be-vietnam-pro), system-ui, sans-serif);
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 .font-editorial {
@@ -33,4 +57,53 @@ body {
   letter-spacing: 0.24em;
   text-transform: uppercase;
   font-weight: 500;
+}
+
+.adm-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sleek Custom Scrollbars for Espresso Sidebar & Slide-Over Drawer */
+.adm-sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(176, 138, 74, 0.32) transparent;
+}
+
+.adm-sidebar-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.adm-sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.adm-sidebar-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(176, 138, 74, 0.28);
+  border-radius: 9999px;
+}
+
+.adm-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(235, 207, 143, 0.45);
+}
+
+/* Smooth Slide-Over Entrance for Floating MCP Copilot Drawer */
+@keyframes admDrawerSlideIn {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.adm-drawer-enter {
+  animation: admDrawerSlideIn 220ms cubic-bezier(0.22, 0.8, 0.22, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adm-drawer-enter {
+    animation: none;
+  }
 }

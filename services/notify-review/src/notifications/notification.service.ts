@@ -9,6 +9,12 @@ import {
   type NotifyReviewConfig,
 } from '../config/env';
 import { NotifyDbService } from '../db/notify-db.service';
+import { NotifyDlqService } from './notify-dlq.service';
+import {
+  ZaloZnsClient,
+  type ZaloZnsDeliveryMode,
+  type ZaloZnsDeliveryStatus,
+} from './zalo-zns.client';
 
 export interface OrderConfirmedNotifyInput {
   eventId?: string;
@@ -20,6 +26,7 @@ export interface OrderConfirmedNotifyInput {
   trackingCode?: string;
   shippingMethod?: string;
   paymentMethod?: string;
+  simulateZnsFailure?: boolean;
   items?: Array<{
     productName?: string;
     skuCode?: string;
@@ -38,6 +45,7 @@ export interface OrderPackedNotifyInput {
   customerName?: string;
   packPhotoUrl: string;
   trackingCode?: string;
+  simulateZnsFailure?: boolean;
 }
 
 export interface PoSubmittedNotifyInput {
@@ -49,12 +57,35 @@ export interface PoSubmittedNotifyInput {
   expectedDeliveryDate?: string;
   totalAmountVnd?: number;
   notes?: string;
+  simulateZnsFailure?: boolean;
   items?: Array<{
     skuCode?: string;
     skuId?: string;
     orderedQty?: number;
     unitCostVnd?: number;
   }>;
+}
+
+export interface RmaRejectedNotifyInput {
+  eventId?: string;
+  rmaId: string;
+  rmaCode: string;
+  orderCode: string;
+  customerEmail: string;
+  customerPhone?: string;
+  customerName?: string;
+  reason: string;
+  rejectedBy?: string;
+  simulateZnsFailure?: boolean;
+}
+
+export interface DirectZnsNotifyInput {
+  eventId?: string;
+  phone: string;
+  templateCode: string;
+  subject?: string;
+  templateData: Record<string, string | number | boolean | null | undefined>;
+  simulateZnsFailure?: boolean;
 }
 
 export interface SendSmtpAndLogParams {
@@ -66,6 +97,8 @@ export interface SendSmtpAndLogParams {
   templateCode: string;
   payload: Record<string, unknown>;
   znsPhone?: string;
+  znsTemplateData?: Record<string, string | number | boolean | null | undefined>;
+  simulateZnsFailure?: boolean;
   correlationId: string;
   traceparent?: string;
 }
@@ -75,10 +108,16 @@ export interface NotificationDispatchResult {
   templateCode: string;
   recipient: string;
   subject: string;
-  emailStatus: 'SENT' | 'DEDUPLICATED' | 'FAILED';
+  emailStatus: 'SENT' | 'DEDUPLICATED' | 'FAILED' | 'SKIPPED';
   emailLogId: string | null;
-  znsStatus: 'SENT' | 'DEDUPLICATED' | 'SKIPPED';
+  znsStatus: ZaloZnsDeliveryStatus | 'DEDUPLICATED' | 'SKIPPED';
   znsLogId: string | null;
+  znsDeliveryMode: ZaloZnsDeliveryMode | null;
+  znsProviderMessageId: string | null;
+  znsErrorCode: string | null;
+  znsErrorMessage: string | null;
+  znsRetryCount: number;
+  znsDeadLettered: boolean;
   deduplicated: boolean;
 }
 
@@ -109,7 +148,7 @@ function renderAtelierEmailShell(params: {
     '<div style="max-width:600px;margin:0 auto;background:#FBF7EF;border:1px solid #D9C8A9;border-radius:12px;overflow:hidden;">',
     '<div style="background:#1C1410;color:#FBF7EF;padding:22px 28px;border-bottom:2px solid #B08A4A;">',
     `<p style="margin:0 0 6px;font-size:11px;letter-spacing:0.22em;text-transform:uppercase;color:#EBCF8F;">${escapeHtml(params.eyebrow)}</p>`,
-    `<h1 style="margin:0;font-family:Georgia,\'Cormorant Garamond\',serif;font-size:24px;font-weight:600;color:#FBF7EF;">${escapeHtml(params.title)}</h1>`,
+    `<h1 style="margin:0;font-family:Georgia,'Cormorant Garamond',serif;font-size:24px;font-weight:600;color:#FBF7EF;">${escapeHtml(params.title)}</h1>`,
     '</div>',
     '<div style="padding:26px 28px;">',
     `<p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#3A2D25;">${escapeHtml(params.lead)}</p>`,
@@ -124,6 +163,16 @@ function renderAtelierEmailShell(params: {
   ].join('');
 }
 
+function isLocalSmtpHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    normalized === '127.0.0.1' ||
+    normalized === 'localhost' ||
+    normalized === '::1' ||
+    normalized === 'mailpit'
+  );
+}
+
 @Injectable()
 export class NotificationService {
   private readonly logger = createLogger(`${SERVICE_NAME}:mail`);
@@ -132,15 +181,22 @@ export class NotificationService {
   constructor(
     @Inject(NOTIFY_CONFIG_TOKEN) private readonly config: NotifyReviewConfig,
     @Inject(NotifyDbService) private readonly db: NotifyDbService,
+    @Inject(ZaloZnsClient) private readonly zaloZnsClient: ZaloZnsClient,
+    @Inject(NotifyDlqService) private readonly notifyDlq: NotifyDlqService,
   ) {
+    const { smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass } = this.config.infra;
+    const hasAuth = Boolean(smtpUser && smtpPass);
+    const useLocalMailpitMode = !hasAuth && isLocalSmtpHost(smtpHost);
+
     this.transporter = nodemailer.createTransport({
-      host: this.config.infra.smtpHost,
-      port: this.config.infra.smtpPort,
-      secure: false,
-      ignoreTLS: true,
-      connectionTimeout: 5000,
-      greetingTimeout: 5000,
-      socketTimeout: 8000,
+      host: smtpHost,
+      port: smtpPort,
+      secure: useLocalMailpitMode ? false : smtpSecure,
+      ...(useLocalMailpitMode ? { ignoreTLS: true } : { requireTLS: !smtpSecure }),
+      ...(hasAuth ? { auth: { user: smtpUser, pass: smtpPass } } : {}),
+      connectionTimeout: useLocalMailpitMode ? 5000 : 15000,
+      greetingTimeout: useLocalMailpitMode ? 5000 : 15000,
+      socketTimeout: useLocalMailpitMode ? 8000 : 15000,
     });
   }
 
@@ -230,39 +286,38 @@ export class NotificationService {
       );
     }
 
-    let znsStatus: 'SENT' | 'DEDUPLICATED' | 'SKIPPED' = 'SKIPPED';
+    let znsStatus: ZaloZnsDeliveryStatus | 'DEDUPLICATED' | 'SKIPPED' = 'SKIPPED';
     let znsLogId: string | null = null;
+    let znsDeliveryMode: ZaloZnsDeliveryMode | null = null;
+    let znsProviderMessageId: string | null = null;
+    let znsErrorCode: string | null = null;
+    let znsErrorMessage: string | null = null;
+    let znsRetryCount = 0;
+    let znsDeadLettered = false;
+
     const znsRecipient = params.znsPhone?.trim();
-
     if (znsRecipient) {
-      const znsRowId = randomUUID();
-      const insertZnsRes = await this.db.query<{ id: string }>(
-        `INSERT INTO notification_logs (
-           id, event_id, channel, recipient, template_code, subject,
-           payload_jsonb, status, retry_count, sent_at, created_at
-         ) VALUES (
-           $1, $2, $3, $4, $5, $6,
-           $7::jsonb, 'SENT', 0, NOW(), NOW()
-         )
-         ON CONFLICT (event_id, channel) DO NOTHING
-         RETURNING id`,
-        [
-          znsRowId,
-          params.eventId,
-          NotificationChannel.ZALO_ZNS,
-          znsRecipient,
-          params.templateCode,
-          params.subject,
-          JSON.stringify(params.payload),
-        ],
-      );
+      const znsOutcome = await this.dispatchZnsAndLog({
+        eventId: params.eventId,
+        phone: znsRecipient,
+        templateCode: params.templateCode,
+        subject: params.subject,
+        originalPayload: params.payload,
+        templateData:
+          params.znsTemplateData ?? this.extractFlatTemplateData(params.payload),
+        simulateZnsFailure: params.simulateZnsFailure,
+        correlationId: params.correlationId,
+        traceparent: params.traceparent,
+      });
 
-      if (insertZnsRes.rows.length > 0) {
-        znsStatus = 'SENT';
-        znsLogId = insertZnsRes.rows[0].id;
-      } else {
-        znsStatus = 'DEDUPLICATED';
-      }
+      znsStatus = znsOutcome.status;
+      znsLogId = znsOutcome.logId;
+      znsDeliveryMode = znsOutcome.deliveryMode;
+      znsProviderMessageId = znsOutcome.providerMessageId;
+      znsErrorCode = znsOutcome.errorCode;
+      znsErrorMessage = znsOutcome.errorMessage;
+      znsRetryCount = znsOutcome.retryCount;
+      znsDeadLettered = znsOutcome.deadLettered;
     }
 
     return {
@@ -274,8 +329,274 @@ export class NotificationService {
       emailLogId,
       znsStatus,
       znsLogId,
+      znsDeliveryMode,
+      znsProviderMessageId,
+      znsErrorCode,
+      znsErrorMessage,
+      znsRetryCount,
+      znsDeadLettered,
       deduplicated: emailStatus === 'DEDUPLICATED',
     };
+  }
+
+  private extractFlatTemplateData(
+    payload: Record<string, unknown>,
+  ): Record<string, string | number | boolean | null> {
+    const out: Record<string, string | number | boolean | null> = {};
+    for (const [k, v] of Object.entries(payload)) {
+      if (
+        typeof v === 'string' ||
+        typeof v === 'number' ||
+        typeof v === 'boolean' ||
+        v === null
+      ) {
+        out[k] = v;
+      }
+    }
+    return out;
+  }
+
+  private async dispatchZnsAndLog(params: {
+    eventId: string;
+    phone: string;
+    templateCode: string;
+    subject: string;
+    originalPayload: Record<string, unknown>;
+    templateData: Record<string, string | number | boolean | null | undefined>;
+    simulateZnsFailure?: boolean;
+    correlationId: string;
+    traceparent?: string;
+  }): Promise<{
+    status: ZaloZnsDeliveryStatus | 'DEDUPLICATED';
+    logId: string | null;
+    deliveryMode: ZaloZnsDeliveryMode | null;
+    providerMessageId: string | null;
+    errorCode: string | null;
+    errorMessage: string | null;
+    retryCount: number;
+    deadLettered: boolean;
+  }> {
+    const znsRowId = randomUUID();
+    const insertZnsRes = await this.db.query<{ id: string }>(
+      `INSERT INTO notification_logs (
+         id, event_id, channel, recipient, template_code, subject,
+         payload_jsonb, status, retry_count, delivery_mode, sent_at, created_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6,
+         $7::jsonb, 'PENDING', 0, 'LIVE', NOW(), NOW()
+       )
+       ON CONFLICT (event_id, channel) DO NOTHING
+       RETURNING id`,
+      [
+        znsRowId,
+        params.eventId,
+        NotificationChannel.ZALO_ZNS,
+        params.phone,
+        params.templateCode,
+        params.subject,
+        JSON.stringify(params.originalPayload),
+      ],
+    );
+
+    if (insertZnsRes.rows.length === 0) {
+      this.logger.info(
+        {
+          eventId: params.eventId,
+          channel: NotificationChannel.ZALO_ZNS,
+          correlationId: params.correlationId,
+        },
+        'Deduplicated repeat ZALO_ZNS notification by (event_id, channel)',
+      );
+      return {
+        status: 'DEDUPLICATED',
+        logId: null,
+        deliveryMode: null,
+        providerMessageId: null,
+        errorCode: null,
+        errorMessage: null,
+        retryCount: 0,
+        deadLettered: false,
+      };
+    }
+
+    const logId = insertZnsRes.rows[0].id;
+    const znsResult = await this.zaloZnsClient.sendTemplateMessage({
+      phone: params.phone,
+      templateCode: params.templateCode,
+      templateData: params.templateData,
+      trackingId: params.eventId,
+      simulateZnsFailure: params.simulateZnsFailure,
+    });
+
+    const enrichedPayload = {
+      ...params.originalPayload,
+      znsFormattedPayload: znsResult.formattedPayload,
+    };
+
+    await this.db
+      .query(
+        `UPDATE notification_logs
+         SET recipient = $2,
+             payload_jsonb = $3::jsonb,
+             status = $4,
+             retry_count = $5,
+             provider_message_id = $6,
+             provider_error_code = $7,
+             provider_error_message = $8,
+             delivery_mode = $9,
+             sent_at = NOW()
+         WHERE id = $1`,
+        [
+          logId,
+          znsResult.normalizedPhone ?? params.phone,
+          JSON.stringify(enrichedPayload),
+          znsResult.status,
+          znsResult.retryCount,
+          znsResult.providerMessageId,
+          znsResult.errorCode,
+          znsResult.errorMessage,
+          znsResult.deliveryMode,
+        ],
+      )
+      .catch((err: unknown) => {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err), logId },
+          'Failed to update ZALO_ZNS notification_logs row',
+        );
+      });
+
+    let deadLettered = false;
+    if (znsResult.shouldDeadLetter) {
+      deadLettered = await this.notifyDlq.publishFailedZnsToDlq({
+        eventId: params.eventId,
+        notificationLogId: logId,
+        channel: 'ZALO_ZNS',
+        recipient: znsResult.normalizedPhone ?? params.phone,
+        templateCode: params.templateCode,
+        templateId: znsResult.templateId,
+        subject: params.subject,
+        formattedPayload: znsResult.formattedPayload,
+        originalPayload: params.originalPayload,
+        errorCode: znsResult.errorCode,
+        errorMessage: znsResult.errorMessage,
+        retryCount: znsResult.retryCount,
+        deliveryMode: znsResult.deliveryMode,
+        correlationId: params.correlationId,
+        traceparent: params.traceparent,
+        failedAt: new Date().toISOString(),
+      });
+    }
+
+    return {
+      status: znsResult.status,
+      logId,
+      deliveryMode: znsResult.deliveryMode,
+      providerMessageId: znsResult.providerMessageId,
+      errorCode: znsResult.errorCode,
+      errorMessage: znsResult.errorMessage,
+      retryCount: znsResult.retryCount,
+      deadLettered,
+    };
+  }
+
+  public async sendDirectZns(
+    input: DirectZnsNotifyInput,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<NotificationDispatchResult> {
+    const eventId = input.eventId?.trim() || `zns-direct:${randomUUID()}`;
+    const subject = input.subject?.trim() || `Tầm Xuân Atelier · ZNS ${input.templateCode}`;
+
+    const znsOutcome = await this.dispatchZnsAndLog({
+      eventId,
+      phone: input.phone,
+      templateCode: input.templateCode,
+      subject,
+      originalPayload: input.templateData,
+      templateData: input.templateData,
+      simulateZnsFailure: input.simulateZnsFailure,
+      correlationId,
+      traceparent,
+    });
+
+    return {
+      eventId,
+      templateCode: input.templateCode,
+      recipient: input.phone,
+      subject,
+      emailStatus: 'SKIPPED',
+      emailLogId: null,
+      znsStatus: znsOutcome.status,
+      znsLogId: znsOutcome.logId,
+      znsDeliveryMode: znsOutcome.deliveryMode,
+      znsProviderMessageId: znsOutcome.providerMessageId,
+      znsErrorCode: znsOutcome.errorCode,
+      znsErrorMessage: znsOutcome.errorMessage,
+      znsRetryCount: znsOutcome.retryCount,
+      znsDeadLettered: znsOutcome.deadLettered,
+      deduplicated: znsOutcome.status === 'DEDUPLICATED',
+    };
+  }
+
+  public async sendRmaRejected(
+    input: RmaRejectedNotifyInput,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<NotificationDispatchResult> {
+    const eventId = input.eventId?.trim() || `rma-rejected:${input.rmaCode}`;
+    const subject = `Tầm Xuân Atelier · Cập nhật yêu cầu đổi trả ${input.rmaCode}`;
+    const greetingName = input.customerName?.trim() || 'Quý khách';
+
+    const bodyHtml = [
+      '<div style="background:#F4EBDA;border:1px solid #DFCFAF;border-radius:8px;padding:16px 18px;margin-bottom:18px;">',
+      `<p style="margin:0;font-size:13px;color:#5A493B;">Mã RMA: <strong style="color:#1C1410;">${escapeHtml(input.rmaCode)}</strong></p>`,
+      `<p style="margin:6px 0 0;font-size:13px;color:#5A493B;">Đơn hàng gốc: <strong style="color:#1C1410;">${escapeHtml(input.orderCode)}</strong></p>`,
+      `<p style="margin:8px 0 0;font-size:13px;color:#8B2E2E;">Lý do từ chối: <strong>${escapeHtml(input.reason)}</strong></p>`,
+      '</div>',
+      '<p style="margin:0;font-size:13px;color:#5A493B;line-height:1.6;">Nếu bạn cần hỗ trợ thêm hoặc muốn khiếu nại thẩm định, vui lòng phản hồi trực tiếp email này hoặc liên hệ bộ phận Chăm sóc Khách hàng Tầm Xuân Atelier.</p>',
+    ].join('');
+
+    const html = renderAtelierEmailShell({
+      eyebrow: 'Tầm Xuân Fashion Atelier · RMA Update',
+      title: `Thông báo yêu cầu RMA ${input.rmaCode}`,
+      lead: `Xin chào ${greetingName}, chúng tôi đã hoàn tất xem xét yêu cầu đổi trả của bạn.`,
+      bodyHtml,
+      footerNote:
+        'Tầm Xuân Atelier luôn đồng hành hỗ trợ kiểm định minh bạch cho mọi thiết kế.',
+    });
+
+    const text = [
+      `Xin chào ${greetingName},`,
+      `Yêu cầu đổi trả ${input.rmaCode} (đơn hàng ${input.orderCode}) chưa đủ điều kiện phê duyệt.`,
+      `Lý do: ${input.reason}`,
+      'Trân trọng, Tầm Xuân Fashion Atelier.',
+    ].join('\n');
+
+    return this.sendSmtpAndLog({
+      eventId,
+      recipient: input.customerEmail,
+      subject,
+      html,
+      text,
+      templateCode: 'RMA_REJECTED_VI',
+      payload: {
+        rmaId: input.rmaId,
+        rmaCode: input.rmaCode,
+        orderCode: input.orderCode,
+        reason: input.reason,
+        rejectedBy: input.rejectedBy ?? null,
+      },
+      znsPhone: input.customerPhone?.trim() || undefined,
+      znsTemplateData: {
+        rma_code: input.rmaCode,
+        order_code: input.orderCode,
+        customer_name: greetingName,
+        reason: input.reason,
+      },
+      simulateZnsFailure: input.simulateZnsFailure,
+      correlationId,
+      traceparent,
+    });
   }
 
   public async sendOrderConfirmed(
@@ -357,7 +678,14 @@ export class NotificationService {
         trackingCode: input.trackingCode ?? null,
         itemCount: items.length,
       },
-      znsPhone: input.customerPhone?.trim() || input.customerEmail,
+      znsPhone: input.customerPhone?.trim() || undefined,
+      znsTemplateData: {
+        order_code: input.orderCode,
+        customer_name: greetingName,
+        total_amount: formatVnd(input.grandTotalVnd),
+        tracking_code: input.trackingCode ?? '',
+      },
+      simulateZnsFailure: input.simulateZnsFailure,
       correlationId,
       traceparent,
     });
@@ -415,7 +743,14 @@ export class NotificationService {
         packPhotoUrl: input.packPhotoUrl,
         trackingCode: input.trackingCode ?? null,
       },
-      znsPhone: input.customerPhone?.trim() || input.customerEmail,
+      znsPhone: input.customerPhone?.trim() || undefined,
+      znsTemplateData: {
+        order_code: input.orderCode,
+        customer_name: greetingName,
+        tracking_code: input.trackingCode ?? '',
+        pack_photo_url: input.packPhotoUrl,
+      },
+      simulateZnsFailure: input.simulateZnsFailure,
       correlationId,
       traceparent,
     });
@@ -500,6 +835,13 @@ export class NotificationService {
         itemCount: items.length,
       },
       znsPhone: input.supplierPhone?.trim() || undefined,
+      znsTemplateData: {
+        po_number: input.poNumber,
+        supplier_name: supplierLabel,
+        expected_delivery_date: input.expectedDeliveryDate ?? '',
+        total_amount: formatVnd(input.totalAmountVnd),
+      },
+      simulateZnsFailure: input.simulateZnsFailure,
       correlationId,
       traceparent,
     });

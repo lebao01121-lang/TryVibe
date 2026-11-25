@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import nodemailer from 'nodemailer';
 import {
   ALL_PERMISSIONS,
   ALL_ROLES,
@@ -69,6 +70,8 @@ export interface UserDbRow {
   full_name: string;
   avatar_url: string | null;
   status: UserStatusValue;
+  is_active?: boolean | null;
+  deleted_at?: Date | string | null;
   mfa_enabled: boolean;
   permission_version: number;
   loyalty_tier: LoyaltyTierValue;
@@ -76,6 +79,13 @@ export interface UserDbRow {
   supplier_id: string | null;
   created_at: Date | string;
   updated_at: Date | string;
+}
+
+export interface ExtendedUserSummaryDto extends UserSummaryDto {
+  isActive?: boolean;
+  deletedAt?: string | null;
+  codTrustScore?: number;
+  vipTier?: LoyaltyTierValue;
 }
 
 interface AuthSessionRow {
@@ -112,6 +122,78 @@ export interface TwoFactorVerifyResponse {
   csrfToken: string;
   mfaVerified: boolean;
   user: UserSummaryDto;
+}
+
+export interface ForgotPasswordResponse {
+  sent: boolean;
+  expiresInSeconds: number;
+  message: string;
+}
+
+export interface ResetPasswordResponse {
+  reset: boolean;
+  message: string;
+}
+
+export interface ChangePasswordResponse {
+  changed: boolean;
+  accessToken: string;
+  csrfToken: string;
+  user: UserSummaryDto;
+  message: string;
+}
+
+interface StoredPasswordResetRecord {
+  userId: string;
+  email: string;
+  codeHash: string;
+  tokenHash: string;
+  attempts: number;
+  createdAt: string;
+}
+
+const PASSWORD_RESET_TTL_SECONDS = 600;
+const PASSWORD_RESET_MAX_ATTEMPTS = 5;
+const FORGOT_PASSWORD_EMAIL_LIMIT = 5;
+const FORGOT_PASSWORD_IP_LIMIT = 20;
+const FORGOT_PASSWORD_WINDOW_MS = 10 * 60 * 1000;
+
+function isLocalSmtpHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    normalized === '127.0.0.1' ||
+    normalized === 'localhost' ||
+    normalized === '::1' ||
+    normalized === 'mailpit'
+  );
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function assertStrongPassword(password: string): void {
+  if (password.length < 8 || password.length > 128) {
+    throw new ApiDomainException(
+      HttpStatus.BAD_REQUEST,
+      ErrorCode.VALIDATION_ERROR,
+      'Mật khẩu mới phải dài từ 8 đến 128 ký tự.',
+    );
+  }
+  const hasLetter = /[a-zA-Z]/.test(password);
+  const hasDigit = /\d/.test(password);
+  if (!hasLetter || !hasDigit) {
+    throw new ApiDomainException(
+      HttpStatus.BAD_REQUEST,
+      ErrorCode.VALIDATION_ERROR,
+      'Mật khẩu mới cần bao gồm cả chữ cái và chữ số để đảm bảo an toàn.',
+    );
+  }
 }
 
 function toIso(value: Date | string): string {
@@ -152,6 +234,9 @@ function parseRecoveryCodes(raw: unknown): StoredRecoveryCode[] {
 
 @Injectable()
 export class AuthService {
+  private readonly forgotPasswordWindows = new Map<string, number[]>();
+  private recoveryTransporter: nodemailer.Transporter | null = null;
+
   constructor(
     @Inject(AUTH_CONFIG_TOKEN) private readonly config: AuthCustomerConfig,
     private readonly db: DatabaseService,
@@ -165,7 +250,7 @@ export class AuthService {
     userId: string,
     executor?: AtelierDbExecutor,
     mfaVerifiedOverride?: boolean,
-  ): Promise<UserSummaryDto | null> {
+  ): Promise<ExtendedUserSummaryDto | null> {
     const runner = executor ?? this.db;
     const userRes = await runner.query<UserDbRow>('SELECT * FROM users WHERE id = $1', [userId]);
     if (userRes.rows.length === 0) {
@@ -178,7 +263,7 @@ export class AuthService {
     user: UserDbRow,
     executor?: AtelierDbExecutor,
     mfaVerifiedOverride?: boolean,
-  ): Promise<UserSummaryDto> {
+  ): Promise<ExtendedUserSummaryDto> {
     const runner = executor ?? this.db;
 
     const rolesRes = await runner.query<{ code: string }>(
@@ -206,12 +291,19 @@ export class AuthService {
       .map((p) => p.code)
       .filter((code): code is Permission => VALID_PERMISSION_SET.has(code));
 
+    const isActive =
+      user.is_active !== false &&
+      user.status === UserStatus.ACTIVE &&
+      !user.deleted_at;
+
     return {
       id: user.id,
       email: user.email,
       fullName: user.full_name,
       phone: user.phone,
       status: user.status,
+      isActive,
+      deletedAt: user.deleted_at ? toIso(user.deleted_at) : null,
       roles,
       permissions,
       permissionVersion: Number(user.permission_version),
@@ -219,6 +311,8 @@ export class AuthService {
       ...(mfaVerifiedOverride !== undefined ? { mfaVerified: mfaVerifiedOverride } : {}),
       supplierId: user.supplier_id,
       loyaltyTier: user.loyalty_tier,
+      vipTier: user.loyalty_tier,
+      codTrustScore: Number(user.cod_trust_score ?? 100),
       createdAt: toIso(user.created_at),
       updatedAt: toIso(user.updated_at),
     };
@@ -266,10 +360,14 @@ export class AuthService {
 
     let currentPermVer = await this.redis.getUserPermissionVersion(payload.sub);
     if (currentPermVer === null) {
-      const dbUser = await this.db.query<{ permission_version: number; status: string }>(
-        'SELECT permission_version, status FROM users WHERE id = $1',
-        [payload.sub],
-      );
+      const dbUser = await this.db.query<{
+        permission_version: number;
+        status: string;
+        is_active?: boolean | null;
+        deleted_at?: Date | string | null;
+      }>('SELECT permission_version, status, is_active, deleted_at FROM users WHERE id = $1', [
+        payload.sub,
+      ]);
       if (dbUser.rows.length === 0) {
         throw new ApiDomainException(
           HttpStatus.UNAUTHORIZED,
@@ -280,12 +378,12 @@ export class AuthService {
       const row = dbUser.rows[0];
       currentPermVer = Number(row.permission_version);
       await this.redis.setUserPermissionVersion(payload.sub, currentPermVer);
-      if (row.status === UserStatus.LOCKED) {
+      if (row.status === UserStatus.LOCKED || row.is_active === false || Boolean(row.deleted_at)) {
         await this.redis.setUserLocked(payload.sub, true);
         throw new ApiDomainException(
           HttpStatus.FORBIDDEN,
           ErrorCode.PERMISSION_REVOKED,
-          'Tài khoản đã bị khóa.',
+          'Tài khoản đã bị khóa hoặc vô hiệu hóa.',
         );
       }
     }
@@ -489,12 +587,12 @@ export class AuthService {
       );
     }
 
-    if (userRow.status === UserStatus.LOCKED) {
+    if (userRow.status === UserStatus.LOCKED || userRow.is_active === false || Boolean(userRow.deleted_at)) {
       await this.redis.setUserLocked(userRow.id, true);
       throw new ApiDomainException(
         HttpStatus.FORBIDDEN,
         ErrorCode.PERMISSION_REVOKED,
-        'Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.',
+        'Tài khoản đã bị khóa hoặc vô hiệu hóa. Vui lòng liên hệ quản trị viên.',
       );
     }
 
@@ -605,7 +703,7 @@ export class AuthService {
     }
 
     const userRow = userRes.rows[0];
-    if (userRow.status !== UserStatus.ACTIVE) {
+    if (userRow.status !== UserStatus.ACTIVE || userRow.is_active === false || Boolean(userRow.deleted_at)) {
       await this.db.query('UPDATE auth_sessions SET revoked = TRUE WHERE token_family_id = $1', [
         session.token_family_id,
       ]);
@@ -677,6 +775,565 @@ export class AuthService {
 
     this.clearAuthCookies(req, res);
     return { loggedOut: true };
+  }
+
+  async forgotPassword(
+    input: { email: string },
+    req: Request,
+  ): Promise<ForgotPasswordResponse> {
+    const email = input.email.trim().toLowerCase();
+    const ipAddress = extractClientIp(req) ?? '127.0.0.1';
+    const correlationId = getCorrelationIdFromRequest(req);
+
+    // Per-IP and per-email sliding-window rate limits
+    this.enforceForgotPasswordRateLimit(`ip:${ipAddress}`, FORGOT_PASSWORD_IP_LIMIT);
+    this.enforceForgotPasswordRateLimit(
+      `email:${sha256Hex(email)}`,
+      FORGOT_PASSWORD_EMAIL_LIMIT,
+    );
+
+    const uniformResponse: ForgotPasswordResponse = {
+      sent: true,
+      expiresInSeconds: PASSWORD_RESET_TTL_SECONDS,
+      message:
+        'Nếu email tồn tại trong hệ thống, mã khôi phục 6 chữ số có hiệu lực trong 10 phút đã được gửi tới hộp thư của bạn.',
+    };
+
+    const userRes = await this.db.query<
+      Pick<UserDbRow, 'id' | 'email' | 'full_name' | 'status'>
+    >('SELECT id, email, full_name, status FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [
+      email,
+    ]);
+
+    if (userRes.rows.length === 0) {
+      return uniformResponse;
+    }
+
+    const user = userRes.rows[0];
+    if (user.status !== UserStatus.ACTIVE) {
+      return uniformResponse;
+    }
+
+    const otpCode = generateNumericOtp(6);
+    const recoveryToken = generateOpaqueToken(32);
+    const emailHash = sha256Hex(email);
+    const codeHash = sha256Hex(otpCode);
+    const tokenHash = sha256Hex(recoveryToken);
+
+    const record: StoredPasswordResetRecord = {
+      userId: user.id,
+      email,
+      codeHash,
+      tokenHash,
+      attempts: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Store ONLY SHA-256 hashes (never plaintext OTP/token) in Redis with 600s TTL
+    await Promise.all([
+      this.redis.setPasswordResetKey(
+        `email:${emailHash}`,
+        JSON.stringify(record),
+        PASSWORD_RESET_TTL_SECONDS,
+      ),
+      this.redis.setPasswordResetKey(
+        `tok:${tokenHash}`,
+        emailHash,
+        PASSWORD_RESET_TTL_SECONDS,
+      ),
+      this.redis.setPasswordResetKey(
+        `code:${codeHash}`,
+        emailHash,
+        PASSWORD_RESET_TTL_SECONDS,
+      ),
+    ]);
+
+    const storefrontBase = (
+      process.env.STOREFRONT_URL?.trim() ||
+      process.env.NEXT_PUBLIC_STOREFRONT_URL?.trim() ||
+      'http://127.0.0.1:3000'
+    ).replace(/\/+$/, '');
+    const resetLink = `${storefrontBase}/quen-mat-khau?email=${encodeURIComponent(user.email)}&token=${encodeURIComponent(recoveryToken)}`;
+
+    try {
+      await this.mail.sendPasswordResetEmail({
+        to: user.email,
+        fullName: user.full_name,
+        otpCode,
+        resetLink,
+        ttlMinutes: Math.round(PASSWORD_RESET_TTL_SECONDS / 60),
+      });
+    } catch (error) {
+      // Fallback to direct recovery transport if shared MailService transport fails unexpectedly
+      try {
+        await this.sendPasswordResetEmail({
+          to: user.email,
+          fullName: user.full_name,
+          otpCode,
+          resetLink,
+          ttlMinutes: Math.round(PASSWORD_RESET_TTL_SECONDS / 60),
+        });
+      } catch (fallbackErr) {
+        throw new ApiDomainException(
+          HttpStatus.SERVICE_UNAVAILABLE,
+          ErrorCode.DEPENDENCY_UNAVAILABLE,
+          'Không thể gửi email khôi phục mật khẩu qua máy chủ SMTP lúc này.',
+          {
+            detail:
+              fallbackErr instanceof Error
+                ? fallbackErr.message
+                : error instanceof Error
+                  ? error.message
+                  : String(error),
+          },
+        );
+      }
+    }
+
+    await this.audit.record({
+      actorId: user.id,
+      actorEmail: user.email,
+      actorType: AuditActorType.USER,
+      action: 'PASSWORD_RESET_REQUESTED',
+      resourceType: 'user',
+      resourceId: user.id,
+      afterJsonb: {
+        ttlSeconds: PASSWORD_RESET_TTL_SECONDS,
+        maskedEmail: maskEmail(user.email),
+      },
+      correlationId,
+      ipAddress,
+    });
+
+    return uniformResponse;
+  }
+
+  async resetPassword(
+    input: {
+      email?: string;
+      code?: string;
+      token?: string;
+      otp?: string;
+      newPassword: string;
+    },
+    req: Request,
+    res: Response,
+  ): Promise<ResetPasswordResponse> {
+    assertStrongPassword(input.newPassword);
+
+    const rawSecret = (input.code ?? input.otp ?? input.token ?? '').trim();
+    if (!rawSecret) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Vui lòng cung cấp mã xác thực 6 chữ số hoặc token khôi phục.',
+      );
+    }
+
+    const compactOtpHash = sha256Hex(rawSecret.replace(/\s+/g, ''));
+    const rawTokenHash = sha256Hex(rawSecret);
+
+    let emailHash: string | null = null;
+    if (input.email && input.email.trim().length > 0) {
+      emailHash = sha256Hex(input.email.trim().toLowerCase());
+    } else {
+      if (input.token && input.token.trim().length > 0) {
+        emailHash = await this.redis.getPasswordResetKey(
+          `tok:${sha256Hex(input.token.trim())}`,
+        );
+      }
+      if (!emailHash) {
+        emailHash = await this.redis.getPasswordResetKey(`code:${compactOtpHash}`);
+      }
+      if (!emailHash) {
+        emailHash = await this.redis.getPasswordResetKey(`tok:${rawTokenHash}`);
+      }
+    }
+
+    if (!emailHash) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Mã khôi phục mật khẩu không hợp lệ hoặc đã hết hạn.',
+      );
+    }
+
+    const recordKey = `email:${emailHash}`;
+    const rawStored = await this.redis.getPasswordResetKey(recordKey);
+    if (!rawStored) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Mã khôi phục mật khẩu không hợp lệ hoặc đã hết hạn.',
+      );
+    }
+
+    let stored: StoredPasswordResetRecord;
+    try {
+      stored = JSON.parse(rawStored) as StoredPasswordResetRecord;
+    } catch {
+      await this.redis.deletePasswordResetKey(recordKey);
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Mã khôi phục mật khẩu không hợp lệ hoặc đã hết hạn.',
+      );
+    }
+
+    const codeMatched = constantTimeEqualString(compactOtpHash, stored.codeHash);
+    const tokenMatched = constantTimeEqualString(rawTokenHash, stored.tokenHash);
+
+    if (!codeMatched && !tokenMatched) {
+      const nextAttempts = (stored.attempts ?? 0) + 1;
+      if (nextAttempts >= PASSWORD_RESET_MAX_ATTEMPTS) {
+        await Promise.all([
+          this.redis.deletePasswordResetKey(recordKey),
+          this.redis.deletePasswordResetKey(`tok:${stored.tokenHash}`),
+          this.redis.deletePasswordResetKey(`code:${stored.codeHash}`),
+        ]);
+      } else {
+        await this.redis.setPasswordResetKey(
+          recordKey,
+          JSON.stringify({ ...stored, attempts: nextAttempts }),
+          PASSWORD_RESET_TTL_SECONDS,
+        );
+      }
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Mã khôi phục mật khẩu không chính xác hoặc đã hết hạn.',
+      );
+    }
+
+    // Single-use: immediately delete recovery keys from Redis
+    await Promise.all([
+      this.redis.deletePasswordResetKey(recordKey),
+      this.redis.deletePasswordResetKey(`tok:${stored.tokenHash}`),
+      this.redis.deletePasswordResetKey(`code:${stored.codeHash}`),
+    ]);
+
+    const newPasswordHash = hashPassword(input.newPassword);
+    const correlationId = getCorrelationIdFromRequest(req);
+    const ipAddress = extractClientIp(req);
+
+    const txResult = await this.db.transaction(async (tx) => {
+      const updatedUser = await tx.query<Pick<UserDbRow, 'id' | 'email' | 'permission_version'>>(
+        `UPDATE users
+         SET password_hash = $1,
+             permission_version = permission_version + 1,
+             updated_at = NOW()
+         WHERE id = $2
+         RETURNING id, email, permission_version`,
+        [newPasswordHash, stored.userId],
+      );
+      if (updatedUser.rows.length === 0) {
+        throw new ApiDomainException(
+          HttpStatus.NOT_FOUND,
+          ErrorCode.NOT_FOUND,
+          'Không tìm thấy tài khoản người dùng.',
+        );
+      }
+
+      const activeSessions = await tx.query<{
+        token_family_id: string;
+        last_access_jti: string | null;
+      }>(
+        `SELECT token_family_id, last_access_jti
+         FROM auth_sessions
+         WHERE user_id = $1 AND revoked = FALSE`,
+        [stored.userId],
+      );
+
+      await tx.query(
+        'UPDATE auth_sessions SET revoked = TRUE WHERE user_id = $1 AND revoked = FALSE',
+        [stored.userId],
+      );
+
+      const newPermVersion = Number(updatedUser.rows[0].permission_version);
+
+      await this.audit.record(
+        {
+          actorId: stored.userId,
+          actorEmail: updatedUser.rows[0].email,
+          actorType: AuditActorType.USER,
+          action: 'PASSWORD_RESET_COMPLETED',
+          resourceType: 'user',
+          resourceId: stored.userId,
+          afterJsonb: {
+            permissionVersion: newPermVersion,
+            revokedSessionsCount: activeSessions.rows.length,
+          },
+          correlationId,
+          ipAddress,
+        },
+        tx,
+      );
+
+      return {
+        userId: stored.userId,
+        permissionVersion: newPermVersion,
+        sessions: activeSessions.rows,
+      };
+    });
+
+    await this.revokeAllSessionsInRedis(
+      txResult.userId,
+      txResult.permissionVersion,
+      txResult.sessions,
+    );
+    this.clearAuthCookies(req, res);
+
+    return {
+      reset: true,
+      message:
+        'Đặt lại mật khẩu thành công. Tất cả phiên đăng nhập cũ đã bị thu hồi; vui lòng đăng nhập lại bằng mật khẩu mới.',
+    };
+  }
+
+  async changePassword(
+    authUser: JwtAccessPayload,
+    input: { currentPassword: string; newPassword: string },
+    req: Request,
+    res: Response,
+  ): Promise<ChangePasswordResponse> {
+    assertStrongPassword(input.newPassword);
+
+    if (input.currentPassword === input.newPassword) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Mật khẩu mới phải khác với mật khẩu hiện tại.',
+      );
+    }
+
+    const userRes = await this.db.query<UserDbRow>(
+      'SELECT * FROM users WHERE id = $1 LIMIT 1',
+      [authUser.sub],
+    );
+    if (userRes.rows.length === 0) {
+      throw new ApiDomainException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        'Không tìm thấy tài khoản người dùng.',
+      );
+    }
+
+    const userRow = userRes.rows[0];
+    if (!verifyPassword(input.currentPassword, userRow.password_hash)) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Mật khẩu hiện tại không chính xác.',
+      );
+    }
+
+    const newPasswordHash = hashPassword(input.newPassword);
+    const correlationId = getCorrelationIdFromRequest(req);
+    const ipAddress = extractClientIp(req);
+
+    const txResult = await this.db.transaction(async (tx) => {
+      const updatedUser = await tx.query<UserDbRow>(
+        `UPDATE users
+         SET password_hash = $1,
+             permission_version = permission_version + 1,
+             updated_at = NOW()
+         WHERE id = $2
+         RETURNING *`,
+        [newPasswordHash, authUser.sub],
+      );
+
+      const activeSessions = await tx.query<{
+        token_family_id: string;
+        last_access_jti: string | null;
+      }>(
+        `SELECT token_family_id, last_access_jti
+         FROM auth_sessions
+         WHERE user_id = $1 AND revoked = FALSE`,
+        [authUser.sub],
+      );
+
+      await tx.query(
+        'UPDATE auth_sessions SET revoked = TRUE WHERE user_id = $1 AND revoked = FALSE',
+        [authUser.sub],
+      );
+
+      const summary = await this.buildUserSummary(
+        updatedUser.rows[0],
+        tx,
+        Boolean(authUser.mfaVerified),
+      );
+
+      await this.audit.record(
+        {
+          actorId: authUser.sub,
+          actorEmail: summary.email,
+          actorType: AuditActorType.USER,
+          action: 'PASSWORD_CHANGED',
+          resourceType: 'user',
+          resourceId: authUser.sub,
+          afterJsonb: {
+            permissionVersion: summary.permissionVersion,
+            revokedSessionsCount: activeSessions.rows.length,
+          },
+          correlationId,
+          ipAddress,
+        },
+        tx,
+      );
+
+      return {
+        userSummary: summary,
+        sessions: activeSessions.rows,
+      };
+    });
+
+    await this.revokeAllSessionsInRedis(
+      txResult.userSummary.id,
+      txResult.userSummary.permissionVersion,
+      txResult.sessions,
+      authUser.jti,
+    );
+
+    const { accessToken, csrfToken } = await this.createFreshSessionAndTokens({
+      user: txResult.userSummary,
+      mfaVerified: Boolean(authUser.mfaVerified),
+      req,
+      res,
+    });
+
+    return {
+      changed: true,
+      accessToken,
+      csrfToken,
+      user: txResult.userSummary,
+      message: 'Đổi mật khẩu thành công. Phiên đăng nhập đã được làm mới an toàn.',
+    };
+  }
+
+  private enforceForgotPasswordRateLimit(bucketKey: string, limit: number): void {
+    const now = Date.now();
+    const cutoff = now - FORGOT_PASSWORD_WINDOW_MS;
+    const existing = this.forgotPasswordWindows.get(bucketKey) ?? [];
+    const active = existing.filter((ts) => ts > cutoff);
+    if (active.length >= limit) {
+      const oldest = active[0] ?? now;
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((oldest + FORGOT_PASSWORD_WINDOW_MS - now) / 1000),
+      );
+      throw new ApiDomainException(
+        HttpStatus.TOO_MANY_REQUESTS,
+        ErrorCode.RATE_LIMITED,
+        `Bạn đã yêu cầu khôi phục mật khẩu quá nhiều lần. Vui lòng thử lại sau ${retryAfterSeconds} giây.`,
+        { retryAfterSeconds },
+      );
+    }
+    active.push(now);
+    this.forgotPasswordWindows.set(bucketKey, active);
+
+    if (this.forgotPasswordWindows.size > 2000) {
+      for (const [key, timestamps] of this.forgotPasswordWindows.entries()) {
+        if (timestamps.length === 0 || timestamps[timestamps.length - 1] <= cutoff) {
+          this.forgotPasswordWindows.delete(key);
+        }
+      }
+    }
+  }
+
+  private async revokeAllSessionsInRedis(
+    userId: string,
+    newPermissionVersion: number,
+    sessions: Array<{ token_family_id: string; last_access_jti: string | null }>,
+    currentAccessJti?: string,
+  ): Promise<void> {
+    await this.redis.setUserPermissionVersion(userId, newPermissionVersion);
+
+    const uniqueFamilies = new Set<string>();
+    const uniqueJtis = new Set<string>();
+    for (const row of sessions) {
+      if (row.token_family_id) {
+        uniqueFamilies.add(row.token_family_id);
+      }
+      if (row.last_access_jti) {
+        uniqueJtis.add(row.last_access_jti);
+      }
+    }
+    if (currentAccessJti) {
+      uniqueJtis.add(currentAccessJti);
+    }
+
+    await Promise.all([
+      ...[...uniqueFamilies].map((familyId) =>
+        this.redis.revokeTokenFamily(familyId, this.config.jwt.refreshTtlSeconds),
+      ),
+      ...[...uniqueJtis].map((jti) =>
+        this.redis.revokeJti(jti, this.config.jwt.accessTtlSeconds),
+      ),
+    ]);
+  }
+
+  private getRecoveryMailTransporter(): nodemailer.Transporter {
+    if (!this.recoveryTransporter) {
+      const { host, port, secure, user, pass } = this.config.smtp;
+      const hasAuth = Boolean(user && pass);
+      const useLocalMailpitMode = !hasAuth && isLocalSmtpHost(host);
+      this.recoveryTransporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: useLocalMailpitMode ? false : secure,
+        ...(useLocalMailpitMode ? { ignoreTLS: true } : { requireTLS: !secure }),
+        ...(hasAuth ? { auth: { user, pass } } : {}),
+        connectionTimeout: useLocalMailpitMode ? 5000 : 15000,
+        greetingTimeout: useLocalMailpitMode ? 5000 : 15000,
+        socketTimeout: useLocalMailpitMode ? 8000 : 15000,
+      });
+    }
+    return this.recoveryTransporter;
+  }
+
+  private async sendPasswordResetEmail(params: {
+    to: string;
+    fullName: string;
+    otpCode: string;
+    resetLink: string;
+    ttlMinutes: number;
+  }): Promise<void> {
+    const { to, fullName, otpCode, resetLink, ttlMinutes } = params;
+    const subject = `[Tầm Xuân · Fashion Atelier] Mã khôi phục mật khẩu: ${otpCode}`;
+    const text = [
+      `Xin chào ${fullName},`,
+      '',
+      'Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản Fashion Atelier của bạn.',
+      `Mã khôi phục 6 chữ số của bạn là: ${otpCode}`,
+      '',
+      `Hoặc mở trực tiếp liên kết đặt lại mật khẩu: ${resetLink}`,
+      '',
+      `Mã khôi phục có hiệu lực trong ${ttlMinutes} phút và chỉ sử dụng một lần.`,
+      'Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này.',
+      '',
+      'Trân trọng,',
+      'Tầm Xuân · Fashion Atelier Security Team',
+    ].join('\n');
+
+    const html = [
+      '<div style="font-family:Inter,Arial,sans-serif;max-width:540px;margin:0 auto;padding:28px;border:1px solid #d6c5a7;border-radius:12px;background:#fbf7ef;color:#1c1410">',
+      '<p style="letter-spacing:0.18em;font-size:11px;text-transform:uppercase;color:#8a672c;margin:0 0 10px">Tầm Xuân · Fashion Atelier · Khôi phục mật khẩu</p>',
+      `<h2 style="font-size:22px;font-weight:600;margin:0 0 12px;color:#1c1410">Xin chào ${escapeHtml(fullName)},</h2>`,
+      '<p style="font-size:14px;line-height:1.65;margin:0 0 16px;color:#3d2f27">Sử dụng mã OTP 6 chữ số dưới đây tại trang <strong>/quen-mat-khau</strong> để đặt lại mật khẩu tài khoản của bạn:</p>',
+      `<div style="font-size:34px;font-weight:700;letter-spacing:0.28em;text-align:center;padding:18px 20px;background:#ffffff;border:1px solid #b08a4a;border-radius:10px;color:#1c1410;margin:0 0 18px">${escapeHtml(otpCode)}</div>`,
+      `<p style="text-align:center;margin:0 0 18px"><a href="${escapeHtml(resetLink)}" style="display:inline-block;padding:12px 24px;border-radius:999px;background:#1c1410;color:#ebcf8f;text-decoration:none;font-size:13px;font-weight:600;letter-spacing:0.08em">Mở trang Đặt lại mật khẩu</a></p>`,
+      `<p style="font-size:13px;color:#6b5b4c;line-height:1.55;margin:0">Mã có hiệu lực trong <strong>${ttlMinutes} phút</strong> và chỉ dùng 1 lần. Khi đặt lại mật khẩu thành công, toàn bộ phiên đăng nhập cũ sẽ tự động đăng xuất.</p>`,
+      '</div>',
+    ].join('');
+
+    const transporter = this.getRecoveryMailTransporter();
+    await transporter.sendMail({
+      from: this.config.smtp.from,
+      to,
+      subject,
+      text,
+      html,
+    });
   }
 
   async getMe(authUser: JwtAccessPayload): Promise<UserSummaryDto> {

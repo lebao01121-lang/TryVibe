@@ -23,6 +23,7 @@ import {
   type CheckoutOrderResult,
   type ExtendedOrderDTO,
   type OrderActorContext,
+  type OrderMutationResult,
   type OrderOpsMetricsDto,
 } from '../services/order-rma.service';
 
@@ -35,6 +36,7 @@ export function extractOrderActor(
   const correlationId = getOrCreateCorrelationId(headers);
   const traceparent = getOrCreateTraceparent(headers);
   const rawUserId = extractHeader(headers, 'x-user-id');
+  const rawUserEmail = extractHeader(headers, 'x-user-email');
   const rawGuestId = extractHeader(headers, 'x-guest-session-id');
   const rawLoyaltyTier = extractHeader(headers, 'x-loyalty-tier');
   const rawRoles = extractHeader(headers, 'x-actor-roles');
@@ -55,6 +57,7 @@ export function extractOrderActor(
 
   return {
     userId: rawUserId && UUID_REGEX.test(rawUserId) ? rawUserId : null,
+    actorEmail: rawUserEmail ? rawUserEmail.slice(0, 180) : null,
     guestSessionId: rawGuestId ? rawGuestId.slice(0, 128) : null,
     loyaltyTier: rawLoyaltyTier ? rawLoyaltyTier.toUpperCase() : null,
     actorRoles,
@@ -64,12 +67,44 @@ export function extractOrderActor(
   };
 }
 
+function isAdminOrderActor(actor: OrderActorContext): boolean {
+  return (
+    actor.isInternal ||
+    actor.actorRoles.includes('SUPER_ADMIN') ||
+    actor.actorRoles.includes('ORDER_STAFF')
+  );
+}
+
 @Controller()
 export class OrdersController {
   constructor(
     @Inject(ORDER_CONFIG_TOKEN) private readonly config: OrderRmaConfig,
     private readonly orderRmaService: OrderRmaService,
   ) {}
+
+  @Get('v1/orders')
+  async listOrders(
+    @Query('status') status: string | undefined,
+    @Query('q') q: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @Query('limit') limitRaw: string | undefined,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<ExtendedOrderDTO[]>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+    const data = await this.orderRmaService.listAdminOrders({
+      status,
+      q,
+      from,
+      to,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : 500,
+    });
+    return createApiResponse(data, {
+      correlationId,
+      service: SERVICE_NAME,
+    });
+  }
 
   @Post('v1/orders')
   @HttpCode(HttpStatus.CREATED)
@@ -112,6 +147,38 @@ export class OrdersController {
     });
   }
 
+  @Post('v1/orders/:orderCode/cancel')
+  @HttpCode(HttpStatus.OK)
+  async cancelOrder(
+    @Param('orderCode') orderCode: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<ExtendedOrderDTO | OrderMutationResult>> {
+    const actor = extractOrderActor(headers, this.config.internalServiceSecret);
+    const data = isAdminOrderActor(actor)
+      ? await this.orderRmaService.cancelOrderByAdmin(orderCode, body, actor)
+      : await this.orderRmaService.cancelOrderByCustomer(orderCode, body, actor);
+    return createApiResponse(data, {
+      correlationId: actor.correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('v1/orders/:orderCode/complete')
+  @HttpCode(HttpStatus.OK)
+  async completeOrderDirect(
+    @Param('orderCode') orderCode: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<OrderMutationResult>> {
+    const actor = extractOrderActor(headers, this.config.internalServiceSecret);
+    const data = await this.orderRmaService.completeOrder(orderCode, body, actor);
+    return createApiResponse(data, {
+      correlationId: actor.correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
   @Get('v1/admin/orders/ops-metrics')
   async getOrderOpsMetrics(
     @Headers() headers: HeaderBag,
@@ -128,6 +195,8 @@ export class OrdersController {
   async listAdminOrders(
     @Query('status') status: string | undefined,
     @Query('q') q: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
     @Query('limit') limitRaw: string | undefined,
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<ExtendedOrderDTO[]>> {
@@ -136,10 +205,42 @@ export class OrdersController {
     const data = await this.orderRmaService.listAdminOrders({
       status,
       q,
+      from,
+      to,
       limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
     });
     return createApiResponse(data, {
       correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('v1/admin/orders/:orderCode/cancel')
+  @HttpCode(HttpStatus.OK)
+  async cancelOrderAdmin(
+    @Param('orderCode') orderCode: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<OrderMutationResult>> {
+    const actor = extractOrderActor(headers, this.config.internalServiceSecret);
+    const data = await this.orderRmaService.cancelOrderByAdmin(orderCode, body, actor);
+    return createApiResponse(data, {
+      correlationId: actor.correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('v1/admin/orders/:orderCode/complete')
+  @HttpCode(HttpStatus.OK)
+  async completeOrderAdmin(
+    @Param('orderCode') orderCode: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<OrderMutationResult>> {
+    const actor = extractOrderActor(headers, this.config.internalServiceSecret);
+    const data = await this.orderRmaService.completeOrder(orderCode, body, actor);
+    return createApiResponse(data, {
+      correlationId: actor.correlationId,
       service: SERVICE_NAME,
     });
   }
@@ -167,14 +268,19 @@ export class OrdersController {
   @HttpCode(HttpStatus.OK)
   async shipOrder(
     @Param('orderCode') orderCode: string,
+    @Body() body: unknown,
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<ExtendedOrderDTO>> {
     const correlationId = getOrCreateCorrelationId(headers);
     const traceparent = getOrCreateTraceparent(headers);
-    const data = await this.orderRmaService.shipOrder(orderCode, {
-      correlationId,
-      traceparent,
-    });
+    const data = await this.orderRmaService.shipOrder(
+      orderCode,
+      {
+        correlationId,
+        traceparent,
+      },
+      body,
+    );
     return createApiResponse(data, {
       correlationId,
       service: SERVICE_NAME,

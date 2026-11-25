@@ -249,11 +249,38 @@ function parseRespCommands(buffer) {
 }
 
 function createRedisServer(port, expectedPassword) {
-  /** @type {Map<number, Map<string, { type: 'string' | 'hash', value?: Buffer, hash?: Map<string, Buffer>, expiresAt: number | null }>>} */
+  /** @type {Map<number, Map<string, { type: 'string' | 'hash' | 'list', value?: Buffer, hash?: Map<string, Buffer>, list?: Buffer[], expiresAt: number | null }>>} */
   const databases = new Map();
   /** @type {Map<string, string>} */
   const scriptCache = new Map();
   const sockets = new Set();
+  /** @type {Map<string, Set<net.Socket>>} */
+  const channelSubscribers = new Map();
+  /** @type {Map<string, { regex: RegExp, sockets: Set<net.Socket> }>} */
+  const patternSubscribers = new Map();
+
+  function getTotalSubCount(connState) {
+    return connState.channels.size + connState.patterns.size;
+  }
+
+  function cleanupSocketSubscriptions(socket, connState) {
+    for (const ch of connState.channels) {
+      const set = channelSubscribers.get(ch);
+      if (set) {
+        set.delete(socket);
+        if (set.size === 0) channelSubscribers.delete(ch);
+      }
+    }
+    connState.channels.clear();
+    for (const pat of connState.patterns) {
+      const entry = patternSubscribers.get(pat);
+      if (entry) {
+        entry.sockets.delete(socket);
+        if (entry.sockets.size === 0) patternSubscribers.delete(pat);
+      }
+    }
+    connState.patterns.clear();
+  }
 
   function getDb(dbIndex) {
     let db = databases.get(dbIndex);
@@ -575,6 +602,9 @@ function createRedisServer(port, expectedPassword) {
         return encodeSimple('OK');
       }
       case 'PING': {
+        if (getTotalSubCount(connState) > 0) {
+          return encodeArray([encodeBulk('pong'), encodeBulk(args[0] ?? '')]);
+        }
         if (args.length > 0) {
           return encodeBulk(args[0]);
         }
@@ -624,12 +654,12 @@ function createRedisServer(port, expectedPassword) {
       case 'TYPE': {
         const entry = getLiveEntry(db, strArgs[0] ?? '');
         if (!entry) return encodeSimple('none');
-        return encodeSimple(entry.type === 'hash' ? 'hash' : 'string');
+        return encodeSimple(entry.type);
       }
       case 'GET': {
         const entry = getLiveEntry(db, strArgs[0] ?? '');
         if (!entry) return encodeBulk(null);
-        if (entry.type === 'hash') {
+        if (entry.type !== 'string') {
           return encodeError('WRONGTYPE Operation against a key holding the wrong kind of value');
         }
         return encodeBulk(entry.value);
@@ -637,7 +667,7 @@ function createRedisServer(port, expectedPassword) {
       case 'MGET': {
         const vals = strArgs.map((k) => {
           const e = getLiveEntry(db, k);
-          return encodeBulk(e && e.type !== 'hash' ? e.value : null);
+          return encodeBulk(e && e.type === 'string' ? e.value : null);
         });
         return encodeArray(vals);
       }
@@ -1001,6 +1031,171 @@ function createRedisServer(port, expectedPassword) {
         const nextCursor = cursor + count >= allMatching.length ? '0' : String(cursor + count);
         return encodeArray([encodeBulk(nextCursor), encodeArray(page.map((k) => encodeBulk(k)))]);
       }
+      case 'RPUSH':
+      case 'LPUSH': {
+        if (args.length < 2) {
+          return encodeError(`ERR wrong number of arguments for '${cmd.toLowerCase()}' command`);
+        }
+        const key = strArgs[0];
+        let entry = getLiveEntry(db, key);
+        if (entry && entry.type !== 'list') {
+          return encodeError('WRONGTYPE Operation against a key holding the wrong kind of value');
+        }
+        if (!entry) {
+          entry = { type: 'list', list: [], expiresAt: null };
+          db.set(key, entry);
+        }
+        for (let i = 1; i < args.length; i += 1) {
+          const item = Buffer.from(args[i]);
+          if (cmd === 'RPUSH') entry.list.push(item);
+          else entry.list.unshift(item);
+        }
+        return encodeInteger(entry.list.length);
+      }
+      case 'LLEN': {
+        const entry = getLiveEntry(db, strArgs[0] ?? '');
+        if (!entry) return encodeInteger(0);
+        if (entry.type !== 'list') {
+          return encodeError('WRONGTYPE Operation against a key holding the wrong kind of value');
+        }
+        return encodeInteger(entry.list.length);
+      }
+      case 'LRANGE': {
+        if (args.length < 3) {
+          return encodeError("ERR wrong number of arguments for 'lrange' command");
+        }
+        const entry = getLiveEntry(db, strArgs[0] ?? '');
+        if (!entry) return encodeArray([]);
+        if (entry.type !== 'list') {
+          return encodeError('WRONGTYPE Operation against a key holding the wrong kind of value');
+        }
+        const len = entry.list.length;
+        let start = Number.parseInt(strArgs[1], 10);
+        let stop = Number.parseInt(strArgs[2], 10);
+        if (Number.isNaN(start) || Number.isNaN(stop)) {
+          return encodeError('ERR value is not an integer or out of range');
+        }
+        if (start < 0) start = len + start;
+        if (stop < 0) stop = len + stop;
+        if (start < 0) start = 0;
+        if (stop >= len) stop = len - 1;
+        if (start > stop || start >= len) return encodeArray([]);
+        return encodeArray(entry.list.slice(start, stop + 1).map((item) => encodeBulk(item)));
+      }
+      case 'LTRIM': {
+        if (args.length < 3) {
+          return encodeError("ERR wrong number of arguments for 'ltrim' command");
+        }
+        const key = strArgs[0] ?? '';
+        const entry = getLiveEntry(db, key);
+        if (!entry) return encodeSimple('OK');
+        if (entry.type !== 'list') {
+          return encodeError('WRONGTYPE Operation against a key holding the wrong kind of value');
+        }
+        const len = entry.list.length;
+        let start = Number.parseInt(strArgs[1], 10);
+        let stop = Number.parseInt(strArgs[2], 10);
+        if (Number.isNaN(start) || Number.isNaN(stop)) {
+          return encodeError('ERR value is not an integer or out of range');
+        }
+        if (start < 0) start = len + start;
+        if (stop < 0) stop = len + stop;
+        if (start < 0) start = 0;
+        if (stop >= len) stop = len - 1;
+        if (start > stop || start >= len) {
+          db.delete(key);
+        } else {
+          entry.list = entry.list.slice(start, stop + 1);
+        }
+        return encodeSimple('OK');
+      }
+      case 'LPOP':
+      case 'RPOP': {
+        const key = strArgs[0] ?? '';
+        const entry = getLiveEntry(db, key);
+        if (!entry) return encodeBulk(null);
+        if (entry.type !== 'list') {
+          return encodeError('WRONGTYPE Operation against a key holding the wrong kind of value');
+        }
+        if (args.length >= 2) {
+          const count = Math.max(0, Number.parseInt(strArgs[1], 10) || 0);
+          const out = [];
+          for (let i = 0; i < count && entry.list.length > 0; i += 1) {
+            out.push(encodeBulk(cmd === 'LPOP' ? entry.list.shift() : entry.list.pop()));
+          }
+          if (entry.list.length === 0) db.delete(key);
+          return encodeArray(out);
+        }
+        const val = cmd === 'LPOP' ? entry.list.shift() : entry.list.pop();
+        if (entry.list.length === 0) db.delete(key);
+        return encodeBulk(val ?? null);
+      }
+      case 'PUBLISH':
+      case 'SPUBLISH': {
+        if (args.length < 2) {
+          return encodeError(`ERR wrong number of arguments for '${cmd.toLowerCase()}' command`);
+        }
+        const channel = strArgs[0];
+        const msgBuf = Buffer.from(args[1]);
+        let delivered = 0;
+        const exactSet = channelSubscribers.get(channel);
+        if (exactSet && exactSet.size > 0) {
+          const frame = encodeArray([encodeBulk('message'), encodeBulk(channel), encodeBulk(msgBuf)]);
+          for (const subSock of exactSet) {
+            if (!subSock.destroyed) {
+              try {
+                subSock.write(frame);
+                delivered += 1;
+              } catch {
+                // ignore broken socket
+              }
+            }
+          }
+        }
+        for (const [pattern, patEntry] of patternSubscribers.entries()) {
+          if (patEntry.regex.test(channel)) {
+            const frame = encodeArray([
+              encodeBulk('pmessage'),
+              encodeBulk(pattern),
+              encodeBulk(channel),
+              encodeBulk(msgBuf),
+            ]);
+            for (const subSock of patEntry.sockets) {
+              if (!subSock.destroyed) {
+                try {
+                  subSock.write(frame);
+                  delivered += 1;
+                } catch {
+                  // ignore broken socket
+                }
+              }
+            }
+          }
+        }
+        return encodeInteger(delivered);
+      }
+      case 'PUBSUB': {
+        const sub = (strArgs[0] || '').toUpperCase();
+        if (sub === 'CHANNELS') {
+          const pat = strArgs[1] ? globToRegExp(strArgs[1]) : null;
+          const out = [];
+          for (const ch of channelSubscribers.keys()) {
+            if (!pat || pat.test(ch)) out.push(encodeBulk(ch));
+          }
+          return encodeArray(out);
+        }
+        if (sub === 'NUMSUB') {
+          const out = [];
+          for (const ch of strArgs.slice(1)) {
+            out.push(encodeBulk(ch), encodeInteger(channelSubscribers.get(ch)?.size ?? 0));
+          }
+          return encodeArray(out);
+        }
+        if (sub === 'NUMPAT') {
+          return encodeInteger(patternSubscribers.size);
+        }
+        return encodeArray([]);
+      }
       case 'FLUSHDB': {
         db.clear();
         return encodeSimple('OK');
@@ -1022,10 +1217,16 @@ function createRedisServer(port, expectedPassword) {
       currentDb: 0,
       clientName: null,
       multiQueue: null,
+      channels: new Set(),
+      patterns: new Set(),
     };
 
-    socket.on('close', () => sockets.delete(socket));
-    socket.on('error', () => sockets.delete(socket));
+    const cleanup = () => {
+      sockets.delete(socket);
+      cleanupSocketSubscriptions(socket, connState);
+    };
+    socket.on('close', cleanup);
+    socket.on('error', cleanup);
 
     socket.on('data', (chunk) => {
       recvBuf = Buffer.concat([recvBuf, chunk]);
@@ -1041,6 +1242,68 @@ function createRedisServer(port, expectedPassword) {
           socket.write(encodeSimple('OK'));
           socket.end();
           break;
+        }
+        if (cmd === 'SUBSCRIBE' || cmd === 'SSUBSCRIBE') {
+          const kind = cmd === 'SSUBSCRIBE' ? 'ssubscribe' : 'subscribe';
+          for (const ch of strArgs) {
+            let set = channelSubscribers.get(ch);
+            if (!set) {
+              set = new Set();
+              channelSubscribers.set(ch, set);
+            }
+            set.add(socket);
+            connState.channels.add(ch);
+            socket.write(encodeArray([encodeBulk(kind), encodeBulk(ch), encodeInteger(getTotalSubCount(connState))]));
+          }
+          continue;
+        }
+        if (cmd === 'UNSUBSCRIBE' || cmd === 'SUNSUBSCRIBE') {
+          const kind = cmd === 'SUNSUBSCRIBE' ? 'sunsubscribe' : 'unsubscribe';
+          const targets = strArgs.length > 0 ? strArgs : [...connState.channels];
+          if (targets.length === 0) {
+            socket.write(encodeArray([encodeBulk(kind), encodeBulk(null), encodeInteger(getTotalSubCount(connState))]));
+          } else {
+            for (const ch of targets) {
+              connState.channels.delete(ch);
+              const set = channelSubscribers.get(ch);
+              if (set) {
+                set.delete(socket);
+                if (set.size === 0) channelSubscribers.delete(ch);
+              }
+              socket.write(encodeArray([encodeBulk(kind), encodeBulk(ch), encodeInteger(getTotalSubCount(connState))]));
+            }
+          }
+          continue;
+        }
+        if (cmd === 'PSUBSCRIBE') {
+          for (const pat of strArgs) {
+            let patEntry = patternSubscribers.get(pat);
+            if (!patEntry) {
+              patEntry = { regex: globToRegExp(pat), sockets: new Set() };
+              patternSubscribers.set(pat, patEntry);
+            }
+            patEntry.sockets.add(socket);
+            connState.patterns.add(pat);
+            socket.write(encodeArray([encodeBulk('psubscribe'), encodeBulk(pat), encodeInteger(getTotalSubCount(connState))]));
+          }
+          continue;
+        }
+        if (cmd === 'PUNSUBSCRIBE') {
+          const targets = strArgs.length > 0 ? strArgs : [...connState.patterns];
+          if (targets.length === 0) {
+            socket.write(encodeArray([encodeBulk('punsubscribe'), encodeBulk(null), encodeInteger(getTotalSubCount(connState))]));
+          } else {
+            for (const pat of targets) {
+              connState.patterns.delete(pat);
+              const patEntry = patternSubscribers.get(pat);
+              if (patEntry) {
+                patEntry.sockets.delete(socket);
+                if (patEntry.sockets.size === 0) patternSubscribers.delete(pat);
+              }
+              socket.write(encodeArray([encodeBulk('punsubscribe'), encodeBulk(pat), encodeInteger(getTotalSubCount(connState))]));
+            }
+          }
+          continue;
         }
         if (cmd === 'MULTI') {
           if (connState.multiQueue !== null) {

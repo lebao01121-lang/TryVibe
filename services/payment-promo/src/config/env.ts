@@ -29,6 +29,7 @@ export interface PaymentPromoConfig {
   corsAllowedOrigins: string[];
   internalServiceSecret: string;
   storefrontPublicUrl: string;
+  bffPublicUrl: string;
   database: {
     envVar: string;
     url: string;
@@ -50,6 +51,36 @@ export interface PaymentPromoConfig {
     VIETQR: string;
     VNPAY: string;
     MOMO: string;
+  };
+  vietqr: {
+    bankBin: string;
+    accountNo: string;
+    accountName: string;
+  };
+  payos: {
+    clientId: string;
+    apiKey: string;
+    checksumKey: string;
+    baseUrl: string;
+    isLiveConfigured: boolean;
+  };
+  vnpay: {
+    tmnCode: string;
+    hashSecret: string;
+    paymentUrl: string;
+    apiUrl: string;
+    returnUrl: string;
+    isLiveConfigured: boolean;
+    liveApiEnabled: boolean;
+  };
+  momo: {
+    partnerCode: string;
+    accessKey: string;
+    secretKey: string;
+    apiUrl: string;
+    redirectUrl: string;
+    ipnUrl: string;
+    isLiveConfigured: boolean;
   };
 }
 
@@ -137,6 +168,45 @@ export function loadPaymentPromoConfig(): PaymentPromoConfig {
     process.env.STOREFRONT_URL?.trim() ||
     'http://localhost:3000'
   ).replace(/\/+$/, '');
+  const bffPublicUrl = (
+    process.env.BFF_PUBLIC_URL?.trim() ||
+    process.env.NEXT_PUBLIC_BFF_URL?.trim() ||
+    'http://localhost:4000'
+  ).replace(/\/+$/, '');
+
+  const defaultReturnUrl = `${storefrontPublicUrl}/thanh-toan/ket-qua`;
+
+  const vietqrWebhookSecret =
+    process.env.VIETQR_WEBHOOK_SECRET?.trim() || 'Atelier_VietQR_Hmac_2026!';
+  const vnpayWebhookSecret =
+    process.env.VNPAY_WEBHOOK_SECRET?.trim() || 'Atelier_VNPay_Hmac_2026!';
+  const momoWebhookSecret =
+    process.env.MOMO_WEBHOOK_SECRET?.trim() || 'Atelier_MoMo_Hmac_2026!';
+
+  const payosClientId = process.env.PAYOS_CLIENT_ID?.trim() || '';
+  const payosApiKey = process.env.PAYOS_API_KEY?.trim() || '';
+  const payosChecksumKey = process.env.PAYOS_CHECKSUM_KEY?.trim() || '';
+  const payosBaseUrl = (
+    process.env.PAYOS_BASE_URL?.trim() || 'https://api-merchant.payos.vn'
+  ).replace(/\/+$/, '');
+  const payosLiveConfigured = Boolean(payosClientId && payosApiKey && payosChecksumKey);
+
+  const rawVnpayTmnCode = process.env.VNPAY_TMN_CODE?.trim() || '';
+  const rawVnpayHashSecret = process.env.VNPAY_HASH_SECRET?.trim() || '';
+  const rawVnpayApiUrl = process.env.VNPAY_API_URL?.trim() || '';
+  const vnpayIsLiveConfigured = Boolean(rawVnpayTmnCode && rawVnpayHashSecret);
+  const vnpayLiveApiEnabled = Boolean(
+    vnpayIsLiveConfigured &&
+      (process.env.VNPAY_LIVE_API?.trim().toLowerCase() === 'true' ||
+        (rawVnpayApiUrl.length > 0 && rawVnpayHashSecret !== vnpayWebhookSecret)),
+  );
+
+  const rawMomoPartnerCode = process.env.MOMO_PARTNER_CODE?.trim() || '';
+  const rawMomoAccessKey = process.env.MOMO_ACCESS_KEY?.trim() || '';
+  const rawMomoSecretKey = process.env.MOMO_SECRET_KEY?.trim() || '';
+  const momoIsLiveConfigured = Boolean(
+    rawMomoPartnerCode && rawMomoAccessKey && rawMomoSecretKey,
+  );
 
   return {
     serviceName: SERVICE_NAME,
@@ -147,6 +217,7 @@ export function loadPaymentPromoConfig(): PaymentPromoConfig {
     internalServiceSecret:
       process.env.INTERNAL_SERVICE_SECRET?.trim() || 'Atelier_Internal_Svc_2026!',
     storefrontPublicUrl,
+    bffPublicUrl,
     database: parseIsolatedDatabaseTarget(process.env.PAYMENT_DATABASE_URL),
     infra: {
       redisUrl,
@@ -158,9 +229,46 @@ export function loadPaymentPromoConfig(): PaymentPromoConfig {
       orderRmaServiceUrl,
     },
     webhookSecrets: {
-      VIETQR: process.env.VIETQR_WEBHOOK_SECRET?.trim() || 'Atelier_VietQR_Hmac_2026!',
-      VNPAY: process.env.VNPAY_WEBHOOK_SECRET?.trim() || 'Atelier_VNPay_Hmac_2026!',
-      MOMO: process.env.MOMO_WEBHOOK_SECRET?.trim() || 'Atelier_MoMo_Hmac_2026!',
+      VIETQR: vietqrWebhookSecret,
+      VNPAY: vnpayWebhookSecret,
+      MOMO: momoWebhookSecret,
+    },
+    vietqr: {
+      bankBin: process.env.VIETQR_BANK_BIN?.trim() || '970422',
+      accountNo: process.env.VIETQR_ACCOUNT_NO?.trim() || '088820269999',
+      accountName: process.env.VIETQR_ACCOUNT_NAME?.trim() || 'TAM XUAN ATELIER',
+    },
+    payos: {
+      clientId: payosClientId,
+      apiKey: payosApiKey,
+      checksumKey: payosChecksumKey,
+      baseUrl: payosBaseUrl,
+      isLiveConfigured: payosLiveConfigured,
+    },
+    vnpay: {
+      tmnCode: rawVnpayTmnCode || 'ATELIER01',
+      hashSecret: rawVnpayHashSecret || vnpayWebhookSecret,
+      paymentUrl:
+        process.env.VNPAY_PAYMENT_URL?.trim() ||
+        'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
+      apiUrl:
+        rawVnpayApiUrl ||
+        'https://sandbox.vnpayment.vn/merchant_webapi/api/transaction',
+      returnUrl: process.env.VNPAY_RETURN_URL?.trim() || defaultReturnUrl,
+      isLiveConfigured: vnpayIsLiveConfigured,
+      liveApiEnabled: vnpayLiveApiEnabled,
+    },
+    momo: {
+      partnerCode: rawMomoPartnerCode || 'ATELIER_MOMO',
+      accessKey: rawMomoAccessKey || 'ATELIER_MOMO_ACCESS_KEY',
+      secretKey: rawMomoSecretKey || momoWebhookSecret,
+      apiUrl: (
+        process.env.MOMO_API_URL?.trim() || 'https://test-payment.momo.vn'
+      ).replace(/\/+$/, ''),
+      redirectUrl: process.env.MOMO_REDIRECT_URL?.trim() || defaultReturnUrl,
+      ipnUrl:
+        process.env.MOMO_IPN_URL?.trim() || `${bffPublicUrl}/bff/v1/payments/momo/ipn`,
+      isLiveConfigured: momoIsLiveConfigured,
     },
   };
 }

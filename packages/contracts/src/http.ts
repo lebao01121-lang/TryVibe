@@ -59,6 +59,7 @@ export const ErrorCode = {
   PO_DRAFT_FORBIDDEN_FOR_SUPPLIER: 'PO_DRAFT_FORBIDDEN_FOR_SUPPLIER',
   ORDER_NOT_DELIVERED: 'ORDER_NOT_DELIVERED',
   PROMPT_INJECTION_BLOCKED: 'PROMPT_INJECTION_BLOCKED',
+  REFUND_EXCEEDS_BALANCE: 'REFUND_EXCEEDS_BALANCE',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -97,6 +98,7 @@ export const ErrorCodeSchema = z.enum([
   ErrorCode.PO_DRAFT_FORBIDDEN_FOR_SUPPLIER,
   ErrorCode.ORDER_NOT_DELIVERED,
   ErrorCode.PROMPT_INJECTION_BLOCKED,
+  ErrorCode.REFUND_EXCEEDS_BALANCE,
 ]);
 
 export interface ApiError {
@@ -126,6 +128,14 @@ export interface PaginationMeta {
   hasNext: boolean;
   hasPrevious: boolean;
 }
+
+export const PagePaginationSchema = z.object({
+  page: z.number().int().positive(),
+  limit: z.number().int().positive(),
+  total: z.number().int().nonnegative(),
+  totalPages: z.number().int().nonnegative(),
+});
+export type PagePagination = z.infer<typeof PagePaginationSchema>;
 
 export interface PaginatedResponse<T> {
   success: boolean;

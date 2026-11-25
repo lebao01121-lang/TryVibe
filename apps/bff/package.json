@@ -8,7 +8,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/main.js",
-    "dev": "tsx watch src/main.ts"
+    "dev": "tsx watch src/main.ts",
+    "lint": "eslint .",
+    "test": "vitest run"
   },
   "dependencies": {
     "@atelier/ai-harness": "workspace:*",
@@ -20,7 +22,9 @@
     "@nestjs/platform-express": "^11.0.12",
     "@nestjs/platform-socket.io": "^11.0.12",
     "@nestjs/websockets": "^11.0.12",
+    "@socket.io/redis-adapter": "^8.3.0",
     "cookie-parser": "^1.4.7",
+    "ioredis": "^5.4.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.1"

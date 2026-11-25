@@ -475,12 +475,14 @@ async function runTest1FiftyConcurrentStress(sharedState) {
   console.log('\n--- Running Test 1: 50-Request Concurrency Stress Test (Zero Oversell on SKU stock = 5) ---');
   const details = [];
   const runId = crypto.randomBytes(4).toString('hex');
+  const internalSecret = sharedState.internalSecret || process.env.INTERNAL_SERVICE_SECRET || 'Atelier_Internal_Svc_2026!';
   try {
     const sku = sharedState.stressSku;
     assert.ok(sku?.id, 'Missing seeded stressSku');
 
     const setRes = await apiRequest(`${INVENTORY_BASE}/v1/inventory/internal/test-set-stock`, {
       method: 'POST',
+      headers: { 'x-internal-secret': internalSecret },
       body: { skuId: sku.id, availableQty: 5, reservedQty: 0 },
     });
     assert.ok(setRes.status >= 200 && setRes.status < 300, `test-set-stock failed (${setRes.status}): ${setRes.text}`);
@@ -555,6 +557,7 @@ async function runTest2DeadlockAndAutoRelease(sharedState, redisClient) {
   console.log('\n--- Running Test 2: 20-Request Reverse-Order Multi-SKU Deadlock Test & 15-Minute Auto-Release ---');
   const details = [];
   const runId = crypto.randomBytes(4).toString('hex');
+  const internalSecret = sharedState.internalSecret || process.env.INTERNAL_SERVICE_SECRET || 'Atelier_Internal_Svc_2026!';
   try {
     const [skuA, skuB, skuC] = sharedState.deadlockSkus;
     assert.ok(skuA?.id && skuB?.id && skuC?.id, 'Missing 3 distinct seeded SKUs for deadlock test');
@@ -562,6 +565,7 @@ async function runTest2DeadlockAndAutoRelease(sharedState, redisClient) {
     for (const s of [skuA, skuB, skuC]) {
       const r = await apiRequest(`${INVENTORY_BASE}/v1/inventory/internal/test-set-stock`, {
         method: 'POST',
+        headers: { 'x-internal-secret': internalSecret },
         body: { skuId: s.id, availableQty: 30, reservedQty: 0 },
       });
       assert.ok(r.status >= 200 && r.status < 300, `test-set-stock failed for ${s.skuCode}: ${r.text}`);
@@ -630,12 +634,14 @@ async function runTest2DeadlockAndAutoRelease(sharedState, redisClient) {
     const targetRefId = `p4-deadlock-${runId}-0`;
     const expRes = await apiRequest(`${INVENTORY_BASE}/v1/inventory/internal/test-expire-reservation`, {
       method: 'POST',
+      headers: { 'x-internal-secret': internalSecret },
       body: { referenceId: targetRefId },
     });
     assert.ok(expRes.status >= 200 && expRes.status < 300, `test-expire-reservation failed: ${expRes.text}`);
 
     const runExpRes = await apiRequest(`${INVENTORY_BASE}/v1/inventory/internal/run-expire`, {
       method: 'POST',
+      headers: { 'x-internal-secret': internalSecret },
       body: {},
     });
     assert.ok(runExpRes.status >= 200 && runExpRes.status < 300, `run-expire failed: ${runExpRes.text}`);
@@ -991,10 +997,18 @@ async function runTest5TwoStepRealtimeAndPolling(sharedState) {
     const { tempImageId, objectKey, sha256Hash, authHeaders } = sharedState.tryonUpload;
     const { upper, lower } = sharedState.outfitFixtures;
 
+    const bearerRaw = authHeaders?.Authorization || authHeaders?.authorization || '';
+    const bearerToken = bearerRaw.replace(/^Bearer\s+/i, '').trim();
+    const guestSess = authHeaders?.['X-Guest-Session-Id'] || authHeaders?.['x-guest-session-id'] || '';
+
     socket = io(`${BFF_BASE}/realtime`, {
       transports: ['websocket', 'polling'],
       reconnection: false,
       timeout: 8000,
+      auth: {
+        ...(bearerToken ? { token: bearerToken } : {}),
+        ...(guestSess ? { guestSessionId: guestSess } : {}),
+      },
     });
 
     await new Promise((resolve, reject) => {
@@ -1684,6 +1698,7 @@ async function main() {
     assert.ok(freeSkus.length >= 4, 'Need at least 4 spare SKUs for Test 1 & Test 2');
     sharedState.stressSku = freeSkus[0];
     sharedState.deadlockSkus = [freeSkus[1], freeSkus[2], freeSkus[3]];
+    sharedState.internalSecret = serviceEnv.INTERNAL_SERVICE_SECRET;
 
     // Execute Tests 1..7 sequentially
     await runTest1FiftyConcurrentStress(sharedState);

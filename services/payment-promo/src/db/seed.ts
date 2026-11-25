@@ -14,6 +14,7 @@ interface PromotionSeedEntry {
   usageLimit: number;
   perUserLimit: number;
   status: string;
+  createdByActorType?: 'USER' | 'AI_COPILOT' | 'SYSTEM';
 }
 
 export const PROMOTION_SEEDS: readonly PromotionSeedEntry[] = [
@@ -77,6 +78,23 @@ export const PROMOTION_SEEDS: readonly PromotionSeedEntry[] = [
     perUserLimit: 5,
     status: 'ACTIVE',
   },
+  {
+    id: '71000000-0000-4000-8000-000000000005',
+    code: 'AI_CLEARANCE_DRAFT_01',
+    name: 'Đề xuất AI — Xả hàng Lẻ Size Cuối Mùa (20%)',
+    description:
+      'Chiến dịch nháp do AI Copilot đề xuất cho các mã lẻ size XS/XL/XXL tồn kho chậm quay vòng (chờ phê duyệt HITL).',
+    promoType: 'CLEARANCE_ODD_SIZE',
+    discountValue: 20,
+    maxDiscountVnd: 1_200_000,
+    minOrderVnd: 800_000,
+    targetSizes: ['XS', 'XL', 'XXL'],
+    bonusTryonCredits: 0,
+    usageLimit: 150,
+    perUserLimit: 3,
+    status: 'NHAP_AI',
+    createdByActorType: 'AI_COPILOT',
+  },
 ] as const;
 
 export async function seedPromotionsIdempotently(db: AtelierDbClient): Promise<number> {
@@ -94,7 +112,7 @@ export async function seedPromotionsIdempotently(db: AtelierDbClient): Promise<n
         $1, $2, $3, $4, $5, $6,
         $7, $8, $9::jsonb,
         $10, $11, 0, $12,
-        $13, 'SYSTEM', NOW() - INTERVAL '1 day', NOW() + INTERVAL '365 days'
+        $13, $14, NOW() - INTERVAL '1 day', NOW() + INTERVAL '365 days'
       )
       ON CONFLICT (code) DO NOTHING
       RETURNING id
@@ -113,6 +131,7 @@ export async function seedPromotionsIdempotently(db: AtelierDbClient): Promise<n
         promo.usageLimit,
         promo.perUserLimit,
         promo.status,
+        promo.createdByActorType ?? 'SYSTEM',
       ],
     );
     if (res.rows.length > 0) {

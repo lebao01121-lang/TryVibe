@@ -7,6 +7,7 @@ export {
   authorizeToolCall,
   canRolesReadCostFields,
   redactRestrictedFields,
+  redactStorefrontPayload,
   type AuthorizableTool,
   type CallerAuthContext,
   type ToolAuthorizationDecision,

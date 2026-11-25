@@ -2594,7 +2594,7 @@ Mật khẩu chung cho toàn bộ tài khoản demo nội bộ và kiểm thử:
 
 | Vai trò (Role) | Email đăng nhập | Cổng truy cập | Yêu cầu 2FA | Phạm vi đặc quyền chính |
 |---|---|---|---|---|
-| `SUPER_ADMIN` | `admin@atelier.local` | `:3001` | **Bắt buộc** (TOTP / Mailpit OTP) | Toàn quyền IAM/RBAC, AI Ops/Health, Replay/Purge `*.dlq`, Giá vốn |
+| `SUPER_ADMIN` | `lebao01121@gmail.com` | `:3001` | **Bắt buộc** (TOTP / Mailpit OTP) | Toàn quyền IAM/RBAC, AI Ops/Health, Replay/Purge `*.dlq`, Giá vốn |
 | `CATALOG_AI_OPERATOR` | `operator@atelier.local` | `:3001` | Không | Quản trị SPU/SKU, Dual Media Studio, AI Lookbook Studio (Ẩn giá vốn) |
 | `WAREHOUSE_MANAGER` | `warehouse@atelier.local` | `:3001` | **Bắt buộc** (TOTP / Mailpit OTP) | Tồn kho đa kho, Duyệt PO `NHAP_AI`, Nghiệm thu GRN, Xem giá vốn |
 | `ORDER_STAFF` | `staff@atelier.local` | `:3001` | Không | Đóng gói + Ảnh hộp quà, Giao vận, Hoàn tiền trễ, Duyệt & QC RMA (Chặn `403` tạo PO) |

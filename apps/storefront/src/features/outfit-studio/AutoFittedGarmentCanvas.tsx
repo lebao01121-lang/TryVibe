@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { OutfitSlot } from '@atelier/contracts';
+import { useMotionState } from '@atelier/motion-kit';
+import { useAdaptivePerformance } from '@/lib/performance/AdaptivePerformanceProvider';
 import {
   calibrateGarment,
   drawCalibratedGarment,
@@ -136,7 +138,27 @@ export function AutoFittedGarmentCanvas({
 
   const [renderReady, setRenderReady] = useState(false);
   const [transitionPulse, setTransitionPulse] = useState(false);
+  const [isPageHidden, setIsPageHidden] = useState(false);
   const prevSigRef = useRef<string>('');
+
+  const { cameraActive, reducedMotion: globalReducedMotion } = useMotionState();
+  const { isLowPower, tier: perfTier } = useAdaptivePerformance();
+  const effectiveReducedMotion =
+    reducedMotion || globalReducedMotion || isLowPower || cameraActive;
+  const effectiveReducedMotionRef = useRef(effectiveReducedMotion);
+  effectiveReducedMotionRef.current = effectiveReducedMotion;
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const handleVisibility = () => {
+      setIsPageHidden(document.hidden);
+    };
+    handleVisibility();
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
 
   const compositionSignature = useMemo(
     () =>
@@ -170,8 +192,9 @@ export function AutoFittedGarmentCanvas({
       canvasElementRef.current = canvas;
     }
 
-    const dpr =
-      typeof window !== 'undefined'
+    const dpr = isLowPower
+      ? 1
+      : typeof window !== 'undefined'
         ? Math.min(Math.max(window.devicePixelRatio || 1, 1), 2)
         : 1;
     const targetW = Math.round(STAGE_W * dpr);
@@ -391,7 +414,11 @@ export function AutoFittedGarmentCanvas({
         onLayoutRef.current?.(layout);
       }
 
-      if (isNewComposition && !reducedMotion) {
+      if (
+        isNewComposition &&
+        !effectiveReducedMotionRef.current &&
+        !(typeof document !== 'undefined' && document.hidden)
+      ) {
         setTransitionPulse(true);
         window.requestAnimationFrame(() => {
           setTransitionPulse(false);
@@ -411,9 +438,9 @@ export function AutoFittedGarmentCanvas({
     hasOnePiece,
     hasPairedBottom,
     isActiveFace,
+    isLowPower,
     lightingMode,
     ordered,
-    reducedMotion,
   ]);
 
   const ariaLabel = useMemo(() => {
@@ -446,12 +473,15 @@ export function AutoFittedGarmentCanvas({
       data-logical-width={STAGE_W}
       data-logical-height={STAGE_H}
       data-render-ready={renderReady ? 'true' : 'false'}
+      data-perf-tier={perfTier}
+      data-canvas-dpr={isLowPower ? '1' : 'auto'}
       data-slots={ordered.map((item) => item.slot).join(',')}
       className="h-full w-full select-none"
       style={{
-        transition: reducedMotion
-          ? 'none'
-          : 'opacity 450ms cubic-bezier(0.22, 0.8, 0.22, 1), transform 450ms cubic-bezier(0.22, 0.8, 0.22, 1)',
+        transition:
+          effectiveReducedMotion || isPageHidden
+            ? 'none'
+            : 'opacity 450ms cubic-bezier(0.22, 0.8, 0.22, 1), transform 450ms cubic-bezier(0.22, 0.8, 0.22, 1)',
         opacity: transitionPulse ? 0.68 : 1,
         transform: transitionPulse ? 'scale(0.985)' : 'scale(1)',
       }}

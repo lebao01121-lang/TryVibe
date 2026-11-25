@@ -11,5 +11,8 @@
     "./base.json": "./base.json",
     "./nextjs.json": "./nextjs.json",
     "./nestjs.json": "./nestjs.json"
+  },
+  "scripts": {
+    "lint": "eslint --no-error-on-unmatched-pattern ."
   }
 }

@@ -6,6 +6,17 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      canary_dry_run:
+        description: 'Run Stage 3 canary gate in dry-run mode (no NGINX traffic shift)'
+        required: false
+        default: 'false'
+        type: boolean
+      canary_phases:
+        description: 'Comma-separated progressive canary rollout phases (%)'
+        required: false
+        default: '10,50,100'
+        type: string
 
 concurrency:
   group: atelier-ci-${{ github.ref }}
@@ -19,12 +30,12 @@ env:
 
 jobs:
   # ============================================================================
-  # Stage 1: PR Quality, Security Isolation, AI Harness Evals & Python Check
+  # Stage 1: PR Quality, Security Isolation, Unit Tests (TS + Pytest) & AI Evals
   # ============================================================================
   pr-quality-security:
-    name: Stage 1 - Quality, Security & AI Evals
+    name: Stage 1 - Quality, Coverage, Security & AI Evals
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -49,7 +60,7 @@ jobs:
       - name: Install workspace dependencies (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
-      - name: Build shared workspace packages for static checks
+      - name: Build shared workspace packages for static checks & tests
         run: |
           pnpm --filter @atelier/contracts build
           pnpm --filter @atelier/observability build
@@ -57,11 +68,43 @@ jobs:
           pnpm --filter @atelier/motion-kit build
           pnpm --filter @atelier/ai-harness build
 
-      - name: Lint monorepo
+      - name: Verify @atelier/contracts is 100% browser-safe (zero node:* imports)
+        run: |
+          if grep -rn "node:" packages/contracts/src; then
+            echo "ERROR: Forbidden node:* import found in packages/contracts/src"
+            exit 1
+          fi
+          echo "PASS: packages/contracts/src is 100% browser-safe"
+
+      - name: Lint monorepo (ESLint v9 Flat Config)
         run: pnpm lint
 
       - name: Typecheck all 21 workspaces
         run: pnpm typecheck
+
+      - name: TypeScript Unit Tests & V8 Coverage (Vitest)
+        run: pnpm exec vitest run --coverage
+
+      - name: Install Python AI Try-On test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+          cd services/ai-tryon
+          uv pip install --system --no-cache -r <(uv export --no-hashes --no-dev) || pip install --no-cache-dir -e .
+          pip install --no-cache-dir pytest pytest-asyncio pytest-cov
+
+      - name: Python 3.12 AI Virtual Try-On compile check
+        run: python -m compileall -q services/ai-tryon/app
+
+      - name: Python AI Try-On Pytest Suite & Coverage Gate (>= 70%)
+        working-directory: services/ai-tryon
+        run: |
+          python -m pytest tests \
+            --cov=app/cache_quota \
+            --cov=app/providers \
+            --cov=app/workers \
+            --cov-report=term-missing \
+            --cov-fail-under=70
 
       - name: Storefront UI, Motion & 3-Portal Isolation Gate
         run: pnpm verify:ui
@@ -69,21 +112,118 @@ jobs:
       - name: 8-Layer AI Harness Quantitative Eval Suite (100% pass gate)
         run: pnpm eval:ai
 
-      - name: Python 3.12 AI Virtual Try-On compile check
-        run: python -m compileall -q services/ai-tryon/app
-
   # ============================================================================
-  # Stage 2: Full Monorepo Build & Contract/Schema Integrity Check
+  # Stage 2A: Container Multi-Stage Build Matrix (All 14 Docker Images)
   # ============================================================================
-  integration-build:
-    name: Stage 2 - Full Monorepo Build & Contract Gate
+  container-build-matrix:
+    name: Stage 2A - Docker Build (${{ matrix.service.name }})
     runs-on: ubuntu-latest
     needs: pr-quality-security
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: storefront
+            dockerfile: apps/storefront/Dockerfile
+          - name: admin-portal
+            dockerfile: apps/admin-portal/Dockerfile
+          - name: partner-portal
+            dockerfile: apps/partner-portal/Dockerfile
+          - name: bff
+            dockerfile: apps/bff/Dockerfile
+          - name: mcp-copilot
+            dockerfile: apps/mcp-copilot/Dockerfile
+          - name: auth-customer
+            dockerfile: services/auth-customer/Dockerfile
+          - name: catalog-lookbook
+            dockerfile: services/catalog-lookbook/Dockerfile
+          - name: media-pipeline
+            dockerfile: services/media-pipeline/Dockerfile
+          - name: inventory
+            dockerfile: services/inventory/Dockerfile
+          - name: cart-outfit
+            dockerfile: services/cart-outfit/Dockerfile
+          - name: order-rma
+            dockerfile: services/order-rma/Dockerfile
+          - name: payment-promo
+            dockerfile: services/payment-promo/Dockerfile
+          - name: notify-review
+            dockerfile: services/notify-review/Dockerfile
+          - name: ai-tryon
+            dockerfile: services/ai-tryon/Dockerfile
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build multi-stage image (${{ matrix.service.name }}) with GHA cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.service.dockerfile }}
+          push: false
+          tags: atelier/${{ matrix.service.name }}:ci-${{ github.sha }}
+          cache-from: type=gha,scope=atelier-${{ matrix.service.name }}
+          cache-to: type=gha,mode=max,scope=atelier-${{ matrix.service.name }}
+
+  # ============================================================================
+  # Stage 2B: Compose Prod Validation, Full Build & Live Integration + E2E Gate
+  # ============================================================================
+  container-build-integration:
+    name: Stage 2B - Compose Validation & Full Integration/E2E Suite
+    runs-on: ubuntu-latest
+    needs: pr-quality-security
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Production & Observability Docker Compose Configs
+        env:
+          POSTGRES_USER: ci_atelier_admin
+          POSTGRES_PASSWORD: ci_dummy_postgres_password
+          POSTGRES_DB: postgres
+          REDIS_PASSWORD: ci_dummy_redis_password
+          RABBITMQ_USER: ci_atelier_mq
+          RABBITMQ_PASSWORD: ci_dummy_rabbitmq_password
+          MINIO_ROOT_USER: ci_atelier_minio
+          MINIO_ROOT_PASSWORD: ci_dummy_minio_password
+          MINIO_SECRET_KEY: ci_dummy_minio_secret
+          MEILISEARCH_MASTER_KEY: ci_dummy_meili_master_key
+          INTERNAL_SERVICE_SECRET: ci_dummy_internal_service_secret
+          JWT_SECRET: ci_dummy_jwt_secret
+          GRAFANA_ADMIN_USER: ci_atelier_ops
+          GRAFANA_ADMIN_PASSWORD: ci_dummy_grafana_password
+          IMAGE_TAG: ci-${{ github.sha }}
+        run: |
+          mkdir -p infra/secrets
+          for secret_file in \
+            postgres_password.txt \
+            redis_password.txt \
+            rabbitmq_password.txt \
+            minio_secret_key.txt \
+            internal_service_secret.txt \
+            meilisearch_master_key.txt \
+            jwt_private_key.pem \
+            postgres_password \
+            redis_password \
+            rabbitmq_password \
+            minio_secret_key \
+            internal_service_secret \
+            meilisearch_master_key \
+            jwt_private_key; do
+            if [ ! -f "infra/secrets/${secret_file}" ]; then
+              printf 'ci-dummy-secret-value\n' > "infra/secrets/${secret_file}"
+            fi
+          done
+          docker compose -f infra/observability/docker-compose.observability.yml --profile observability config --quiet
+          docker compose -f infra/docker-compose.prod.yml --profile observability config --quiet
+          echo "PASS: docker-compose.prod.yml and docker-compose.observability.yml validated cleanly"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -96,16 +236,18 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
 
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
       - name: Install workspace dependencies (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
-      - name: Verify @atelier/contracts is browser-safe (zero node:* imports)
+      - name: Install Python runtime for AI Try-On service
         run: |
-          if grep -rn "node:" packages/contracts/src; then
-            echo "ERROR: Forbidden node:* import found in packages/contracts/src"
-            exit 1
-          fi
-          echo "PASS: packages/contracts/src is 100% browser-safe"
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir -e services/ai-tryon
 
       - name: Verify SQL isolation schema & env contract exist
         run: |
@@ -113,17 +255,149 @@ jobs:
           test -f .env.example
           echo "PASS: Isolated DB schema and .env.example verified"
 
-      - name: Full monorepo build (all 21 workspaces incl. 3 Next.js portals)
+      - name: Full monorepo build (all 21 workspaces incl. 3 Next.js standalone portals)
         run: pnpm build
 
+      - name: Install Chromium browser for Playwright E2E
+        run: pnpm exec playwright-core install chromium
+
+      - name: Boot local 14-service stack & execute Integration + Admin/Partner E2E suites
+        env:
+          CI: 'true'
+          ALLOW_DEV_LOCAL_INFRA: 'true'
+        run: |
+          mkdir -p artifacts
+          node scripts/start-all.mjs > artifacts/ci-stack.log 2>&1 &
+          STACK_PID=$!
+
+          cleanup() {
+            kill "$STACK_PID" 2>/dev/null || true
+            wait "$STACK_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          echo "Waiting for BFF (:4000/health) and 3 Next.js portals (:3000/:3001/:3002)..."
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:4000/health >/dev/null 2>&1 \
+              && curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1 \
+              && curl -fsS http://127.0.0.1:3001/ >/dev/null 2>&1 \
+              && curl -fsS http://127.0.0.1:3002/ >/dev/null 2>&1; then
+              echo "All core endpoints ready after ${i}s"
+              break
+            fi
+            if [ "$i" -eq 90 ]; then
+              echo "ERROR: Local stack failed to become healthy within 90s"
+              tail -n 120 artifacts/ci-stack.log || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          node scripts/verify-all.mjs
+          node scripts/verify-admin-e2e.mjs
+          node scripts/verify-partner-e2e.mjs
+          node scripts/canary-deploy.mjs --dry-run --image-tag "${GITHUB_SHA}" --output artifacts/canary-ci-dry-run.json
+
+      - name: Upload verification & E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atelier-e2e-artifacts-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
   # ============================================================================
-  # Stage 3: Production Canary Release Gate (Manual Human Approval Required)
+  # Stage 3A: Publish Production Images to GitHub Container Registry (GHCR)
   # ============================================================================
-  canary-release-gate:
-    name: Stage 3 - Canary Release Gate (10% -> 50% -> 100%)
+  staging-canary-publish:
+    name: Stage 3A - Publish GHCR (${{ matrix.service.name }})
     runs-on: ubuntu-latest
-    needs: integration-build
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs:
+      - container-build-matrix
+      - container-build-integration
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        service:
+          - name: storefront
+            dockerfile: apps/storefront/Dockerfile
+          - name: admin-portal
+            dockerfile: apps/admin-portal/Dockerfile
+          - name: partner-portal
+            dockerfile: apps/partner-portal/Dockerfile
+          - name: bff
+            dockerfile: apps/bff/Dockerfile
+          - name: mcp-copilot
+            dockerfile: apps/mcp-copilot/Dockerfile
+          - name: auth-customer
+            dockerfile: services/auth-customer/Dockerfile
+          - name: catalog-lookbook
+            dockerfile: services/catalog-lookbook/Dockerfile
+          - name: media-pipeline
+            dockerfile: services/media-pipeline/Dockerfile
+          - name: inventory
+            dockerfile: services/inventory/Dockerfile
+          - name: cart-outfit
+            dockerfile: services/cart-outfit/Dockerfile
+          - name: order-rma
+            dockerfile: services/order-rma/Dockerfile
+          - name: payment-promo
+            dockerfile: services/payment-promo/Dockerfile
+          - name: notify-review
+            dockerfile: services/notify-review/Dockerfile
+          - name: ai-tryon
+            dockerfile: services/ai-tryon/Dockerfile
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (ghcr.io)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute lowercase GHCR repository prefix
+        id: meta
+        run: |
+          REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+          echo "repo=${REPO_LOWER}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push tagged image to ghcr.io
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.service.dockerfile }}
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.repo }}/${{ matrix.service.name }}:${{ github.sha }}
+            ghcr.io/${{ steps.meta.outputs.repo }}/${{ matrix.service.name }}:latest
+          cache-from: type=gha,scope=atelier-${{ matrix.service.name }}
+          cache-to: type=gha,mode=max,scope=atelier-${{ matrix.service.name }}
+
+  # ============================================================================
+  # Stage 3B: Progressive Canary Rollout (10% -> 50% -> 100%) & Auto-Rollback Gate
+  # ============================================================================
+  staging-canary-release:
+    name: Stage 3B - Canary Release & SLA Auto-Rollback Gate
+    runs-on: ubuntu-latest
+    needs: staging-canary-publish
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     environment:
       name: production-canary
 
@@ -131,30 +405,40 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Progressive Canary Rollout & Rollback Checklist
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Execute Progressive Canary Rollout (10% -> 50% -> 100%) with Automated SLA Rollback
+        env:
+          CANARY_BASE_URL: ${{ vars.CANARY_BASE_URL }}
+          CANARY_METRICS_URL: ${{ vars.CANARY_METRICS_URL }}
+          NGINX_SWITCH_CMD: ${{ secrets.NGINX_SWITCH_CMD }}
+          ROLLBACK_CMD: ${{ secrets.ROLLBACK_CMD }}
+          CANARY_SOAK_MS: ${{ vars.CANARY_SOAK_MS || '15000' }}
+          CANARY_DRY_RUN: ${{ inputs.canary_dry_run || 'false' }}
         run: |
-          cat << 'EOF'
-          ===================================================================
-          FASHION ATELIER AI PLATFORM v3.0 — CANARY RELEASE GATE APPROVED
-          ===================================================================
-          Phase 1 — Canary 10% (15 min soak):
-            - Verify /health & /ready across all 11 services (:4000..:4010)
-            - Verify BFF p95 latency < 400ms and 5xx rate < 0.1%
-            - Verify RabbitMQ *.dlq message count === 0
-            - Verify Redis SHA-256 Try-On cache & 15-minute MinIO Auto-Purge
+          mkdir -p artifacts
+          PHASES="${{ inputs.canary_phases || '10,50,100' }}"
+          EXTRA_ARGS=""
+          if [ "${CANARY_DRY_RUN}" = "true" ] || [ -z "${CANARY_BASE_URL}" ]; then
+            EXTRA_ARGS="--dry-run"
+          fi
+          node scripts/canary-deploy.mjs \
+            --image-tag "${GITHUB_SHA}" \
+            --phases "${PHASES}" \
+            --max-5xx-rate 0.01 \
+            --max-p95-ms 400 \
+            --max-dlq-depth 0 \
+            --output artifacts/canary-release-report.json \
+            ${EXTRA_ARGS}
 
-          Phase 2 — Progressive 50% (30 min soak):
-            - Verify 0 inventory oversells & 0 payment webhook double-charges
-            - Verify Admin MCP Copilot NHAP_AI guardrail & Prompt Injection 100% block
-
-          Phase 3 — Full 100% Promotion:
-            - Promote storefront (:3000), admin-portal (:3001), partner-portal (:3002)
-            - Tag release commit & archive AI Ops telemetry snapshot
-
-          Emergency Rollback Trigger (Auto/Manual < 2 min):
-            - Trigger immediate NGINX upstream shift back to blue slot if:
-              * 5xx error rate > 1% for 3 consecutive minutes
-              * Any *.dlq depth > 25 messages or DB connection saturation > 85%
-              * Any RBAC/IDOR or storefront isolation anomaly detected
-          ===================================================================
-          EOF
+      - name: Upload Canary Release SLA Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atelier-canary-report-${{ github.sha }}
+          path: artifacts/canary-release-report.json
+          if-no-files-found: ignore
+          retention-days: 30

@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   TryOnMode,
@@ -9,6 +10,7 @@ import {
   type ProductSpuDto,
   type StorefrontBootstrapDto,
 } from '@atelier/contracts';
+import { StorefrontChatDrawer } from '@/components/chat/StorefrontChatDrawer';
 import { QuickBagDrawer } from '@/features/drawer-bag/QuickBagDrawer';
 import { apiFetch } from '@/lib/api-client';
 import {
@@ -51,6 +53,7 @@ const FALLBACK_PACKAGING_OPTIONS: PackagingOptionDto[] = PACKAGING_TIERS.map(
 );
 
 export function StorefrontShellOverlays() {
+  const pathname = usePathname();
   const [products, setProducts] = useState<ProductSpuDto[]>(FALLBACK_PRODUCTS);
   const [packagingOptions, setPackagingOptions] = useState<PackagingOptionDto[]>(
     FALLBACK_PACKAGING_OPTIONS,
@@ -67,11 +70,43 @@ export function StorefrontShellOverlays() {
     mode: TryOnMode.SINGLE,
   });
 
+  // Global Customer Stylist Chat Drawer state + Camera Active guard
+  const [chatOpen, setChatOpen] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || !document.body) {
+      setCameraActive(pathname?.startsWith('/thu-do-ai') ?? false);
+      return undefined;
+    }
+
+    const syncCameraActive = () => {
+      const bodyActive =
+        document.body.dataset.cameraActive === 'true' ||
+        document.body.classList.contains('camera-active');
+      const isTryOnRoute = Boolean(pathname?.startsWith('/thu-do-ai'));
+      setCameraActive(bodyActive || isTryOnRoute);
+    };
+
+    syncCameraActive();
+
+    const observer = new MutationObserver(syncCameraActive);
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['data-camera-active', 'class'],
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [pathname]);
+
   // Subscribe to global custom events from SiteHeader, PDP, OutfitStudio, etc.
   useEffect(() => {
     const offBag = onOpenQuickBag((detail) => {
       setQuickProduct(detail.quickProduct ?? null);
       setTryOnOpen(false);
+      setChatOpen(false);
       setBagOpen(true);
     });
 
@@ -84,6 +119,7 @@ export function StorefrontShellOverlays() {
         outerwear: opts.outerwear ?? null,
       });
       setBagOpen(false);
+      setChatOpen(false);
       setTryOnOpen(true);
     });
 
@@ -95,7 +131,7 @@ export function StorefrontShellOverlays() {
 
   // Silently hydrate live BFF products & packaging options without ever blocking FALLBACK_PRODUCTS
   useEffect(() => {
-    if (catalogLoaded || (!bagOpen && !tryOnOpen)) return;
+    if (catalogLoaded || (!bagOpen && !tryOnOpen && !chatOpen)) return;
 
     let cancelled = false;
     void Promise.allSettled([
@@ -133,7 +169,7 @@ export function StorefrontShellOverlays() {
     return () => {
       cancelled = true;
     };
-  }, [bagOpen, tryOnOpen, catalogLoaded]);
+  }, [bagOpen, tryOnOpen, chatOpen, catalogLoaded]);
 
   const handleCartChange = (cart: CartDto | null) => {
     if (cart) {
@@ -180,6 +216,18 @@ export function StorefrontShellOverlays() {
           onAddedToBag={handleAddedFromTryOn}
         />
       ) : null}
+
+      <StorefrontChatDrawer
+        open={chatOpen}
+        onOpenChange={(nextOpen) => {
+          if (nextOpen) {
+            setBagOpen(false);
+          }
+          setChatOpen(nextOpen);
+        }}
+        hidden={tryOnOpen || cameraActive}
+        products={products}
+      />
     </>
   );
 }

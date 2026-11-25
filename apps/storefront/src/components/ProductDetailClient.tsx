@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FitFeedback,
-  FitPreference,
   TryOnGarmentCategory,
   TryOnMode,
   type CartDto,
@@ -12,9 +11,21 @@ import {
   type ProductFitStatsDto,
   type ProductReviewsResponseDto,
   type ProductSpuDto,
-  type SizeRecommendResponse,
   type VerifiedReviewDto,
 } from '@atelier/contracts';
+import {
+  AnatomicalFitVisualizer,
+  BODY_FIT_PREFERENCE_OPTIONS,
+  BODY_PROFILE_UPDATED_EVENT,
+  isCanonicalSizeCode,
+  loadSharedBodyProfile,
+  mapApiFitToProfileFit,
+  saveSharedBodyProfile,
+  type BodyProfileFitPreference,
+  type CanonicalSizeCode,
+  type ExtendedSizeRecommendResponse,
+  type SharedBodyProfileV1,
+} from '@/components/AnatomicalFitVisualizer';
 import { ProductStickySubNav } from '@/components/ProductStickySubNav';
 import { apiFetch, getStoredSession } from '@/lib/api-client';
 import { FORMAT_VND, getPrimaryVariantImage } from '@/lib/catalog-data';
@@ -25,10 +36,37 @@ import {
   type OpenTryOnOptions,
 } from '@/lib/storefront-actions';
 
+export type ReviewSentimentLabel = 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE';
+
+export interface ReviewSentimentSummary {
+  positivePct: number;
+  neutralPct: number;
+  negativePct: number;
+  positiveCount?: number;
+  neutralCount?: number;
+  negativeCount?: number;
+  averageSentimentScore?: number | null;
+  totalScored: number;
+}
+
+type ReviewWithSentiment = VerifiedReviewDto & {
+  sentimentLabel?: ReviewSentimentLabel | string | null;
+  diemCamXucNlp?: number | null;
+};
+
+type ExtendedProductReviewsResponse = Omit<
+  ProductReviewsResponseDto,
+  'reviews'
+> & {
+  reviews: ReviewWithSentiment[];
+  sentimentSummary?: Partial<ReviewSentimentSummary> | null;
+};
+
 export interface ProductDetailClientProps {
   product: ProductSpuDto;
   initialFitStats?: ProductFitStatsDto | null;
-  initialReviews?: VerifiedReviewDto[];
+  initialReviews?: ReviewWithSentiment[];
+  initialSentimentSummary?: ReviewSentimentSummary | null;
   reviewsDegraded?: boolean;
   initialOpenTryOn?: boolean;
 }
@@ -39,11 +77,160 @@ const FIT_FEEDBACK_LABELS: Record<FitFeedback, string> = {
   [FitFeedback.RUNS_LARGE]: 'Hơi rộng',
 };
 
-const FIT_OPTIONS: Array<{ value: FitPreference; label: string }> = [
-  { value: FitPreference.SLIM, label: 'Ôm vừa (Slim)' },
-  { value: FitPreference.REGULAR, label: 'Tiêu chuẩn' },
-  { value: FitPreference.RELAXED, label: 'Thoải mái' },
-];
+const SENTIMENT_BADGE_CONFIG: Record<
+  ReviewSentimentLabel,
+  { label: string; badgeClass: string; dotClass: string }
+> = {
+  POSITIVE: {
+    label: 'Tích cực',
+    badgeClass:
+      'border-[#2E6B47]/30 bg-[#F2FBF6] text-[#1E4B32]',
+    dotClass: 'bg-[#2E6B47]',
+  },
+  NEUTRAL: {
+    label: 'Trung lập',
+    badgeClass:
+      'border-[#B08A4A]/35 bg-[#F4EBDA]/80 text-[#7A5B26]',
+    dotClass: 'bg-[#B08A4A]',
+  },
+  NEGATIVE: {
+    label: 'Cần lưu ý',
+    badgeClass:
+      'border-[#8B2E2E]/30 bg-[#FFF5F4] text-[#8B2E2E]',
+    dotClass: 'bg-[#8B2E2E]',
+  },
+};
+
+function resolveReviewSentimentLabel(
+  review: ReviewWithSentiment,
+): ReviewSentimentLabel | null {
+  if (typeof review.sentimentLabel === 'string') {
+    const upper = review.sentimentLabel.trim().toUpperCase();
+    if (upper === 'POSITIVE' || upper === 'NEUTRAL' || upper === 'NEGATIVE') {
+      return upper;
+    }
+  }
+  const score =
+    typeof review.sentimentScore === 'number' &&
+    Number.isFinite(review.sentimentScore)
+      ? review.sentimentScore
+      : typeof review.diemCamXucNlp === 'number' &&
+          Number.isFinite(review.diemCamXucNlp)
+        ? review.diemCamXucNlp
+        : null;
+  if (score === null) {
+    return null;
+  }
+  if (score >= 0.2) return 'POSITIVE';
+  if (score <= -0.2) return 'NEGATIVE';
+  return 'NEUTRAL';
+}
+
+function normalizeSentimentSummary(
+  raw: Partial<ReviewSentimentSummary> | null | undefined,
+): ReviewSentimentSummary | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const countFromBuckets =
+    (typeof raw.positiveCount === 'number' && Number.isFinite(raw.positiveCount)
+      ? Math.max(0, Math.round(raw.positiveCount))
+      : 0) +
+    (typeof raw.neutralCount === 'number' && Number.isFinite(raw.neutralCount)
+      ? Math.max(0, Math.round(raw.neutralCount))
+      : 0) +
+    (typeof raw.negativeCount === 'number' && Number.isFinite(raw.negativeCount)
+      ? Math.max(0, Math.round(raw.negativeCount))
+      : 0);
+  const rawTotalScored =
+    typeof raw.totalScored === 'number' && Number.isFinite(raw.totalScored)
+      ? Math.max(0, Math.round(raw.totalScored))
+      : 0;
+  const totalScored = Math.max(rawTotalScored, countFromBuckets);
+  const positivePct =
+    typeof raw.positivePct === 'number' && Number.isFinite(raw.positivePct)
+      ? Math.max(0, Math.min(100, Math.round(raw.positivePct)))
+      : null;
+  if (positivePct === null || totalScored <= 0) return null;
+  const neutralPct =
+    typeof raw.neutralPct === 'number' && Number.isFinite(raw.neutralPct)
+      ? Math.max(0, Math.min(100, Math.round(raw.neutralPct)))
+      : Math.max(0, 100 - positivePct);
+  const negativePct =
+    typeof raw.negativePct === 'number' && Number.isFinite(raw.negativePct)
+      ? Math.max(0, Math.min(100, Math.round(raw.negativePct)))
+      : Math.max(0, 100 - positivePct - neutralPct);
+  return {
+    positivePct,
+    neutralPct,
+    negativePct,
+    averageSentimentScore:
+      typeof raw.averageSentimentScore === 'number' &&
+      Number.isFinite(raw.averageSentimentScore)
+        ? raw.averageSentimentScore
+        : null,
+    totalScored,
+  };
+}
+
+function computeSentimentSummaryFromReviews(
+  list: ReviewWithSentiment[],
+): ReviewSentimentSummary | null {
+  let positive = 0;
+  let neutral = 0;
+  let negative = 0;
+  let scoreSum = 0;
+  let scoreCount = 0;
+
+  for (const rev of list) {
+    const label = resolveReviewSentimentLabel(rev);
+    if (!label) continue;
+    if (label === 'POSITIVE') positive += 1;
+    else if (label === 'NEGATIVE') negative += 1;
+    else neutral += 1;
+
+    const score =
+      typeof rev.sentimentScore === 'number' &&
+      Number.isFinite(rev.sentimentScore)
+        ? rev.sentimentScore
+        : typeof rev.diemCamXucNlp === 'number' &&
+            Number.isFinite(rev.diemCamXucNlp)
+          ? rev.diemCamXucNlp
+          : null;
+    if (score !== null) {
+      scoreSum += score;
+      scoreCount += 1;
+    }
+  }
+
+  const totalScored = positive + neutral + negative;
+  if (totalScored <= 0) return null;
+
+  const buckets = [
+    { key: 'POSITIVE' as const, raw: (positive / totalScored) * 100 },
+    { key: 'NEUTRAL' as const, raw: (neutral / totalScored) * 100 },
+    { key: 'NEGATIVE' as const, raw: (negative / totalScored) * 100 },
+  ].map((b) => ({
+    ...b,
+    floored: Math.floor(b.raw),
+    remainder: b.raw - Math.floor(b.raw),
+  }));
+
+  let remainderPoints = 100 - buckets.reduce((acc, b) => acc + b.floored, 0);
+  const ranked = [...buckets].sort((a, b) => b.remainder - a.remainder);
+  for (let i = 0; i < ranked.length && remainderPoints > 0; i += 1) {
+    ranked[i]!.floored += 1;
+    remainderPoints -= 1;
+  }
+
+  const byKey = new Map(ranked.map((b) => [b.key, b.floored]));
+  return {
+    positivePct: byKey.get('POSITIVE') ?? 0,
+    neutralPct: byKey.get('NEUTRAL') ?? 0,
+    negativePct: byKey.get('NEGATIVE') ?? 0,
+    averageSentimentScore:
+      scoreCount > 0 ? Math.round((scoreSum / scoreCount) * 1000) / 1000 : null,
+    totalScored,
+  };
+}
 
 function formatHeightMeters(heightCm: number | null): string | null {
   if (!heightCm || !Number.isFinite(heightCm)) return null;
@@ -70,6 +257,7 @@ export function ProductDetailClient({
   product,
   initialFitStats = null,
   initialReviews = [],
+  initialSentimentSummary = null,
   reviewsDegraded = false,
   initialOpenTryOn = false,
 }: ProductDetailClientProps) {
@@ -98,28 +286,31 @@ export function ProductDetailClient({
     message: string;
   } | null>(null);
 
-  // Interactive 5-second Honest Size Advisor (zero guessed values before submit)
-  const [advisorExpanded, setAdvisorExpanded] = useState(true);
+  // Interactive 5-second Honest Size Advisor (zero guessed values before body profile)
+  const [savedBodyProfile, setSavedBodyProfile] =
+    useState<SharedBodyProfileV1 | null>(null);
+  const [advisorExpanded, setAdvisorExpanded] = useState(false);
   const [showExtraMeasurements, setShowExtraMeasurements] = useState(false);
   const [heightCm, setHeightCm] = useState(163);
   const [weightKg, setWeightKg] = useState(52);
   const [bustCm, setBustCm] = useState('');
   const [waistCm, setWaistCm] = useState('');
   const [hipCm, setHipCm] = useState('');
-  const [fitPreference, setFitPreference] = useState<FitPreference>(
-    FitPreference.REGULAR,
-  );
+  const [fitPreference, setFitPreference] =
+    useState<BodyProfileFitPreference>('TRUE_TO_SIZE');
   const [sizeLoading, setSizeLoading] = useState(false);
-  const [sizeResult, setSizeResult] = useState<SizeRecommendResponse | null>(
-    null,
-  );
+  const [sizeResult, setSizeResult] =
+    useState<ExtendedSizeRecommendResponse | null>(null);
+  const [visualizerSize, setVisualizerSize] = useState<CanonicalSizeCode>('M');
   const [sizeError, setSizeError] = useState<string | null>(null);
 
-  // Verified Fit Reviews state + "Cùng vóc dáng với tôi" (±4cm, ±4kg)
+  // Verified Fit Reviews state + "Cùng vóc dáng với tôi" (±4cm, ±4kg) + Verified Buyer Sentiment
   const [fitStats, setFitStats] = useState<ProductFitStatsDto | null>(
     initialFitStats,
   );
-  const [reviews, setReviews] = useState<VerifiedReviewDto[]>(initialReviews);
+  const [reviews, setReviews] = useState<ReviewWithSentiment[]>(initialReviews);
+  const [sentimentSummary, setSentimentSummary] =
+    useState<ReviewSentimentSummary | null>(initialSentimentSummary);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [reviewsError, setReviewsError] = useState<string | null>(null);
   const [selectedReviewSize, setSelectedReviewSize] = useState<string>('ALL');
@@ -195,29 +386,169 @@ export function ProductDetailClient({
     openVirtualTryOnModal(buildTryOnLaunchOptions());
   }, [initialOpenTryOn, buildTryOnLaunchOptions]);
 
-  // Pre-fill measurements silently if customer is logged in with a saved body profile
+  const syncSelectedSkuToSize = useCallback(
+    (sizeCode: CanonicalSizeCode) => {
+      setVisualizerSize(sizeCode);
+      const matchingSku =
+        activeVariant?.skus.find((s) => s.sizeCode === sizeCode && s.inStock) ??
+        activeVariant?.skus.find((s) => s.sizeCode === sizeCode);
+      if (matchingSku && matchingSku.inStock) {
+        setSelectedSkuId(matchingSku.id);
+      }
+    },
+    [activeVariant],
+  );
+
+  const runSizeRecommendation = useCallback(
+    async (
+      profileInput: {
+        heightCm: number;
+        weightKg: number;
+        bustCm?: number;
+        waistCm?: number;
+        hipCm?: number;
+        fitPreference: BodyProfileFitPreference;
+      },
+      persistProfile: boolean,
+    ) => {
+      setSizeLoading(true);
+      setSizeError(null);
+
+      const payload: Record<string, unknown> = {
+        productId: product.id,
+        productSlug: product.slug,
+        slug: product.slug,
+        heightCm: profileInput.heightCm,
+        weightKg: profileInput.weightKg,
+        fitPreference: profileInput.fitPreference,
+      };
+      if (profileInput.bustCm && profileInput.bustCm >= 50) {
+        payload.bustCm = profileInput.bustCm;
+      }
+      if (profileInput.waistCm && profileInput.waistCm >= 40) {
+        payload.waistCm = profileInput.waistCm;
+      }
+      if (profileInput.hipCm && profileInput.hipCm >= 50) {
+        payload.hipCm = profileInput.hipCm;
+      }
+
+      const res = await apiFetch<ExtendedSizeRecommendResponse>(
+        '/bff/v1/storefront/size-recommend',
+        {
+          method: 'POST',
+          skipAuthRefresh: true,
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (res.ok && res.data) {
+        const recSize: CanonicalSizeCode = isCanonicalSizeCode(
+          res.data.recommendedSize,
+        )
+          ? res.data.recommendedSize
+          : 'M';
+        setSizeResult(res.data);
+        setVisualizerSize(recSize);
+        if (res.data.fitStats) {
+          setFitStats(res.data.fitStats);
+        }
+        syncSelectedSkuToSize(recSize);
+
+        if (persistProfile) {
+          const nextProfile: SharedBodyProfileV1 = {
+            heightCm: profileInput.heightCm,
+            weightKg: profileInput.weightKg,
+            ...(profileInput.bustCm ? { bustCm: profileInput.bustCm } : {}),
+            ...(profileInput.waistCm ? { waistCm: profileInput.waistCm } : {}),
+            ...(profileInput.hipCm ? { hipCm: profileInput.hipCm } : {}),
+            fitPreference: profileInput.fitPreference,
+            recommendedSize: recSize,
+            updatedAt: Date.now(),
+          };
+          saveSharedBodyProfile(nextProfile);
+          setSavedBodyProfile(nextProfile);
+          setAdvisorExpanded(false);
+        }
+      } else {
+        setSizeResult(null);
+        setSizeError(
+          res.error?.message ||
+            'Chưa thể kết nối máy chủ BFF để tính cỡ trang phục từ bảng số đo thực tế.',
+        );
+      }
+      setSizeLoading(false);
+    },
+    [product.id, product.slug, syncSelectedSkuToSize],
+  );
+
+  // Hydrate ONLY from saved `atelier_body_profile_v1` (or logged-in customer profile) — NEVER fake defaults
   useEffect(() => {
-    const session = getStoredSession();
-    if (!session?.accessToken) return;
-
     let cancelled = false;
-    void apiFetch<CustomerBodyProfileDto>('/bff/v1/customers/me/body-profile', {
-      skipAuthRefresh: true,
-    }).then((res) => {
-      if (cancelled || !res.ok || !res.data) return;
-      setProfileBody(res.data);
-      setHeightCm(Math.round(res.data.heightCm));
-      setWeightKg(Math.round(res.data.weightKg));
-      if (res.data.bustCm) setBustCm(String(res.data.bustCm));
-      if (res.data.waistCm) setWaistCm(String(res.data.waistCm));
-      if (res.data.hipCm) setHipCm(String(res.data.hipCm));
-      if (res.data.fitPreference) setFitPreference(res.data.fitPreference);
-    });
+    const localProfile = loadSharedBodyProfile();
 
+    if (localProfile) {
+      setSavedBodyProfile(localProfile);
+      setHeightCm(localProfile.heightCm);
+      setWeightKg(localProfile.weightKg);
+      if (localProfile.bustCm) setBustCm(String(localProfile.bustCm));
+      if (localProfile.waistCm) setWaistCm(String(localProfile.waistCm));
+      if (localProfile.hipCm) setHipCm(String(localProfile.hipCm));
+      setFitPreference(localProfile.fitPreference);
+      void runSizeRecommendation(localProfile, false);
+    }
+
+    const session = getStoredSession();
+    if (session?.accessToken) {
+      void apiFetch<CustomerBodyProfileDto>(
+        '/bff/v1/customers/me/body-profile',
+        { skipAuthRefresh: true },
+      ).then((res) => {
+        if (cancelled || !res.ok || !res.data) return;
+        setProfileBody(res.data);
+        if (!localProfile) {
+          const mapped: SharedBodyProfileV1 = {
+            heightCm: Math.round(res.data.heightCm),
+            weightKg: Math.round(res.data.weightKg),
+            ...(res.data.bustCm ? { bustCm: res.data.bustCm } : {}),
+            ...(res.data.waistCm ? { waistCm: res.data.waistCm } : {}),
+            ...(res.data.hipCm ? { hipCm: res.data.hipCm } : {}),
+            fitPreference: mapApiFitToProfileFit(res.data.fitPreference),
+            updatedAt: Date.now(),
+          };
+          setSavedBodyProfile(mapped);
+          setHeightCm(mapped.heightCm);
+          setWeightKg(mapped.weightKg);
+          if (mapped.bustCm) setBustCm(String(mapped.bustCm));
+          if (mapped.waistCm) setWaistCm(String(mapped.waistCm));
+          if (mapped.hipCm) setHipCm(String(mapped.hipCm));
+          setFitPreference(mapped.fitPreference);
+          void runSizeRecommendation(mapped, false);
+        }
+      });
+    }
+
+    const onBodyProfileUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<SharedBodyProfileV1>).detail;
+      const latest = detail ?? loadSharedBodyProfile();
+      if (!latest) return;
+      setSavedBodyProfile(latest);
+      setHeightCm(latest.heightCm);
+      setWeightKg(latest.weightKg);
+      setBustCm(latest.bustCm ? String(latest.bustCm) : '');
+      setWaistCm(latest.waistCm ? String(latest.waistCm) : '');
+      setHipCm(latest.hipCm ? String(latest.hipCm) : '');
+      setFitPreference(latest.fitPreference);
+    };
+
+    window.addEventListener(BODY_PROFILE_UPDATED_EVENT, onBodyProfileUpdated);
     return () => {
       cancelled = true;
+      window.removeEventListener(
+        BODY_PROFILE_UPDATED_EVENT,
+        onBodyProfileUpdated,
+      );
     };
-  }, []);
+  }, [runSizeRecommendation]);
 
   // Close zoom modal on Escape
   useEffect(() => {
@@ -293,56 +624,31 @@ export function ProductDetailClient({
       return;
     }
 
-    setSizeLoading(true);
-    setSizeError(null);
+    const parsedBust = bustCm && Number(bustCm) >= 50 ? Number(bustCm) : undefined;
+    const parsedWaist =
+      waistCm && Number(waistCm) >= 40 ? Number(waistCm) : undefined;
+    const parsedHip = hipCm && Number(hipCm) >= 50 ? Number(hipCm) : undefined;
 
-    const payload: Record<string, unknown> = {
-      productId: product.id,
-      productSlug: product.slug,
-      heightCm,
-      weightKg,
-      fitPreference,
-    };
-    if (bustCm && Number(bustCm) >= 50) payload.bustCm = Number(bustCm);
-    if (waistCm && Number(waistCm) >= 40) payload.waistCm = Number(waistCm);
-    if (hipCm && Number(hipCm) >= 50) payload.hipCm = Number(hipCm);
-
-    const res = await apiFetch<SizeRecommendResponse>(
-      '/bff/v1/storefront/size-recommend',
+    await runSizeRecommendation(
       {
-        method: 'POST',
-        skipAuthRefresh: true,
-        body: JSON.stringify(payload),
+        heightCm,
+        weightKg,
+        bustCm: parsedBust,
+        waistCm: parsedWaist,
+        hipCm: parsedHip,
+        fitPreference,
       },
+      true,
     );
 
-    if (res.ok && res.data) {
-      setSizeResult(res.data);
-      if (res.data.fitStats) {
-        setFitStats(res.data.fitStats);
-      }
-      try {
-        window.sessionStorage.setItem(
-          'atelier_last_recommended_size',
-          res.data.recommendedSize,
-        );
-      } catch {
-        // Ignore private browsing sessionStorage limits
-      }
-      const matchingSku = activeVariant?.skus.find(
-        (s) => s.sizeCode === res.data?.recommendedSize && s.inStock,
-      );
-      if (matchingSku) {
-        setSelectedSkuId(matchingSku.id);
-      }
-    } else {
-      setSizeResult(null);
-      setSizeError(
-        res.error?.message ||
-          'Chưa thể kết nối máy chủ BFF để tính cỡ trang phục từ bảng số đo thực tế.',
-      );
+    if (sameBodyOnly) {
+      void fetchFilteredReviews({
+        size: selectedReviewSize,
+        matchBody: true,
+        h: heightCm,
+        w: weightKg,
+      });
     }
-    setSizeLoading(false);
   };
 
   const fetchFilteredReviews = useCallback(
@@ -357,18 +663,37 @@ export function ProductDetailClient({
       if (opts.matchBody) {
         query.set('heightCm', String(opts.h));
         query.set('weightKg', String(opts.w));
+        query.set('toleranceCm', '4');
+        query.set('toleranceKg', '4');
       }
 
       const qs = query.toString();
-      const res = await apiFetch<ProductReviewsResponseDto>(
-        `/bff/v1/storefront/reviews/products/${encodeURIComponent(product.id)}${qs ? `?${qs}` : ''}`,
+      let res = await apiFetch<ExtendedProductReviewsResponse>(
+        `/bff/v1/storefront/products/${encodeURIComponent(product.slug)}/reviews${qs ? `?${qs}` : ''}`,
         { skipAuthRefresh: true },
       );
+      if (!res.ok && res.status === 404) {
+        res = await apiFetch<ExtendedProductReviewsResponse>(
+          `/bff/v1/storefront/reviews/products/${encodeURIComponent(product.id)}${qs ? `?${qs}` : ''}`,
+          { skipAuthRefresh: true },
+        );
+      }
 
       if (res.ok && res.data) {
-        setReviews(Array.isArray(res.data.reviews) ? res.data.reviews : []);
+        const nextReviews = Array.isArray(res.data.reviews)
+          ? res.data.reviews
+          : [];
+        setReviews(nextReviews);
         if (res.data.fitStats && res.data.fitStats.totalReviews >= 0) {
           setFitStats(res.data.fitStats);
+        }
+        const normalizedSummary = normalizeSentimentSummary(
+          res.data.sentimentSummary,
+        );
+        if (normalizedSummary) {
+          setSentimentSummary(normalizedSummary);
+        } else if (nextReviews.length > 0) {
+          setSentimentSummary(computeSentimentSummaryFromReviews(nextReviews));
         }
       } else {
         let localList = [...initialReviews];
@@ -392,14 +717,22 @@ export function ProductDetailClient({
       }
       setReviewsLoading(false);
     },
-    [initialReviews, product.id],
+    [initialReviews, product.id, product.slug],
   );
 
   const handleToggleSameBody = async () => {
     const nextValue = !sameBodyOnly;
     setSameBodyOnly(nextValue);
-    const targetH = profileBody ? Math.round(profileBody.heightCm) : heightCm;
-    const targetW = profileBody ? Math.round(profileBody.weightKg) : weightKg;
+    const targetH = savedBodyProfile
+      ? savedBodyProfile.heightCm
+      : profileBody
+        ? Math.round(profileBody.heightCm)
+        : heightCm;
+    const targetW = savedBodyProfile
+      ? savedBodyProfile.weightKg
+      : profileBody
+        ? Math.round(profileBody.weightKg)
+        : weightKg;
     await fetchFilteredReviews({
       size: selectedReviewSize,
       matchBody: nextValue,
@@ -410,8 +743,16 @@ export function ProductDetailClient({
 
   const handleReviewSizeChange = async (nextSize: string) => {
     setSelectedReviewSize(nextSize);
-    const targetH = profileBody ? Math.round(profileBody.heightCm) : heightCm;
-    const targetW = profileBody ? Math.round(profileBody.weightKg) : weightKg;
+    const targetH = savedBodyProfile
+      ? savedBodyProfile.heightCm
+      : profileBody
+        ? Math.round(profileBody.heightCm)
+        : heightCm;
+    const targetW = savedBodyProfile
+      ? savedBodyProfile.weightKg
+      : profileBody
+        ? Math.round(profileBody.weightKg)
+        : weightKg;
     await fetchFilteredReviews({
       size: nextSize,
       matchBody: sameBodyOnly,
@@ -427,13 +768,57 @@ export function ProductDetailClient({
     }
   };
 
+  // Silently hydrate live sentimentSummary & sentimentLabel fields on mount when SSR didn't include summary
+  useEffect(() => {
+    if (reviewsDegraded || initialSentimentSummary) return undefined;
+    let cancelled = false;
+    void (async () => {
+      let res = await apiFetch<ExtendedProductReviewsResponse>(
+        `/bff/v1/storefront/products/${encodeURIComponent(product.slug)}/reviews`,
+        { skipAuthRefresh: true, timeoutMs: 3500 },
+      );
+      if (!res.ok && res.status === 404) {
+        res = await apiFetch<ExtendedProductReviewsResponse>(
+          `/bff/v1/storefront/reviews/products/${encodeURIComponent(product.id)}`,
+          { skipAuthRefresh: true, timeoutMs: 3500 },
+        );
+      }
+      if (cancelled || !res.ok || !res.data) return;
+      const summary = normalizeSentimentSummary(res.data.sentimentSummary);
+      if (summary) {
+        setSentimentSummary(summary);
+      }
+      if (Array.isArray(res.data.reviews) && res.data.reviews.length > 0) {
+        const freshReviews = res.data.reviews;
+        setReviews((prev) => {
+          if (prev.length === 0) return freshReviews;
+          const prevMissingSentiment = prev.some(
+            (r) => !resolveReviewSentimentLabel(r),
+          );
+          return prevMissingSentiment ? freshReviews : prev;
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialSentimentSummary, product.id, product.slug, reviewsDegraded]);
+
   const effectiveFitStats = sizeResult?.fitStats ?? fitStats;
-  const targetFilterHeight = profileBody
-    ? Math.round(profileBody.heightCm)
-    : heightCm;
-  const targetFilterWeight = profileBody
-    ? Math.round(profileBody.weightKg)
-    : weightKg;
+  const effectiveSentimentSummary = useMemo(
+    () => sentimentSummary ?? computeSentimentSummaryFromReviews(reviews),
+    [reviews, sentimentSummary],
+  );
+  const targetFilterHeight = savedBodyProfile
+    ? savedBodyProfile.heightCm
+    : profileBody
+      ? Math.round(profileBody.heightCm)
+      : heightCm;
+  const targetFilterWeight = savedBodyProfile
+    ? savedBodyProfile.weightKg
+    : profileBody
+      ? Math.round(profileBody.weightKg)
+      : weightKg;
 
   return (
     <>
@@ -752,11 +1137,11 @@ export function ProductDetailClient({
                     Kích cỡ ({activeSku?.inStock ? 'Còn hàng' : 'Tạm hết'})
                   </p>
                   <a
-                    href="#co-van-size-ai"
+                    href="#pdp-size-advisor"
                     onClick={() => setAdvisorExpanded(true)}
                     className="text-xs text-[#8A672C] underline underline-offset-4 hover:text-[#1C1410]"
                   >
-                    Tính size theo số đo thực
+                    ✦ Tính chuẩn Size của bạn
                   </a>
                 </div>
                 <div className="mt-2.5 flex flex-wrap gap-2">
@@ -768,9 +1153,13 @@ export function ProductDetailClient({
                       <button
                         key={sku.id}
                         type="button"
+                        data-testid={`pdp-size-btn-${sku.sizeCode}`}
                         disabled={!sku.inStock}
                         onClick={() => {
                           setSelectedSkuId(sku.id);
+                          if (isCanonicalSizeCode(sku.sizeCode)) {
+                            setVisualizerSize(sku.sizeCode);
+                          }
                           setCartFeedback(null);
                         }}
                         className={`relative min-w-14 rounded-2xl border px-4 py-2.5 text-xs font-medium transition-colors ${
@@ -798,11 +1187,14 @@ export function ProductDetailClient({
               <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
                 <button
                   type="button"
+                  data-testid="pdp-add-to-cart-btn"
                   disabled={addingToCart || !activeSku?.inStock}
                   onClick={() => void handleAddToCart()}
                   className="flex-1 rounded-full bg-[#1C1410] px-6 py-3.5 text-center text-xs font-medium uppercase tracking-[0.18em] text-[#EBCF8F] transition-opacity hover:opacity-90 disabled:opacity-45"
                 >
-                  {addingToCart ? 'Đang thêm vào giỏ...' : 'Thêm vào giỏ'}
+                  {addingToCart
+                    ? 'Đang thêm vào giỏ...'
+                    : `THÊM VÀO GIỎ HÀNG${activeSku ? ` · SIZE ${activeSku.sizeCode}` : ''}`}
                 </button>
                 {product.isTryonEnabled ? (
                   <button
@@ -829,40 +1221,69 @@ export function ProductDetailClient({
               ) : null}
             </div>
 
-            {/* Honest Crowd-Calibrated Live AI Size Advisor (Zero hardcoded % before input) */}
+            {/* Honest Crowd-Calibrated Live AI Size Advisor + 4-Zone AnatomicalFitVisualizer */}
             <section
-              id="co-van-size-ai"
+              id="pdp-size-advisor"
+              data-testid="pdp-size-advisor"
               className="scroll-mt-36 rounded-3xl border border-[#B08A4A]/35 bg-[#F4EBDA]/65 p-5"
             >
-              <button
-                type="button"
-                onClick={() => setAdvisorExpanded((prev) => !prev)}
-                aria-expanded={advisorExpanded}
-                className="flex w-full items-center justify-between text-left"
-              >
+              <span id="co-van-size-ai" className="scroll-mt-36" />
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="atelier-eyebrow text-[#8A672C]">
                     Cố vấn Size AI · Dữ liệu khách mặc thật
                   </p>
                   <h2 className="font-editorial mt-0.5 text-2xl text-[#1C1410]">
-                    Tính size của bạn trong 5 giây
+                    {sizeResult
+                      ? `Size đề xuất cho bạn: Size ${sizeResult.recommendedSize}`
+                      : 'Tư vấn kích cỡ chuẩn theo vóc dáng'}
                   </h2>
                 </div>
-                <span className="rounded-full border border-[#B08A4A]/40 bg-white px-3 py-1 text-[11px] text-[#8A672C]">
-                  {advisorExpanded ? 'Thu gọn' : 'Mở công cụ'}
-                </span>
-              </button>
+                {savedBodyProfile ? (
+                  <button
+                    type="button"
+                    data-testid="pdp-edit-size-profile-btn"
+                    onClick={() => setAdvisorExpanded((prev) => !prev)}
+                    aria-expanded={advisorExpanded}
+                    className="cursor-pointer rounded-full border border-[#B08A4A]/45 bg-white px-3.5 py-1 text-[11px] font-medium text-[#8A672C] transition-colors hover:border-[#1C1410] hover:text-[#1C1410]"
+                  >
+                    {advisorExpanded ? 'Thu gọn số đo' : 'Chỉnh số đo'}
+                  </button>
+                ) : null}
+              </div>
+
+              {/* Honest CTA when NO body profile is saved yet — ZERO fake hardcoded size/percentage */}
+              {!savedBodyProfile && !advisorExpanded ? (
+                <div className="mt-4 space-y-3">
+                  <p className="text-xs leading-relaxed text-[#5C4B41]">
+                    Hệ thống không hiển thị cỡ đoán trước. Nhập chiều cao &amp;
+                    cân nặng trong 5 giây để phân tích 4 vùng{' '}
+                    <strong className="text-[#1C1410]">
+                      Vai · Ngực · Eo · Hông
+                    </strong>{' '}
+                    và tự động đồng bộ cỡ chuẩn vào giỏ hàng.
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="pdp-calculate-size-cta"
+                    onClick={() => setAdvisorExpanded(true)}
+                    className="w-full cursor-pointer rounded-full bg-[#1C1410] px-5 py-3 text-xs font-medium tracking-[0.14em] text-[#EBCF8F] transition-opacity hover:opacity-90"
+                  >
+                    ✦ Tính chuẩn Size của bạn trong 5 giây
+                  </button>
+                </div>
+              ) : null}
 
               {advisorExpanded ? (
                 <div className="mt-4 space-y-4">
                   <p className="text-xs leading-relaxed text-[#5C4B41]">
-                    Hệ thống không hiển thị cỡ đoán trước. Điều chỉnh chiều cao,
-                    cân nặng (và tùy chọn 3 vòng) để máy chủ đối chiếu bảng số
-                    đo chuẩn kết hợp dữ liệu độ vừa của người mua thực tế.
+                    Điều chỉnh chiều cao (145–190cm), cân nặng (40–95kg) và tùy
+                    chọn 3 vòng để đối chiếu bảng rập xưởng kết hợp phản hồi độ
+                    vừa của khách hàng đã mua thật.
                   </p>
 
                   {/* Height & Weight Sliders */}
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-3.5 sm:grid-cols-2">
                     <div className="rounded-2xl border border-[#B08A4A]/25 bg-white p-3.5">
                       <div className="flex items-center justify-between text-xs">
                         <label
@@ -877,9 +1298,10 @@ export function ProductDetailClient({
                       </div>
                       <input
                         id="pdp-advisor-height"
+                        data-testid="pdp-height-slider"
                         type="range"
                         min={145}
-                        max={195}
+                        max={190}
                         value={heightCm}
                         onChange={(e) => setHeightCm(Number(e.target.value))}
                         className="mt-2.5 w-full accent-[#B08A4A]"
@@ -900,6 +1322,7 @@ export function ProductDetailClient({
                       </div>
                       <input
                         id="pdp-advisor-weight"
+                        data-testid="pdp-weight-slider"
                         type="range"
                         min={40}
                         max={95}
@@ -915,11 +1338,11 @@ export function ProductDetailClient({
                     <button
                       type="button"
                       onClick={() => setShowExtraMeasurements((prev) => !prev)}
-                      className="text-xs text-[#8A672C] underline underline-offset-4 hover:text-[#1C1410]"
+                      className="cursor-pointer text-xs text-[#8A672C] underline underline-offset-4 hover:text-[#1C1410]"
                     >
                       {showExtraMeasurements
                         ? 'Ẩn số đo 3 vòng tùy chọn'
-                        : '+ Thêm số đo Ngực / Eo / Mông để tăng độ chính xác'}
+                        : '+ Thêm số đo Ngực / Eo / Hông (tùy chọn)'}
                     </button>
 
                     {showExtraMeasurements ? (
@@ -949,7 +1372,7 @@ export function ProductDetailClient({
                           />
                         </label>
                         <label className="text-[11px] text-[#5C4B41]">
-                          Mông (cm)
+                          Hông (cm)
                           <input
                             type="number"
                             min={65}
@@ -964,14 +1387,15 @@ export function ProductDetailClient({
                     ) : null}
                   </div>
 
-                  {/* Fit Preference Pills */}
+                  {/* Fit Preference Pills: Ôm vừa | Chuẩn phom | Thoải mái */}
                   <div className="flex flex-wrap gap-2">
-                    {FIT_OPTIONS.map((option) => (
+                    {BODY_FIT_PREFERENCE_OPTIONS.map((option) => (
                       <button
                         key={option.value}
                         type="button"
+                        data-testid={`pdp-fit-pref-${option.value}`}
                         onClick={() => setFitPreference(option.value)}
-                        className={`rounded-full px-3.5 py-1.5 text-xs transition-colors ${
+                        className={`cursor-pointer rounded-full px-3.5 py-1.5 text-xs transition-colors ${
                           fitPreference === option.value
                             ? 'bg-[#1C1410] text-[#EBCF8F]'
                             : 'border border-[#B08A4A]/35 bg-white text-[#2B2019]'
@@ -984,71 +1408,72 @@ export function ProductDetailClient({
 
                   <button
                     type="button"
+                    data-testid="pdp-submit-size-btn"
                     disabled={sizeLoading}
                     onClick={() => void handleComputeSize()}
-                    className="w-full rounded-full bg-[#1C1410] py-2.5 text-[11px] font-medium uppercase tracking-[0.18em] text-[#EBCF8F] transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="w-full cursor-pointer rounded-full bg-[#1C1410] py-2.5 text-[11px] font-medium uppercase tracking-[0.18em] text-[#EBCF8F] transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
                     {sizeLoading
-                      ? 'Đang đối chiếu bảng số đo...'
-                      : 'Đối chiếu bảng số đo thực tế'}
+                      ? 'Đang phân tích 4 vùng phom...'
+                      : 'Tính & Lưu Size chuẩn của tôi'}
                   </button>
+                </div>
+              ) : null}
 
-                  {sizeError ? (
-                    <p className="text-xs text-[#8B2E2E]">{sizeError}</p>
-                  ) : null}
+              {sizeError ? (
+                <p className="mt-3 text-xs text-[#8B2E2E]">{sizeError}</p>
+              ) : null}
 
-                  {/* Result appears ONLY after real API response */}
-                  {sizeResult ? (
-                    <div className="space-y-3 rounded-2xl border border-[#B08A4A]/40 bg-[#1C1410] p-4 text-xs text-[#FBF7EF]">
-                      <div className="flex items-end justify-between border-b border-[#B08A4A]/25 pb-3">
-                        <div>
-                          <p className="text-[10px] uppercase tracking-[0.18em] text-[#EBCF8F]">
-                            Kết quả đối chiếu
-                          </p>
-                          <strong className="font-editorial text-3xl text-[#FBF7EF]">
-                            Size {sizeResult.recommendedSize}
-                          </strong>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] uppercase tracking-[0.14em] text-[#FBF7EF]/60">
-                            Độ tin cậy
-                          </p>
-                          <span className="font-mono text-sm text-[#EBCF8F]">
-                            {Math.round(sizeResult.confidence * 100)} / 100
-                          </span>
-                        </div>
-                      </div>
-
-                      {sizeResult.crowdAdjusted &&
-                      sizeResult.crowdAdjustmentReason ? (
-                        <div className="rounded-xl border border-[#EBCF8F]/55 bg-[#2A1E17] p-3 text-[#EBCF8F]">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.16em]">
-                            Đã hiệu chỉnh từ phản hồi khách mua thực tế
-                          </p>
-                          <p className="mt-1 leading-relaxed text-[#FBF7EF]/90">
-                            {sizeResult.crowdAdjustmentReason}
-                          </p>
-                        </div>
-                      ) : null}
-
-                      {sizeResult.fitNotes.length > 0 ? (
-                        <ul className="space-y-1 text-[#FBF7EF]/85">
-                          {sizeResult.fitNotes.map((note) => (
-                            <li key={note}>• {note}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-
-                      {sizeResult.alternatives.length > 0 ? (
-                        <p className="text-[11px] text-[#EBCF8F]/85">
-                          Lựa chọn thay thế:{' '}
-                          {sizeResult.alternatives
-                            .map((alt) => `Size ${alt.sizeCode} (${alt.reason})`)
-                            .join(' · ')}
-                        </p>
-                      ) : null}
+              {/* Real Result + <AnatomicalFitVisualizer /> appears ONLY after real API response */}
+              {sizeResult ? (
+                <div className="mt-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#B08A4A]/35 bg-[#1C1410] px-4 py-3 text-xs text-[#FBF7EF]">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-[#EBCF8F]">
+                        Đề xuất cho vóc dáng {targetFilterHeight}cm ·{' '}
+                        {targetFilterWeight}kg
+                      </p>
+                      <strong
+                        data-testid="pdp-recommended-size-badge"
+                        className="font-editorial text-2xl text-[#FBF7EF]"
+                      >
+                        Size {sizeResult.recommendedSize}
+                      </strong>
                     </div>
-                  ) : null}
+                    <span className="rounded-full border border-[#EBCF8F]/40 bg-[#2A1E17] px-3 py-1 font-mono text-[11px] text-[#EBCF8F]">
+                      Độ tin cậy {Math.round(sizeResult.confidence * 100)} / 100
+                    </span>
+                  </div>
+
+                  <AnatomicalFitVisualizer
+                    recommendedSize={
+                      isCanonicalSizeCode(sizeResult.recommendedSize)
+                        ? sizeResult.recommendedSize
+                        : 'M'
+                    }
+                    selectedSize={visualizerSize}
+                    onSelectSize={(nextSize) => syncSelectedSkuToSize(nextSize)}
+                    fitZones={sizeResult.fitZones}
+                    allSizesFitZones={sizeResult.allSizesFitZones}
+                    availableSizes={(['XS', 'S', 'M', 'L', 'XL'] as const).map(
+                      (code) => ({
+                        sizeCode: code,
+                        inStock: Boolean(
+                          activeVariant?.skus.some(
+                            (s) => s.sizeCode === code && s.inStock,
+                          ),
+                        ),
+                      }),
+                    )}
+                    estimatedMeasurements={sizeResult.estimatedMeasurements}
+                    rationaleVi={sizeResult.rationaleVi}
+                    crowdAdjusted={Boolean(sizeResult.crowdAdjusted)}
+                    crowdAdjustmentReason={
+                      sizeResult.crowdAdjustmentReason ?? null
+                    }
+                    theme="dark"
+                    compact
+                  />
                 </div>
               ) : null}
             </section>
@@ -1112,11 +1537,13 @@ export function ProductDetailClient({
           </section>
         ) : null}
 
-        {/* Verified Fit Reviews Section (#danh-gia-do-vua) */}
+        {/* Verified Fit Reviews Section (#pdp-reviews & #danh-gia-do-vua) */}
         <section
-          id="danh-gia-do-vua"
+          id="pdp-reviews"
+          data-testid="pdp-reviews"
           className="mt-14 scroll-mt-36 rounded-3xl border border-[#B08A4A]/30 bg-white p-6 lg:p-8"
         >
+          <span id="danh-gia-do-vua" className="scroll-mt-36" />
           <div className="grid gap-8 lg:grid-cols-[0.95fr_1.35fr]">
             {/* Fit Stats Distribution Panel */}
             <div className="space-y-5 rounded-3xl border border-[#B08A4A]/25 bg-[#FBF7EF] p-6">
@@ -1212,6 +1639,85 @@ export function ProductDetailClient({
                   Chưa có thống kê tổng hợp độ vừa cho thiết kế này.
                 </p>
               )}
+
+              {/* Verified Buyer Positive Sentiment Summary Pill & Breakdown Bar */}
+              {effectiveSentimentSummary &&
+              effectiveSentimentSummary.totalScored > 0 ? (
+                <div
+                  data-testid="pdp-sentiment-summary"
+                  className="space-y-2.5 rounded-2xl border border-[#B08A4A]/28 bg-white p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#8A672C]">
+                      Cảm nhận khách đã mua · NLP xác thực
+                    </span>
+                    <span
+                      data-testid="pdp-positive-sentiment-pct"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[#2E6B47]/30 bg-[#F2FBF6] px-3 py-1 font-mono text-[11px] font-semibold text-[#1E4B32]"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="h-1.5 w-1.5 rounded-full bg-[#2E6B47]"
+                      />
+                      <span>
+                        {effectiveSentimentSummary.positivePct}% Đánh giá tích
+                        cực
+                      </span>
+                    </span>
+                  </div>
+
+                  <div
+                    aria-label="Phân bổ cảm nhận đánh giá đã xác thực"
+                    className="flex h-2 w-full overflow-hidden rounded-full bg-[#F4EBDA]"
+                  >
+                    <div
+                      style={{
+                        width: `${effectiveSentimentSummary.positivePct}%`,
+                      }}
+                      className="bg-[#2E6B47] transition-all duration-500"
+                      title={`Tích cực ${effectiveSentimentSummary.positivePct}%`}
+                    />
+                    <div
+                      style={{
+                        width: `${effectiveSentimentSummary.neutralPct}%`,
+                      }}
+                      className="bg-[#B08A4A] transition-all duration-500"
+                      title={`Trung lập ${effectiveSentimentSummary.neutralPct}%`}
+                    />
+                    <div
+                      style={{
+                        width: `${effectiveSentimentSummary.negativePct}%`,
+                      }}
+                      className="bg-[#8B2E2E] transition-all duration-500"
+                      title={`Cần lưu ý ${effectiveSentimentSummary.negativePct}%`}
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#5C4B41]">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#2E6B47]" />
+                      Tích cực{' '}
+                      <strong className="font-mono text-[#1C1410]">
+                        {effectiveSentimentSummary.positivePct}%
+                      </strong>
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#B08A4A]" />
+                      Trung lập{' '}
+                      <strong className="font-mono text-[#1C1410]">
+                        {effectiveSentimentSummary.neutralPct}%
+                      </strong>
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#8B2E2E]" />
+                      Cần lưu ý{' '}
+                      <strong className="font-mono text-[#1C1410]">
+                        {effectiveSentimentSummary.negativePct}%
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             {/* Interactive Review Filters & Verified Review Cards */}
@@ -1220,16 +1726,19 @@ export function ProductDetailClient({
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
+                    data-testid="pdp-same-body-filter-btn"
                     onClick={() => void handleToggleSameBody()}
                     aria-pressed={sameBodyOnly}
-                    className={`rounded-full border px-4 py-2 text-xs font-medium transition-colors ${
+                    className={`cursor-pointer rounded-full border px-4 py-2 text-xs font-medium transition-colors ${
                       sameBodyOnly
                         ? 'border-[#1C1410] bg-[#1C1410] text-[#EBCF8F]'
                         : 'border-[#8A672C] bg-[#F4EBDA] text-[#1C1410] hover:bg-[#1C1410] hover:text-[#EBCF8F]'
                     }`}
                   >
-                    Cùng vóc dáng với tôi ({targetFilterHeight}cm ·{' '}
-                    {targetFilterWeight}kg ±4)
+                    Xem đánh giá của người cùng vóc dáng với tôi (±4cm, ±4kg) ·{' '}
+                    <span className="font-mono">
+                      {targetFilterHeight}cm / {targetFilterWeight}kg
+                    </span>
                   </button>
                 </div>
 
@@ -1323,6 +1832,10 @@ export function ProductDetailClient({
                         : null,
                       `Đã mua Size ${review.sizePurchased}`,
                     ].filter(Boolean);
+                    const sentimentLabel = resolveReviewSentimentLabel(review);
+                    const sentimentBadge = sentimentLabel
+                      ? SENTIMENT_BADGE_CONFIG[sentimentLabel]
+                      : null;
 
                     return (
                       <article
@@ -1342,9 +1855,30 @@ export function ProductDetailClient({
                               {'☆'.repeat(Math.max(0, 5 - review.rating))}
                             </span>
                           </div>
-                          <span className="rounded-full border border-[#B08A4A]/35 bg-white px-3 py-0.5 text-[11px] font-medium text-[#1C1410]">
-                            {FIT_FEEDBACK_LABELS[review.fitFeedback]}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {sentimentBadge && sentimentLabel ? (
+                              <span
+                                data-testid="pdp-review-sentiment-badge"
+                                data-sentiment={sentimentLabel}
+                                title={
+                                  typeof review.sentimentScore === 'number' &&
+                                  Number.isFinite(review.sentimentScore)
+                                    ? `${sentimentLabel} (${review.sentimentScore >= 0 ? '+' : ''}${review.sentimentScore.toFixed(2)})`
+                                    : sentimentLabel
+                                }
+                                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10.5px] font-medium ${sentimentBadge.badgeClass}`}
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  className={`h-1.5 w-1.5 rounded-full ${sentimentBadge.dotClass}`}
+                                />
+                                {sentimentBadge.label}
+                              </span>
+                            ) : null}
+                            <span className="rounded-full border border-[#B08A4A]/35 bg-white px-3 py-0.5 text-[11px] font-medium text-[#1C1410]">
+                              {FIT_FEEDBACK_LABELS[review.fitFeedback]}
+                            </span>
+                          </div>
                         </div>
 
                         <p className="mt-1.5 font-mono text-[11px] text-[#8A672C]">

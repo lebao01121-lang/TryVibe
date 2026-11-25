@@ -1,6 +1,12 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { correlationIdMiddleware, createLogger } from '@atelier/observability';
+import {
+  correlationIdMiddleware,
+  createLogger,
+  createPrometheusHttpMiddleware,
+  createPrometheusMetricsRouteMiddleware,
+  initOpenTelemetry,
+} from '@atelier/observability';
 import { AppModule } from './app.module';
 import { AtelierExceptionFilter } from './common/api-exception';
 import { loadInventoryConfig, SERVICE_NAME } from './config/env';
@@ -8,12 +14,15 @@ import { loadInventoryConfig, SERVICE_NAME } from './config/env';
 async function bootstrap(): Promise<void> {
   const config = loadInventoryConfig();
   const logger = createLogger(config.serviceName);
+  initOpenTelemetry({ serviceName: 'inventory', serviceVersion: '3.1.0' });
 
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn'],
   });
 
   app.use(correlationIdMiddleware);
+  app.use(createPrometheusHttpMiddleware('inventory'));
+  app.use(createPrometheusMetricsRouteMiddleware());
   app.useGlobalFilters(new AtelierExceptionFilter());
 
   app.enableCors({

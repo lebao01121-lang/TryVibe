@@ -22,8 +22,14 @@ interface CollectionsCatchAllProps {
 function readSingleParam(
   value: string | string[] | undefined,
 ): string | undefined {
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value)) return value[0];
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (Array.isArray(value) && value[0]) {
+    const trimmed = value[0].trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
   return undefined;
 }
 
@@ -79,12 +85,18 @@ function classifySlug(slug?: string): {
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: CollectionsCatchAllProps): Promise<Metadata> {
   const { slug } = await params;
+  const query = await searchParams;
   const firstSlug = slug?.[0];
-  const info = classifySlug(firstSlug);
+  const queryCategory =
+    readSingleParam(query.category) ?? readSingleParam(query.categorySlug);
+  const info = classifySlug(firstSlug ?? queryCategory);
   const siteUrl = getSiteBaseUrl();
-  const canonicalPath = firstSlug ? `/bo-suu-tap/${firstSlug}` : '/bo-suu-tap';
+  const canonicalPath = firstSlug
+    ? `/bo-suu-tap/${encodeURIComponent(firstSlug)}`
+    : '/bo-suu-tap';
 
   return {
     title: `${info.heading} | Tầm Xuân Fashion Atelier`,
@@ -98,6 +110,7 @@ export async function generateMetadata({
       url: `${siteUrl}${canonicalPath}`,
       type: 'website',
       locale: 'vi_VN',
+      siteName: 'Tầm Xuân Fashion Atelier',
     },
   };
 }
@@ -111,13 +124,19 @@ export default async function CollectionsCatchAllPage({
   const firstSlug = slug?.[0];
   const resolved = classifySlug(firstSlug);
 
+  const queryCategory =
+    readSingleParam(query.category) ?? readSingleParam(query.categorySlug);
+  const effectiveCategorySlug = queryCategory ?? resolved.categorySlug;
   const occasion = readSingleParam(query.occasion) ?? resolved.occasionSlug;
   const season = readSingleParam(query.season) ?? resolved.seasonSlug;
+  const mySize = readSingleParam(query.mySize)?.toUpperCase();
+  const size = readSingleParam(query.size)?.toUpperCase();
+  const effectiveSize = mySize || size;
 
-  const { source, products } = await fetchStorefrontProducts({
-    categorySlug: resolved.categorySlug,
+  const { source, products: rawProducts } = await fetchStorefrontProducts({
+    categorySlug: effectiveCategorySlug,
     q: readSingleParam(query.q),
-    size: readSingleParam(query.size),
+    size: effectiveSize,
     color: readSingleParam(query.color),
     occasion,
     season,
@@ -126,6 +145,22 @@ export default async function CollectionsCatchAllPage({
     isTryonEnabled: readSingleParam(query.isTryonEnabled),
     sort: readSingleParam(query.sort),
   });
+
+  // Ensure strict in-stock matching when `?mySize=` is specified in SSR URL
+  const products = mySize
+    ? rawProducts.filter((product) =>
+        product.variants.some((variant) =>
+          variant.skus.some(
+            (sku) => sku.sizeCode.toUpperCase() === mySize && sku.inStock,
+          ),
+        ),
+      )
+    : rawProducts;
+
+  const resolvedHeading =
+    (queryCategory
+      ? CATEGORY_TABS.find((c) => c.slug === queryCategory)?.name
+      : undefined) ?? resolved.heading;
 
   return (
     <InnerPageFrame>
@@ -140,7 +175,7 @@ export default async function CollectionsCatchAllPage({
           initialCategorySlug={resolved.categorySlug}
           initialOccasionSlug={resolved.occasionSlug}
           initialSeasonSlug={resolved.seasonSlug}
-          headingTitle={resolved.heading}
+          headingTitle={resolvedHeading}
           initialProducts={products}
           initialSource={source}
         />

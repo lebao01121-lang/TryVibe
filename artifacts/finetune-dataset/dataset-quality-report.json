@@ -1,0 +1,110 @@
+{
+  "generatedAt": "2026-11-25T04:54:21.961Z",
+  "privacyInvariant": {
+    "policyRef": "rag_doc_02_tryon_privacy_15min",
+    "tryOnUserPhotosExported": 0,
+    "rawPersonalBodyMeasurementsExported": 0,
+    "bodyMeasurementAnonymization": "5cm / 5kg buckets only (e.g., 160-164cm, 50-54kg)",
+    "sanitizersApplied": [
+      "@atelier/ai-harness maskPii",
+      "@atelier/observability redactPiiForLog",
+      "Strict Regex (email, VN phone, VN street address, secrets, private Try-On refs, raw body keys)",
+      "Shannon Entropy Scanner (threshold > 4.2, len >= 24)"
+    ]
+  },
+  "files": {
+    "legacyGate3Jsonl": {
+      "path": "artifacts/ai-sft-preference-dataset.jsonl",
+      "records": 79
+    },
+    "sftTrain": {
+      "path": "artifacts/finetune-dataset/train.jsonl",
+      "format": "chatml",
+      "records": 69
+    },
+    "sftVal": {
+      "path": "artifacts/finetune-dataset/val.jsonl",
+      "format": "chatml",
+      "records": 8
+    },
+    "dpoTrain": {
+      "path": "artifacts/finetune-dataset/dpo_train.jsonl",
+      "format": "trl_dpo",
+      "records": 34
+    },
+    "dpoVal": {
+      "path": "artifacts/finetune-dataset/dpo_val.jsonl",
+      "format": "trl_dpo",
+      "records": 4
+    }
+  },
+  "deduplication": {
+    "method": "sha256_normalized_content",
+    "rawSftCount": 77,
+    "uniqueSftCount": 77,
+    "sftDuplicatesRemoved": 0,
+    "rawDpoCount": 38,
+    "uniqueDpoCount": 38,
+    "dpoDuplicatesRemoved": 0,
+    "duplicatesRemoved": 0
+  },
+  "splitSummary": {
+    "strategy": "deterministic_stratified_90_10",
+    "sftTrainCount": 69,
+    "sftValCount": 8,
+    "sftTrainPct": 89.6,
+    "sftValPct": 10.4,
+    "dpoTrainCount": 34,
+    "dpoValCount": 4,
+    "dpoTrainPct": 89.5,
+    "dpoValPct": 10.5
+  },
+  "labelBalance": {
+    "totalFinetuneExamples": 115,
+    "categories": {
+      "dpo": {
+        "count": 38,
+        "pct": 33
+      },
+      "sft_size_fit": {
+        "count": 61,
+        "pct": 53
+      },
+      "sft_tool_injection": {
+        "count": 16,
+        "pct": 13.9
+      }
+    },
+    "originBreakdown": {
+      "liveDbOperational": 78,
+      "curatedPolicyBaseline": 37
+    }
+  },
+  "zeroPiiGate": {
+    "passed": true,
+    "totalLinesScanned": 194,
+    "totalLeaks": 0,
+    "regexLeaks": 0,
+    "entropyLeaks": 0,
+    "tryOnImageRefLeaks": 0,
+    "entropyThreshold": 4.2,
+    "entropyMinTokenLength": 24,
+    "checkedPatterns": [
+      "email",
+      "vn_phone",
+      "vn_street_address",
+      "secret_token",
+      "tryon_private_ref",
+      "raw_body_or_pii_key"
+    ]
+  },
+  "productionReadiness": {
+    "status": "BOOTSTRAP_PRE_FINETUNE",
+    "recommendedMinRealExamples": 1000,
+    "recommendedTargetRealExamples": 3000,
+    "currentTotalFinetuneExamples": 115,
+    "currentLiveOperationalExamples": 78,
+    "gapToMinProductionThreshold": 922,
+    "honestAssessmentVi": "Hiện có 115 mẫu chuẩn hóa (78 mẫu từ dữ liệu vận hành thực tế) — chưa đạt ngưỡng khuyến nghị 1,000–3,000 mẫu thực tế cho fine-tune trọng số production. Khuyến nghị dùng Stage 1 custom Ollama model (atelier-copilot:v1 qua Modelfile) ngay lập tức và tiếp tục thu thập telemetry phản hồi/PO/RMA trước khi chạy QLoRA full-scale."
+  }
+}

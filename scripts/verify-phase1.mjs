@@ -633,12 +633,12 @@ async function runTest3InstantRbacRevocation(sharedState) {
   try {
     // Ensure we have an MFA-verified SUPER_ADMIN token (also verifies pre-MFA block if not done yet)
     if (!adminToken) {
-      const adminLogin = await loginViaBff('admin@atelier.local', 'Atelier@2026!', {
+      const adminLogin = await loginViaBff('lebao01121@gmail.com', 'Atelier@2026!', {
         routePrefix: '/api/v1/auth',
         origin: 'http://localhost:3001',
       });
       assert.equal(adminLogin.res.status, 200, `Admin login failed: ${adminLogin.res.text}`);
-      const mfa = await completeEmailOtpMfa(adminLogin.data.accessToken, 'admin@atelier.local');
+      const mfa = await completeEmailOtpMfa(adminLogin.data.accessToken, 'lebao01121@gmail.com');
       adminToken = mfa.accessToken;
       sharedState.adminToken = adminToken;
     }
@@ -762,7 +762,7 @@ async function runTest4MfaIsolationAndRedaction(sharedState) {
   const details = [];
   try {
     // 4a. SUPER_ADMIN pre-MFA blocked -> Mailpit Email OTP -> unlocked
-    const adminLogin = await loginViaBff('admin@atelier.local', 'Atelier@2026!', {
+    const adminLogin = await loginViaBff('lebao01121@gmail.com', 'Atelier@2026!', {
       routePrefix: '/api/v1/auth',
       origin: 'http://localhost:3001',
     });
@@ -775,7 +775,7 @@ async function runTest4MfaIsolationAndRedaction(sharedState) {
     assert.equal(adminBlocked.status, 403, `Pre-MFA SUPER_ADMIN expected 403, got ${adminBlocked.status}`);
     assert.equal(unwrapErrorCode(adminBlocked), 'MFA_REQUIRED', `Expected MFA_REQUIRED, got ${unwrapErrorCode(adminBlocked)}`);
 
-    const adminMfa = await completeEmailOtpMfa(adminLogin.data.accessToken, 'admin@atelier.local');
+    const adminMfa = await completeEmailOtpMfa(adminLogin.data.accessToken, 'lebao01121@gmail.com');
     sharedState.adminToken = adminMfa.accessToken;
     const adminAllowed = await apiRequest(`${BFF_BASE}/api/v1/admin/users`, {
       headers: { Authorization: `Bearer ${adminMfa.accessToken}` },

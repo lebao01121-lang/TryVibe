@@ -13,6 +13,8 @@ import type { AtelierDbClient } from '@atelier/db-client';
 import { hashPassword } from '../crypto/password';
 
 export const SEED_PASSWORD_PLAIN = 'Atelier@2026!';
+export const LEGACY_SUPER_ADMIN_EMAIL = 'admin@atelier.local';
+export const SUPER_ADMIN_EMAIL = 'lebao01121@gmail.com';
 export const SUPPLIER_A_ID = '11111111-1111-4111-8111-111111111101';
 export const SUPPLIER_B_ID = '22222222-2222-4222-8222-222222222202';
 export const SUPPLIER_C_ID = '33333333-3333-4333-8333-333333333303';
@@ -80,7 +82,7 @@ interface SeedUserSpec {
 
 const SEED_USERS: readonly SeedUserSpec[] = [
   {
-    email: 'admin@atelier.local',
+    email: SUPER_ADMIN_EMAIL,
     fullName: 'Nguyễn Minh Quản Trị',
     phone: '0901000001',
     role: Role.SUPER_ADMIN,
@@ -220,6 +222,34 @@ export async function seedAuthDatabase(db: AtelierDbClient): Promise<SeedSummary
           [roleId, permId],
         );
       }
+    }
+  }
+
+  // Idempotent migration: upgrade legacy SUPER_ADMIN email (`admin@atelier.local`)
+  // in-place to `lebao01121@gmail.com` while preserving its UUID, roles, 2FA & unique phone.
+  const legacyAdminRes = await db.query<{ id: string }>(
+    'SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1',
+    [LEGACY_SUPER_ADMIN_EMAIL],
+  );
+  if (legacyAdminRes.rows.length > 0) {
+    const targetAdminRes = await db.query<{ id: string }>(
+      'SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1',
+      [SUPER_ADMIN_EMAIL],
+    );
+    if (targetAdminRes.rows.length === 0) {
+      const migratedUserId = legacyAdminRes.rows[0].id;
+      await db.query(
+        `UPDATE users
+         SET email = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [SUPER_ADMIN_EMAIL, migratedUserId],
+      );
+      await db.query(
+        `UPDATE auth_sessions
+         SET revoked = TRUE
+         WHERE user_id = $1 AND revoked = FALSE`,
+        [migratedUserId],
+      );
     }
   }
 

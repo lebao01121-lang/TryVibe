@@ -11,13 +11,37 @@ export const SupplierDtoSchema = z.object({
   id: z.string().min(1),
   code: z.string().min(1),
   name: z.string().min(1),
+  contactName: z.string().nullable().optional(),
   contactEmail: z.string().email(),
+  contactPhone: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
   leadTimeDays: z.number().int().positive(),
+  paymentTermsDays: z.number().int().nonnegative().optional(),
   defectRatePct: z.number().min(0).max(100),
   status: SupplierStatusSchema,
+  isActive: z.boolean().optional(),
 });
 export type SupplierDTO = z.infer<typeof SupplierDtoSchema>;
 export type SupplierDto = SupplierDTO;
+
+export const CreateSupplierDtoSchema = z.object({
+  code: z.string().trim().min(2).max(64),
+  name: z.string().trim().min(2).max(200),
+  contactName: z.string().trim().max(140).optional(),
+  contactEmail: z.string().trim().email(),
+  contactPhone: z.string().trim().max(32).optional(),
+  address: z.string().trim().max(300).optional(),
+  leadTimeDays: z.coerce.number().int().positive().max(180).default(7),
+  paymentTermsDays: z.coerce.number().int().nonnegative().max(180).default(30),
+  isActive: z.boolean().default(true),
+  status: SupplierStatusSchema.optional(),
+});
+export type CreateSupplierDTO = z.infer<typeof CreateSupplierDtoSchema>;
+export type CreateSupplierDto = CreateSupplierDTO;
+
+export const UpdateSupplierDtoSchema = CreateSupplierDtoSchema.partial();
+export type UpdateSupplierDTO = z.infer<typeof UpdateSupplierDtoSchema>;
+export type UpdateSupplierDto = UpdateSupplierDTO;
 
 export const PurchaseOrderStatus = {
   NHAP_AI: 'NHAP_AI',
@@ -26,6 +50,8 @@ export const PurchaseOrderStatus = {
   HOAN_TAT_MOT_PHAN: 'HOAN_TAT_MOT_PHAN',
   HOAN_TAT: 'HOAN_TAT',
   DA_HUY: 'DA_HUY',
+  CANCELLED: 'CANCELLED',
+  SUPPLIER_REJECTED: 'SUPPLIER_REJECTED',
 } as const;
 export type PurchaseOrderStatus = (typeof PurchaseOrderStatus)[keyof typeof PurchaseOrderStatus];
 export const PurchaseOrderStatusSchema = z.enum([
@@ -35,6 +61,8 @@ export const PurchaseOrderStatusSchema = z.enum([
   PurchaseOrderStatus.HOAN_TAT_MOT_PHAN,
   PurchaseOrderStatus.HOAN_TAT,
   PurchaseOrderStatus.DA_HUY,
+  PurchaseOrderStatus.CANCELLED,
+  PurchaseOrderStatus.SUPPLIER_REJECTED,
 ]);
 
 export const PurchaseOrderCreatedSource = {
@@ -106,6 +134,11 @@ export const PurchaseOrderDtoSchema = z.object({
   approvedAt: z.string().nullable(),
   confirmedBySupplierUserId: z.string().nullable(),
   confirmedAt: z.string().nullable(),
+  cancelReason: z.string().nullable().optional(),
+  cancelledAt: z.string().nullable().optional(),
+  supplierRejectionReason: z.string().nullable().optional(),
+  proposedDeliveryDate: z.string().nullable().optional(),
+  rejectedAt: z.string().nullable().optional(),
   items: z.array(PurchaseOrderItemDtoSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -121,6 +154,23 @@ export type ConfirmPurchaseOrderBySupplierDTO = z.infer<
   typeof ConfirmPurchaseOrderBySupplierDtoSchema
 >;
 export type ConfirmPurchaseOrderBySupplierDto = ConfirmPurchaseOrderBySupplierDTO;
+
+export const CancelPurchaseOrderDtoSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+  actorId: z.string().trim().optional(),
+});
+export type CancelPurchaseOrderDTO = z.infer<typeof CancelPurchaseOrderDtoSchema>;
+export type CancelPurchaseOrderDto = CancelPurchaseOrderDTO;
+
+export const RejectPurchaseOrderBySupplierDtoSchema = z.object({
+  supplierId: z.string().trim().min(1).optional(),
+  reason: z.string().trim().min(2).max(500),
+  proposedDeliveryDate: z.string().trim().max(32).nullable().optional(),
+});
+export type RejectPurchaseOrderBySupplierDTO = z.infer<
+  typeof RejectPurchaseOrderBySupplierDtoSchema
+>;
+export type RejectPurchaseOrderBySupplierDto = RejectPurchaseOrderBySupplierDTO;
 
 export const CreateGoodsReceiptItemDtoSchema = z.object({
   poItemId: z.string().min(1),
@@ -177,13 +227,29 @@ export const SupplierPayableDtoSchema = z.object({
   supplierId: z.string().min(1),
   grnId: z.string().min(1),
   poId: z.string().min(1).nullable().optional(),
+  poNumber: z.string().nullable().optional(),
+  grnNumber: z.string().nullable().optional(),
   amountPayableVnd: z.number().int().nonnegative(),
   status: SupplierPayableStatusSchema,
   dueDate: z.string(),
+  bankReference: z.string().nullable().optional(),
+  paymentReference: z.string().nullable().optional(),
+  paidAt: z.string().nullable().optional(),
+  paidBy: z.string().nullable().optional(),
+  settlementNote: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 export type SupplierPayableDTO = z.infer<typeof SupplierPayableDtoSchema>;
 export type SupplierPayableDto = SupplierPayableDTO;
+
+export const MarkPayablePaidDtoSchema = z.object({
+  bankReference: z.string().trim().min(2).max(140),
+  paidAt: z.string().trim().optional(),
+  note: z.string().max(500).optional(),
+  actorId: z.string().trim().optional(),
+});
+export type MarkPayablePaidDTO = z.infer<typeof MarkPayablePaidDtoSchema>;
+export type MarkPayablePaidDto = MarkPayablePaidDTO;
 
 // ============================================================================
 // AI Studio Lookbook Contracts

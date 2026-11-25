@@ -1,0 +1,114 @@
+{
+  "generatedAt": "2026-11-25T03:49:48.405Z",
+  "checks": {
+    "CHECK_1": {
+      "title": "Real VietQR ISO/IEC 18004 + EMVCo NAPAS 247 CRC16-CCITT + OpenCV Decode",
+      "status": "PASS",
+      "details": [
+        "orderCode=TX-20267D3E24, grandTotalVnd=2890000, qrStandard=ISO_IEC_18004_EMVCO_NAPAS247",
+        "EMVCo CRC16-CCITT (0xFFFF)=VALID, BankBIN=970422, Account=088820269999, Desc=\"TAMXUAN TX-20267D3E24\"",
+        "cv2.QRCodeDetector() exact byte-for-byte match (153 bytes)"
+      ],
+      "data": {
+        "orderCode": "TX-20267D3E24",
+        "grandTotalVnd": 2890000,
+        "qrStandard": "ISO_IEC_18004_EMVCO_NAPAS247",
+        "qrPayloadLen": 153,
+        "opencvExactMatch": true
+      }
+    },
+    "CHECK_2": {
+      "title": "VNPay (HMAC-SHA512) & MoMo (HMAC-SHA256) Redirect, IPN, Return URL & Refund",
+      "status": "PASS",
+      "details": [
+        "VNPay (TX-202602ECC9): sorted vnp_* + 128-hex SHA512, tampered IPN -> RspCode=97, valid IPN -> RspCode=00, replay -> RspCode=02, return verified=true/paid=true, Storefront /thanh-toan/ket-qua HTTP 200",
+        "MoMo (TX-20261A3A8B): 64-hex SHA256 paymentUrl, tampered IPN -> HTTP 401, valid IPN -> processed=true, replay -> deduplicated=true",
+        "MoMo Partial Refund (200000 VND): providerRefundId=MOMO-REF-REF-TX-20261A3A8, mode=SANDBOX_LOCAL, payment_transactions REFUND=SUCCEEDED"
+      ],
+      "data": {
+        "vnpOrderCode": "TX-202602ECC9",
+        "vnpayTamperRspCode": "97",
+        "vnpayValidRspCode": "00",
+        "vnpayReplayRspCode": "02",
+        "storefrontReturnHttp": 200,
+        "momoOrderCode": "TX-20261A3A8B",
+        "momoTamperHttp": 401,
+        "momoRefundId": "MOMO-REF-REF-TX-20261A3A8",
+        "momoRefundVnd": 200000
+      }
+    },
+    "CHECK_3": {
+      "title": "Dynamic Shipping Quote (GHN/GHTK/AhaMove), Admin Ship Adapter & Signed Webhook",
+      "status": "PASS",
+      "details": [
+        "AHAMOVE_2H (HN 01/001/00013): fee=42000đ, eta=2h, mode=SANDBOX_LOCAL, quotes=4",
+        "GHN (HCM 79/760/26734): fee=43000đ, eta=72h, mode=SANDBOX_LOCAL, quotes=4",
+        "GHTK (DN 48/492/20245): fee=37000đ, eta=54h, mode=SANDBOX_LOCAL, quotes=4",
+        "Admin Ship (TX-202602ECC9): trackingCode=GHN26112502ECC9A09D, shippingActualFeeVnd=38000đ",
+        "GHN Webhook: invalid sig -> HTTP 401, valid HMAC-SHA256 -> order=DELIVERED, duplicate -> deduplicated=true"
+      ],
+      "data": {
+        "trackingCode": "GHN26112502ECC9A09D",
+        "shippingActualFeeVnd": 38000,
+        "invalidWebhookHttp": 401,
+        "orderStatusAfterWebhook": "DELIVERED",
+        "deduplicated": true
+      }
+    },
+    "CHECK_4": {
+      "title": "Real Zalo OA/ZNS Client & atelier.notify.dlq Retry Path",
+      "status": "PASS",
+      "details": [
+        "Dry-run ZNS (p22-zns-dry-7f9b4c9e): status=LOCAL_SANDBOX, deliveryMode=LOCAL_SANDBOX_DRYRUN (truthful, never fake live SENT)",
+        "Simulated failure (p22-zns-fail-1efd1cc9): exponential retry backoff=1660ms (3 attempts), status=FAILED, providerErrorCode=SIMULATED_ZNS_503",
+        "DLQ verified: znsDeadLettered=true, atelier.notify.dlq messageCount=1"
+      ],
+      "data": {
+        "dryEventId": "p22-zns-dry-7f9b4c9e",
+        "failEventId": "p22-zns-fail-1efd1cc9",
+        "failElapsedMs": 1660,
+        "retryCount": 3,
+        "znsDeadLettered": true,
+        "notifyDlqCount": 1
+      }
+    },
+    "CHECK_5": {
+      "title": "Real Sharp Binary validate-garment + Layer 6 HITL Lock + Magic Bytes Reject",
+      "status": "PASS",
+      "details": [
+        "Good 768x1024 PNG (3:4 transparent): isValid=true, score=100, ratio=3:4, alphaCorners=1, HITL=NHAP_AI/autoAttach=false/humanApproval=true",
+        "Bad 320x180 JPEG (16:9 opaque): isValid=false, score=0 (<60), ratio=16:9, warnings=5, HITL=NHAP_AI/autoAttach=false/humanApproval=true",
+        "Forged Magic Bytes: HTTP 400 INVALID_MAGIC_BYTES"
+      ],
+      "data": {
+        "goodScore": 100,
+        "badScore": 0,
+        "badWarningsCount": 5,
+        "forgedHttp": 400
+      }
+    },
+    "CHECK_6": {
+      "title": "AI Try-On Durable Topology, Lookbook Real VTON & BFF Socket.io Redis Adapter + 60s Replay TTL",
+      "status": "PASS",
+      "details": [
+        "ai-tryon topology: mainQueue=tryon.jobs, retry=[2000,10000,30000], dlx=atelier.tryon.dlx -> atelier.tryon.dlq; workerTransport=in_memory_fallback, rabbitmqConnected=false (AMQP :5672 offline on non-Docker host; RabbitMQ Mgmt :15672 managed by local-infra-dev.mjs), databaseDialect=sqlite",
+        "Lookbook Studio real VTON: providerUsed=SMART_POSE_WARP_V2 (not MOCK), draftStatus=NHAP_AI, autoAttachAsTryOnGarment=false, requiresHumanApproval=true",
+        "BFF Redis Adapter & Replay: socketIoRedisAdapter=true, realtimeReplayBackend=redis, key=atelier:ws:replay:tryon:p22-ws-tryon-d968aa22, TTL=60s (0 < TTL <= 60)"
+      ],
+      "data": {
+        "workerTransport": "in_memory_fallback",
+        "rabbitmqConnected": false,
+        "databaseDialect": "sqlite",
+        "lookbookProviderUsed": "SMART_POSE_WARP_V2",
+        "lookbookDraftStatus": "NHAP_AI",
+        "socketIoRedisAdapter": true,
+        "realtimeReplayBackend": "redis",
+        "redisReplayKey": "atelier:ws:replay:tryon:p22-ws-tryon-d968aa22",
+        "redisReplayTtlSec": 60
+      }
+    }
+  },
+  "passCount": 6,
+  "failCount": 0,
+  "totalSec": 19.2
+}

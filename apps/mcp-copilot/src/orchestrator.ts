@@ -3,6 +3,7 @@ import {
   type AiSecurityHarness,
   type CallerAuthContext,
   type OllamaChatMessage,
+  type OllamaToolCall,
   type OllamaToolDefinition,
   SemanticCacheKeyBuilder,
   UntrustedTurnMutationBlockedError,
@@ -10,16 +11,22 @@ import {
   authorizeToolCall,
   canRolesReadCostFields,
   detectPromptInjection,
+  detectPromptInjectionInUntrustedData,
+  detectStorefrontPromptInjection,
   maskPii,
   redactRestrictedFields,
+  redactStorefrontPayload,
+  wrapUntrustedCustomerNotes,
   type PromptRoleScope,
 } from '@atelier/ai-harness';
 import {
   CopilotActionCardType,
   ErrorCode,
+  FitPreference,
   McpToolName,
   Permission,
   Role,
+  SizeCode,
   hasPermission,
   type CopilotActionCard,
   type CopilotChatRequestDTO,
@@ -33,14 +40,25 @@ import { BffHttpError } from './bff-client.js';
 import type { McpCopilotConfig } from './config.js';
 import type { CopilotRagService } from './rag-service.js';
 import type { RedisSemanticCache } from './redis-cache.js';
-import type {
-  EnrichedDemandAnalytics,
-  EnrichedGarmentValidationResult,
-  EnrichedPurchaseOrderResult,
-  EnrichedRefundSizingAnalysis,
-  LiveDemandSignalEntry,
-  LiveToolExecutors,
+import {
+  CUSTOMER_ORDERS_RMA_TOOL_NAME,
+  type EnrichedDemandAnalytics,
+  type EnrichedGarmentValidationResult,
+  type EnrichedPurchaseOrderResult,
+  type EnrichedRefundSizingAnalysis,
+  type EnrichedVerifiedSizeResult,
+  type LiveDemandSignalEntry,
+  type LiveToolExecutors,
+  type StorefrontRecommendedProduct,
 } from './tools.js';
+
+export type ExtendedCopilotChatRequest = CopilotChatRequestDTO & {
+  guestSessionId?: string;
+  history?: Array<{ role: string; content: string }>;
+  bodyProfile?: Record<string, unknown>;
+};
+
+export type CopilotLlmBackend = 'ollama' | 'gemini' | 'rule_fallback';
 
 export interface CopilotSafetyReport {
   promptInjectionDetected: boolean;
@@ -51,12 +69,20 @@ export interface CopilotSafetyReport {
 }
 
 export interface ExtendedCopilotChatResponse extends CopilotChatResponseDTO {
+  traceId: string;
+  recommendedProducts?: StorefrontRecommendedProduct[];
+  toolCalls?: string[];
+  tier?: string;
+  model?: string;
+  blockedInjection?: boolean;
   safetyReport: CopilotSafetyReport;
   promptInjectionDetected: boolean;
   sanitizedUntrustedNotes: string[];
   latencyMs: number;
   ollamaTelemetry: OllamaTelemetry;
   aiProvider: OllamaAiProvider;
+  llmBackend: CopilotLlmBackend;
+  geminiConfigured: boolean;
   embedModel: string;
   promptEvalCount: number;
   evalCount: number;
@@ -82,10 +108,12 @@ type PlannedAction =
   | 'ANALYZE_REFUND_AND_SIZING'
   | 'VALIDATE_GARMENT_IMAGE'
   | 'CLEARANCE_CAMPAIGN_DRAFT'
+  | 'CALCULATE_VERIFIED_SIZE'
   | 'POLICY_RAG_QA';
 
 interface OllamaTurnAccumulatedMetrics {
   aiProvider: OllamaAiProvider;
+  llmBackend: CopilotLlmBackend;
   modelUsed: string;
   fallbackUsed: boolean;
   tierUsed: 0 | 1 | 2;
@@ -93,6 +121,252 @@ interface OllamaTurnAccumulatedMetrics {
   evalCount: number;
   totalDurationMs: number;
   tokensPerSec: number;
+}
+
+function getGeminiConfig(): { apiKey: string; model: string; preferGemini: boolean } {
+  const apiKey = (process.env.GEMINI_API_KEY ?? '').trim();
+  const model = (process.env.GEMINI_MODEL ?? 'gemini-2.0-flash').trim() || 'gemini-2.0-flash';
+  const envProvider = (process.env.AI_PROVIDER ?? 'ollama').trim().toLowerCase();
+  return {
+    apiKey,
+    model,
+    preferGemini: Boolean(apiKey) && envProvider === 'gemini',
+  };
+}
+
+function toGeminiSchema(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { type: 'OBJECT', properties: {} };
+  }
+  const obj = raw as Record<string, unknown>;
+  const rawType = typeof obj.type === 'string' ? obj.type.toUpperCase() : 'OBJECT';
+  const allowedTypes = new Set(['STRING', 'NUMBER', 'INTEGER', 'BOOLEAN', 'ARRAY', 'OBJECT']);
+  const out: Record<string, unknown> = {
+    type: allowedTypes.has(rawType) ? rawType : 'STRING',
+  };
+  if (typeof obj.description === 'string') {
+    out.description = obj.description;
+  }
+  if (Array.isArray(obj.enum)) {
+    out.enum = obj.enum.map((v) => String(v));
+  }
+  if (out.type === 'OBJECT' && obj.properties && typeof obj.properties === 'object') {
+    const props: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj.properties as Record<string, unknown>)) {
+      props[k] = toGeminiSchema(v);
+    }
+    out.properties = props;
+    if (Array.isArray(obj.required)) {
+      out.required = obj.required.filter((r): r is string => typeof r === 'string');
+    }
+  }
+  if (out.type === 'ARRAY' && obj.items) {
+    out.items = toGeminiSchema(obj.items);
+  }
+  return out;
+}
+
+async function callGeminiChat(params: {
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  messages: readonly OllamaChatMessage[];
+  tools?: readonly OllamaToolDefinition[];
+  temperature?: number;
+  timeoutMs?: number;
+}): Promise<{
+  ok: boolean;
+  content: string;
+  toolCalls: OllamaToolCall[];
+  promptEvalCount: number;
+  evalCount: number;
+  totalDurationMs: number;
+  model: string;
+}> {
+  const startedAt = Date.now();
+  const contents: Array<Record<string, unknown>> = [];
+  for (const m of params.messages) {
+    if (m.role === 'system') continue;
+    if (m.role === 'tool') {
+      contents.push({
+        role: 'user',
+        parts: [
+          {
+            text: `[Tool Result: ${m.tool_name ?? 'tool'}]\n${m.content}`,
+          },
+        ],
+      });
+      continue;
+    }
+    contents.push({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content || ' ' }],
+    });
+  }
+
+  const body: Record<string, unknown> = {
+    systemInstruction: { parts: [{ text: params.systemPrompt }] },
+    contents,
+    generationConfig: {
+      temperature: params.temperature ?? 0.1,
+    },
+  };
+
+  if (params.tools && params.tools.length > 0) {
+    body.tools = [
+      {
+        functionDeclarations: params.tools.map((t) => ({
+          name: t.function.name,
+          description: t.function.description,
+          parameters: toGeminiSchema(t.function.parameters),
+        })),
+      },
+    ];
+  }
+
+  try {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(params.model)}:generateContent?key=${encodeURIComponent(params.apiKey)}`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(params.timeoutMs ?? 15_000),
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        content: '',
+        toolCalls: [],
+        promptEvalCount: 0,
+        evalCount: 0,
+        totalDurationMs: Date.now() - startedAt,
+        model: params.model,
+      };
+    }
+    const json = (await response.json()) as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{
+            text?: string;
+            functionCall?: { name?: string; args?: Record<string, unknown> };
+          }>;
+        };
+      }>;
+      usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+      };
+    };
+
+    const parts = json.candidates?.[0]?.content?.parts ?? [];
+    const textParts: string[] = [];
+    const toolCalls: OllamaToolCall[] = [];
+    for (const part of parts) {
+      if (typeof part.text === 'string' && part.text.trim()) {
+        textParts.push(part.text.trim());
+      }
+      if (part.functionCall && typeof part.functionCall.name === 'string') {
+        toolCalls.push({
+          function: {
+            name: part.functionCall.name,
+            arguments:
+              part.functionCall.args && typeof part.functionCall.args === 'object'
+                ? part.functionCall.args
+                : {},
+          },
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      content: textParts.join('\n').trim(),
+      toolCalls,
+      promptEvalCount: Number(json.usageMetadata?.promptTokenCount ?? 0),
+      evalCount: Number(json.usageMetadata?.candidatesTokenCount ?? 0),
+      totalDurationMs: Date.now() - startedAt,
+      model: params.model,
+    };
+  } catch {
+    return {
+      ok: false,
+      content: '',
+      toolCalls: [],
+      promptEvalCount: 0,
+      evalCount: 0,
+      totalDurationMs: Date.now() - startedAt,
+      model: params.model,
+    };
+  }
+}
+
+function collectUntrustedContextNotes(contextObj: Record<string, unknown>): string[] {
+  const collected: string[] = [];
+  const pushText = (val: unknown): void => {
+    if (typeof val === 'string' && val.trim().length > 0) {
+      collected.push(val.trim());
+    } else if (Array.isArray(val)) {
+      for (const item of val) {
+        if (typeof item === 'string' && item.trim().length > 0) {
+          collected.push(item.trim());
+        } else if (item && typeof item === 'object' && !Array.isArray(item)) {
+          const rec = item as Record<string, unknown>;
+          for (const key of ['comment', 'note', 'customerNote', 'customer_note', 'text', 'review']) {
+            if (typeof rec[key] === 'string' && (rec[key] as string).trim().length > 0) {
+              collected.push((rec[key] as string).trim());
+            }
+          }
+        }
+      }
+    }
+  };
+  for (const key of [
+    'customerNote',
+    'customer_note',
+    'customerNotes',
+    'customer_notes',
+    'untrustedNote',
+    'review',
+    'reviews',
+    'customerReview',
+    'customerReviews',
+    'feedbackNotes',
+  ]) {
+    if (key in contextObj) {
+      pushText(contextObj[key]);
+    }
+  }
+  return collected;
+}
+
+function extractBodyMeasurementsFromMessage(
+  message: string,
+  contextObj: Record<string, unknown>,
+): { heightCm: number; weightKg: number; productSlug?: string; productId?: string } {
+  const hMatch = /\b(1[3-9]\d|2[0-2]\d)\s*cm\b|\b1m([4-9]\d)\b/i.exec(message);
+  const wMatch = /\b([3-9]\d|1[0-5]\d)\s*kg\b/i.exec(message);
+  const parsedHeight = hMatch
+    ? hMatch[1]
+      ? Number(hMatch[1])
+      : Number(`1${hMatch[2]}`)
+    : undefined;
+  const parsedWeight = wMatch ? Number(wMatch[1]) : undefined;
+  const heightCm = Number(contextObj.heightCm ?? parsedHeight ?? 162);
+  const weightKg = Number(contextObj.weightKg ?? parsedWeight ?? 52);
+  const productSlug =
+    typeof contextObj.productSlug === 'string' && contextObj.productSlug.trim()
+      ? contextObj.productSlug.trim()
+      : undefined;
+  const productId =
+    typeof contextObj.productId === 'string' && contextObj.productId.trim()
+      ? contextObj.productId.trim()
+      : undefined;
+  return {
+    heightCm: Number.isFinite(heightCm) && heightCm >= 120 && heightCm <= 230 ? heightCm : 162,
+    weightKg: Number.isFinite(weightKg) && weightKg >= 25 && weightKg <= 200 ? weightKg : 52,
+    productSlug,
+    productId,
+  };
 }
 
 function foldVietnamese(input: string): string {
@@ -146,8 +420,22 @@ function planActionFromRequest(
   ) {
     return 'CLEARANCE_CAMPAIGN_DRAFT';
   }
+  if (preferredTool === McpToolName.CALCULATE_VERIFIED_SIZE) {
+    return 'CALCULATE_VERIFIED_SIZE';
+  }
 
   const folded = foldVietnamese(message);
+
+  // 0. Deterministic / Live verified size recommendation (calculate_verified_size)
+  if (
+    /\b(calculate_verified_size|tinh size|tu van size|chon size|goi y size)\b/.test(folded) &&
+    (/\b(1[3-9]\d|2[0-2]\d)\s*cm\b|\b1m[4-9]\d\b/.test(folded) ||
+      /\b([3-9]\d|1[0-5]\d)\s*kg\b/.test(folded) ||
+      context?.heightCm !== undefined ||
+      context?.weightKg !== undefined)
+  ) {
+    return 'CALCULATE_VERIFIED_SIZE';
+  }
 
   // 1. Garment image validation (Tool 1)
   if (
@@ -306,9 +594,16 @@ export class RuleBasedMcpOrchestrator {
     citations: readonly GroundedCitation[],
     sanitizedUntrustedNotes: readonly string[],
     priorMetrics?: Partial<OllamaTurnAccumulatedMetrics>,
+    preferredProvider?: string,
   ): Promise<{ reply: string; metrics: OllamaTurnAccumulatedMetrics }> {
+    const geminiCfg = getGeminiConfig();
+    const wantGeminiFirst =
+      Boolean(geminiCfg.apiKey) &&
+      (geminiCfg.preferGemini || preferredProvider === 'gemini');
+
     const baseMetrics: OllamaTurnAccumulatedMetrics = {
       aiProvider: priorMetrics?.aiProvider ?? 'rule_fallback',
+      llmBackend: priorMetrics?.llmBackend ?? 'rule_fallback',
       modelUsed: priorMetrics?.modelUsed ?? 'rule-based-mcp-orchestrator',
       fallbackUsed: priorMetrics?.fallbackUsed ?? true,
       tierUsed: priorMetrics?.tierUsed ?? 1,
@@ -317,10 +612,6 @@ export class RuleBasedMcpOrchestrator {
       totalDurationMs: priorMetrics?.totalDurationMs ?? 0,
       tokensPerSec: priorMetrics?.tokensPerSec ?? 0,
     };
-
-    if (!this.harness.ollamaClient.isLiveAvailable()) {
-      return { reply: deterministicSummary, metrics: baseMetrics };
-    }
 
     const promptScope = resolvePromptRoleScope(caller.roles);
     const systemPrompt = this.harness.promptRegistry.renderSystemPrompt(
@@ -349,63 +640,110 @@ export class RuleBasedMcpOrchestrator {
       'Hãy viết câu trả lời tiếng Việt ngắn gọn (3-5 câu), rõ số liệu thực từ công cụ MCP và nhấn mạnh trạng thái NHAP_AI cần nhân sự phê duyệt thủ công.',
     );
 
-    const llmRes = await this.harness.ollamaClient.chat({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userSections.join('\n\n') },
-      ],
-      temperature: 0.1,
-      allowFallback: true,
-      fallbackText: deterministicSummary,
-    });
+    const chatMessages: OllamaChatMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userSections.join('\n\n') },
+    ];
 
-    const totalPromptEval = baseMetrics.promptEvalCount + llmRes.promptEvalCount;
-    const totalEval = baseMetrics.evalCount + llmRes.evalCount;
-    const totalDurationMs = Number(
-      (baseMetrics.totalDurationMs + llmRes.totalDurationMs).toFixed(2),
-    );
-    const tokensPerSec =
-      llmRes.tokensPerSec > 0 ? llmRes.tokensPerSec : baseMetrics.tokensPerSec;
-
-    if (llmRes.usedFallback) {
+    const tryGeminiSynthesis = async (): Promise<{
+      reply: string;
+      metrics: OllamaTurnAccumulatedMetrics;
+    } | null> => {
+      if (!geminiCfg.apiKey) return null;
+      const gRes = await callGeminiChat({
+        apiKey: geminiCfg.apiKey,
+        model: geminiCfg.model,
+        systemPrompt,
+        messages: chatMessages,
+        temperature: 0.1,
+        timeoutMs: 12_000,
+      });
+      if (!gRes.ok || !gRes.content) return null;
+      const totalDurationMs = Number(
+        (baseMetrics.totalDurationMs + gRes.totalDurationMs).toFixed(2),
+      );
+      const tps =
+        gRes.evalCount > 0 && gRes.totalDurationMs > 0
+          ? Number((gRes.evalCount / (gRes.totalDurationMs / 1000)).toFixed(2))
+          : baseMetrics.tokensPerSec;
       return {
-        reply: deterministicSummary,
+        reply: gRes.content,
         metrics: {
-          ...baseMetrics,
-          promptEvalCount: totalPromptEval,
-          evalCount: totalEval,
+          aiProvider: 'ollama',
+          llmBackend: 'gemini',
+          modelUsed: `gemini:${gRes.model}`,
+          fallbackUsed: false,
+          tierUsed: 2,
+          promptEvalCount: baseMetrics.promptEvalCount + gRes.promptEvalCount,
+          evalCount: baseMetrics.evalCount + gRes.evalCount,
           totalDurationMs,
-          tokensPerSec,
+          tokensPerSec: tps,
         },
       };
+    };
+
+    if (wantGeminiFirst) {
+      const gemOut = await tryGeminiSynthesis();
+      if (gemOut) return gemOut;
     }
 
-    return {
-      reply: llmRes.content.trim() || deterministicSummary,
-      metrics: {
-        aiProvider: 'ollama',
-        modelUsed: llmRes.model,
-        fallbackUsed: false,
-        tierUsed: 2,
-        promptEvalCount: totalPromptEval,
-        evalCount: totalEval,
-        totalDurationMs,
-        tokensPerSec,
-      },
-    };
+    if (this.harness.ollamaClient.isLiveAvailable()) {
+      const llmRes = await this.harness.ollamaClient.chat({
+        messages: chatMessages,
+        temperature: 0.1,
+        allowFallback: true,
+        fallbackText: deterministicSummary,
+      });
+
+      const totalPromptEval = baseMetrics.promptEvalCount + llmRes.promptEvalCount;
+      const totalEval = baseMetrics.evalCount + llmRes.evalCount;
+      const totalDurationMs = Number(
+        (baseMetrics.totalDurationMs + llmRes.totalDurationMs).toFixed(2),
+      );
+      const tokensPerSec =
+        llmRes.tokensPerSec > 0 ? llmRes.tokensPerSec : baseMetrics.tokensPerSec;
+
+      if (!llmRes.usedFallback) {
+        return {
+          reply: llmRes.content.trim() || deterministicSummary,
+          metrics: {
+            aiProvider: 'ollama',
+            llmBackend: 'ollama',
+            modelUsed: llmRes.model,
+            fallbackUsed: false,
+            tierUsed: 2,
+            promptEvalCount: totalPromptEval,
+            evalCount: totalEval,
+            totalDurationMs,
+            tokensPerSec,
+          },
+        };
+      }
+    }
+
+    if (!wantGeminiFirst && geminiCfg.apiKey) {
+      const gemFallback = await tryGeminiSynthesis();
+      if (gemFallback) return gemFallback;
+    }
+
+    return { reply: deterministicSummary, metrics: baseMetrics };
   }
 
   public async handleChat(
-    request: CopilotChatRequestDTO,
+    request: ExtendedCopilotChatRequest,
     caller: CallerAuthContext,
   ): Promise<CopilotChatExecutionResult> {
     const startedAt = Date.now();
     const sessionId = request.sessionId ?? `sess_${randomUUID().slice(0, 12)}`;
+    const traceId = caller.correlationId || `trace_${randomUUID().slice(0, 12)}`;
     const costFieldsRedacted = !canRolesReadCostFields(caller.roles);
     const maskedMessage = maskPii(request.message);
     const embedModel = this.ragService.getEmbedModel();
     const contextObj: Record<string, unknown> = {
       ...(request.context ?? {}),
+      ...(request.bodyProfile && typeof request.bodyProfile === 'object'
+        ? request.bodyProfile
+        : {}),
       ...(request.context?.toolInput &&
       typeof request.context.toolInput === 'object' &&
       !Array.isArray(request.context.toolInput)
@@ -413,10 +751,50 @@ export class RuleBasedMcpOrchestrator {
         : {}),
     };
 
+    // =========================================================================
+    // Dedicated P1-1 STOREFRONT Customer Stylist Branch (100% Isolated, READ_ONLY)
+    // =========================================================================
+    if (request.portal === 'STOREFRONT') {
+      return this.handleStorefrontChat(
+        request,
+        caller,
+        startedAt,
+        sessionId,
+        traceId,
+        contextObj,
+      );
+    }
+
+    const geminiCfg = getGeminiConfig();
+    const preferredProvider =
+      typeof contextObj.aiProvider === 'string'
+        ? contextObj.aiProvider.trim().toLowerCase()
+        : undefined;
+
+    // Layer 6: Collect & sandbox ALL untrusted customer notes/reviews across ANY turn
+    const contextRawUntrustedNotes = collectUntrustedContextNotes(contextObj);
+    const contextInjectionPatterns = new Set<string>();
+    for (const rawNote of contextRawUntrustedNotes) {
+      const scan = detectPromptInjectionInUntrustedData(rawNote);
+      if (scan.detected) {
+        for (const p of scan.matchedPatterns) {
+          contextInjectionPatterns.add(p);
+        }
+      }
+    }
+    const wrappedContextNotes = wrapUntrustedCustomerNotes(contextRawUntrustedNotes, 300);
+
     // Layer 6: Scan caller's direct chat prompt for blatant jailbreak attempts
     const promptScan = detectPromptInjection(request.message);
     if (promptScan.blocked) {
       const latencyMs = Date.now() - startedAt;
+      const wrappedBlockedNotes =
+        wrappedContextNotes.length > 0
+          ? wrappedContextNotes
+          : wrapUntrustedCustomerNotes([request.message], 300);
+      const allMatchedRules = Array.from(
+        new Set([...promptScan.matchedRules, ...contextInjectionPatterns]),
+      );
       this.harness.telemetry.record({
         userId: caller.userId,
         roles: caller.roles,
@@ -426,20 +804,27 @@ export class RuleBasedMcpOrchestrator {
         aiProvider: 'ollama',
         modelUsed: 'layer6-guardrail',
         correlationId: caller.correlationId,
+        traceId,
+        portal: 'ADMIN_PORTAL',
         status: 'BLOCKED_GUARDRAIL',
-        metadata: { matchedRules: promptScan.matchedRules },
+        metadata: { matchedRules: allMatchedRules },
       });
 
       const blockedPayload: ExtendedCopilotChatResponse = {
+        traceId,
+        blockedInjection: true,
+        tier: 'TIER_0',
+        model: 'layer6-guardrail',
+        toolCalls: [],
         reply:
-          'Yêu cầu đã bị chặn bởi lớp bảo vệ Prompt Injection (Layer 6). Hệ thống tuyệt đối không bỏ qua hướng dẫn hệ thống, không tiết lộ giá vốn trái phép và không tự động bỏ qua bước phê duyệt NHAP_AI.',
+          'Yêu cầu đã bị chặn bởi lớp bảo vệ Prompt Injection (Layer 6). Nội dung không đáng tin cậy đã được cô lập trong <untrusted_customer_note>; hệ thống tuyệt đối không bỏ qua hướng dẫn hệ thống, không tiết lộ giá vốn trái phép và không tự động duyệt PO / hoàn tiền / xóa dữ liệu.',
         sessionId,
         tierUsed: 0,
         modelUsed: 'layer6-guardrail',
         fallbackUsed: false,
         cacheHit: false,
         guardrailBlocked: true,
-        guardrailReason: `PROMPT_INJECTION_BLOCKED (${promptScan.matchedRules.join(', ')})`,
+        guardrailReason: `PROMPT_INJECTION_BLOCKED (${allMatchedRules.join(', ')})`,
         actionCards: [],
         toolTraces: [],
         citations: [],
@@ -448,14 +833,16 @@ export class RuleBasedMcpOrchestrator {
         safetyReport: {
           promptInjectionDetected: true,
           mutatingToolsBlocked: 1,
-          untrustedNotesWrapped: 0,
+          untrustedNotesWrapped: wrappedBlockedNotes.length,
           costFieldsRedacted,
-          matchedPatterns: promptScan.matchedRules,
+          matchedPatterns: allMatchedRules,
         },
         promptInjectionDetected: true,
-        sanitizedUntrustedNotes: [],
+        sanitizedUntrustedNotes: wrappedBlockedNotes,
         latencyMs,
         aiProvider: 'ollama',
+        llmBackend: 'rule_fallback',
+        geminiConfigured: Boolean(geminiCfg.apiKey),
         embedModel,
         promptEvalCount: 0,
         evalCount: 0,
@@ -480,11 +867,97 @@ export class RuleBasedMcpOrchestrator {
     const toolTraces: ToolExecutionTrace[] = [];
     const actionCards: CopilotActionCard[] = [];
     let citations: GroundedCitation[] = [];
-    let sanitizedUntrustedNotes: string[] = [];
-    let promptInjectionDetected = false;
-    let matchedPatterns: string[] = [];
+    let sanitizedUntrustedNotes: string[] = [...wrappedContextNotes];
+    let promptInjectionDetected = contextInjectionPatterns.size > 0;
+    let matchedPatterns: string[] = Array.from(contextInjectionPatterns);
     let mutatingToolsBlocked = 0;
-    let untrustedTurnActive = false;
+    let untrustedTurnActive = wrappedContextNotes.length > 0;
+
+    // Layer 6 Defense-in-Depth: If untrusted customer note/review carries prompt injection
+    // and caller's turn attempts a mutating action, block ALL mutations immediately!
+    const isMutatingPlan =
+      plan === 'DEMAND_AND_PO_DRAFT' ||
+      plan === 'PO_DRAFT_ONLY' ||
+      plan === 'VALIDATE_GARMENT_IMAGE' ||
+      plan === 'CLEARANCE_CAMPAIGN_DRAFT';
+    if (untrustedTurnActive && (promptInjectionDetected || isMutatingPlan)) {
+      if (isMutatingPlan) {
+        mutatingToolsBlocked += 1;
+        toolTraces.push({
+          toolName:
+            plan === 'VALIDATE_GARMENT_IMAGE'
+              ? McpToolName.VALIDATE_AND_PROCESS_GARMENT_IMAGE
+              : McpToolName.CREATE_PURCHASE_ORDER_DRAFT,
+          mode: 'MUTATING_DRAFT',
+          tier: 0,
+          authorized: false,
+          cacheHit: false,
+          latencyMs: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          estimatedCostUsd: 0,
+          errorCode: ErrorCode.PROMPT_INJECTION_BLOCKED,
+          executedAt: new Date().toISOString(),
+        });
+        const latencyMs = Date.now() - startedAt;
+        return {
+          ok: true,
+          statusCode: 200,
+          data: {
+            traceId,
+            blockedInjection: promptInjectionDetected,
+            tier: 'TIER_0',
+            model: 'layer6-guardrail',
+            toolCalls: [],
+            reply:
+              `[Bảo mật Layer 6] Đã cô lập ${sanitizedUntrustedNotes.length} ghi chú khách hàng trong <untrusted_customer_note> và khóa toàn bộ công cụ ghi dữ liệu (PO / duyệt / hoàn tiền / drop) vì phiên hiện tại chứa dữ liệu khách hàng không đáng tin cậy${promptInjectionDetected ? ` (phát hiện Prompt Injection: ${matchedPatterns.join(', ')})` : ''}.`,
+            sessionId,
+            tierUsed: 0,
+            modelUsed: 'layer6-guardrail',
+            fallbackUsed: false,
+            cacheHit: false,
+            guardrailBlocked: promptInjectionDetected,
+            guardrailReason: promptInjectionDetected
+              ? `PROMPT_INJECTION_BLOCKED (${matchedPatterns.join(', ')})`
+              : 'UNTRUSTED_TURN_MUTATION_BLOCKED',
+            actionCards: [],
+            toolTraces,
+            citations: [],
+            correlationId: caller.correlationId,
+            createdAt: new Date().toISOString(),
+            safetyReport: {
+              promptInjectionDetected,
+              mutatingToolsBlocked,
+              untrustedNotesWrapped: sanitizedUntrustedNotes.length,
+              costFieldsRedacted,
+              matchedPatterns,
+            },
+            promptInjectionDetected,
+            sanitizedUntrustedNotes,
+            latencyMs,
+            aiProvider: 'ollama',
+            llmBackend: 'rule_fallback',
+            geminiConfigured: Boolean(geminiCfg.apiKey),
+            embedModel,
+            promptEvalCount: 0,
+            evalCount: 0,
+            tokensPerSec: 0,
+            totalDurationMs: latencyMs,
+            costUsd: 0,
+            ollamaTelemetry: {
+              aiProvider: 'ollama',
+              modelUsed: 'layer6-guardrail',
+              embedModel,
+              promptEvalCount: 0,
+              evalCount: 0,
+              tokensPerSec: 0,
+              totalDurationMs: latencyMs,
+              costUsd: 0,
+            },
+          },
+        };
+      }
+    }
 
     try {
       return await this.harness.jwtContext.run(caller, async () => {
@@ -514,6 +987,8 @@ export class RuleBasedMcpOrchestrator {
                 modelUsed: cached.value.modelUsed,
                 cacheHit: true,
                 correlationId: caller.correlationId,
+                traceId,
+                portal: 'ADMIN_PORTAL',
                 status: 'SUCCESS',
               });
               return {
@@ -521,11 +996,16 @@ export class RuleBasedMcpOrchestrator {
                 statusCode: 200,
                 data: {
                   ...cached.value,
+                  traceId,
                   sessionId,
                   cacheHit: true,
                   tierUsed: 0,
+                  tier: 'TIER_0',
+                  model: cached.value.modelUsed,
                   correlationId: caller.correlationId,
                   latencyMs,
+                  llmBackend: cached.value.llmBackend ?? 'ollama',
+                  geminiConfigured: Boolean(geminiCfg.apiKey),
                   costUsd: 0,
                 },
               };
@@ -563,7 +1043,9 @@ export class RuleBasedMcpOrchestrator {
             maskedMessage,
             baseAnswer,
             citations,
-            [],
+            sanitizedUntrustedNotes,
+            undefined,
+            preferredProvider,
           );
 
           const responseData = this.buildSuccessPayload({
@@ -577,13 +1059,13 @@ export class RuleBasedMcpOrchestrator {
             caller,
             startedAt,
             costFieldsRedacted,
-            promptInjectionDetected: false,
-            mutatingToolsBlocked: 0,
-            sanitizedUntrustedNotes: [],
-            matchedPatterns: [],
+            promptInjectionDetected,
+            mutatingToolsBlocked,
+            sanitizedUntrustedNotes,
+            matchedPatterns,
           });
 
-          if (citations.length > 0) {
+          if (citations.length > 0 && sanitizedUntrustedNotes.length === 0) {
             await this.redisCache.setJson(
               cacheHash,
               responseData,
@@ -592,6 +1074,88 @@ export class RuleBasedMcpOrchestrator {
           }
 
           return { ok: true, statusCode: 200, data: responseData };
+        }
+
+        // =====================================================================
+        // Case 1b: Live Verified Size Recommendation (calculate_verified_size)
+        // =====================================================================
+        if (plan === 'CALCULATE_VERIFIED_SIZE') {
+          const tSize = Date.now();
+          const bodySpec = extractBodyMeasurementsFromMessage(request.message, contextObj);
+          const fitPrefRaw =
+            typeof contextObj.fitPreference === 'string'
+              ? contextObj.fitPreference.toUpperCase()
+              : FitPreference.REGULAR;
+          const fitPreference: FitPreference =
+            fitPrefRaw === FitPreference.SLIM || fitPrefRaw === FitPreference.RELAXED
+              ? (fitPrefRaw as FitPreference)
+              : FitPreference.REGULAR;
+
+          const sizeResult: EnrichedVerifiedSizeResult =
+            await this.executors.calculateVerifiedSize({
+              productId: bodySpec.productId,
+              productSlug: bodySpec.productSlug ?? 'ao-blazer-linen-dang-suong',
+              heightCm: bodySpec.heightCm,
+              weightKg: bodySpec.weightKg,
+              bustCm: typeof contextObj.bustCm === 'number' ? contextObj.bustCm : undefined,
+              waistCm: typeof contextObj.waistCm === 'number' ? contextObj.waistCm : undefined,
+              hipCm: typeof contextObj.hipCm === 'number' ? contextObj.hipCm : undefined,
+              shoulderCm:
+                typeof contextObj.shoulderCm === 'number' ? contextObj.shoulderCm : undefined,
+              fitPreference,
+            });
+
+          toolTraces.push({
+            toolName: McpToolName.CALCULATE_VERIFIED_SIZE,
+            mode: 'READ_ONLY',
+            tier: 0,
+            authorized: true,
+            cacheHit: false,
+            latencyMs: Date.now() - tSize,
+            promptTokens: 0,
+            completionTokens: 0,
+            estimatedCostUsd: 0,
+            errorCode: null,
+            executedAt: new Date().toISOString(),
+          });
+          citations = sizeResult.citations;
+
+          const zonesSummary =
+            sizeResult.fitZones && sizeResult.fitZones.length > 0
+              ? `\n• Độ vừa 4 vùng giải phẫu: ${sizeResult.fitZones.map((z) => `${z.labelVi} (${z.statusVi}, cử động ${z.easeCm >= 0 ? '+' : ''}${z.easeCm}cm)`).join('; ')}.`
+              : '';
+          const sizeSummary = `Gợi ý kích cỡ chuẩn (${bodySpec.heightCm}cm · ${bodySpec.weightKg}kg · ${sizeResult.productSlug}): **Size ${sizeResult.recommendedSize}** (độ tin cậy ${Math.round(sizeResult.confidence * 100)}%${sizeResult.crowdAdjusted ? ' · đã hiệu chỉnh theo Verified Fit Reviews' : ''}).${sizeResult.crowdAdjustmentReason ? `\n• ${sizeResult.crowdAdjustmentReason}` : ''}${zonesSummary}`;
+
+          return {
+            ok: true,
+            statusCode: 200,
+            data: this.buildSuccessPayload({
+              reply: sizeSummary,
+              sessionId,
+              metrics: {
+                aiProvider: 'ollama',
+                llmBackend: 'ollama',
+                modelUsed: 'tier0-calculate-verified-size',
+                fallbackUsed: false,
+                tierUsed: 0,
+                promptEvalCount: 0,
+                evalCount: 0,
+                totalDurationMs: Date.now() - tSize,
+                tokensPerSec: 0,
+              },
+              embedModel,
+              actionCards: [],
+              toolTraces,
+              citations,
+              caller,
+              startedAt,
+              costFieldsRedacted,
+              promptInjectionDetected,
+              mutatingToolsBlocked,
+              sanitizedUntrustedNotes,
+              matchedPatterns,
+            }),
+          };
         }
 
         // =====================================================================
@@ -952,6 +1516,7 @@ export class RuleBasedMcpOrchestrator {
               draftId: po.draftId,
               poNumber: po.poNumber,
               status: 'NHAP_AI',
+              nguonTao: 'AI_COPILOT',
               createdSource: 'AI_COPILOT',
               createdByActorType: 'AI_COPILOT',
               requiresHumanApproval: true,
@@ -1099,7 +1664,9 @@ export class RuleBasedMcpOrchestrator {
               : undefined;
           const explicitNotes = Array.isArray(contextObj.customerNotes)
             ? contextObj.customerNotes.filter((n): n is string => typeof n === 'string')
-            : undefined;
+            : contextRawUntrustedNotes.length > 0
+              ? contextRawUntrustedNotes
+              : undefined;
 
           const rRes = await this.executors.analyzeRefundAndSizing(
             {
@@ -1126,9 +1693,14 @@ export class RuleBasedMcpOrchestrator {
             executedAt: new Date().toISOString(),
           });
 
-          sanitizedUntrustedNotes = rRes.sanitizedUntrustedNotes;
-          promptInjectionDetected = rRes.promptInjectionDetected;
-          matchedPatterns = rRes.matchedInjectionPatterns;
+          sanitizedUntrustedNotes = Array.from(
+            new Set([...sanitizedUntrustedNotes, ...rRes.sanitizedUntrustedNotes]),
+          );
+          promptInjectionDetected =
+            promptInjectionDetected || rRes.promptInjectionDetected;
+          matchedPatterns = Array.from(
+            new Set([...matchedPatterns, ...rRes.matchedInjectionPatterns]),
+          );
           citations = rRes.citations;
 
           // Defense-in-depth untrusted-turn mutation lock proof
@@ -1221,15 +1793,24 @@ export class RuleBasedMcpOrchestrator {
           ? await this.harness.ollamaClient.checkHealth()
           : null;
 
+        const useGeminiLoop =
+          Boolean(geminiCfg.apiKey) &&
+          (geminiCfg.preferGemini ||
+            preferredProvider === 'gemini' ||
+            !ollamaHealth?.reachable);
+
         let llmReplyText = '';
         let loopPromptEval = 0;
         let loopEval = 0;
         let loopDurationMs = 0;
         let loopTps = 0;
-        let loopModel = this.harness.ollamaClient.getMainModel();
+        let loopModel = useGeminiLoop
+          ? `gemini:${geminiCfg.model}`
+          : this.harness.ollamaClient.getMainModel();
+        let loopBackend: CopilotLlmBackend = 'rule_fallback';
         let ollamaUsedLive = false;
 
-        if (ollamaHealth?.reachable && ollamaTools.length > 0) {
+        if ((ollamaHealth?.reachable || useGeminiLoop) && ollamaTools.length > 0) {
           const promptScope = resolvePromptRoleScope(caller.roles);
           const systemPrompt = this.harness.promptRegistry.renderSystemPrompt(
             promptScope,
@@ -1246,39 +1827,78 @@ export class RuleBasedMcpOrchestrator {
           ];
 
           for (let step = 1; step <= 4; step += 1) {
-            const chatRes = await this.harness.ollamaClient.chat({
-              model: ollamaHealth.activeMainModel,
-              messages,
-              tools: ollamaTools,
-              temperature: 0.1,
-              allowFallback: true,
-            });
+            let stepContent = '';
+            let stepToolCalls: OllamaToolCall[] = [];
+            let stepUsedFallback = false;
 
-            loopModel = chatRes.model;
-            loopPromptEval += chatRes.promptEvalCount;
-            loopEval += chatRes.evalCount;
-            loopDurationMs += chatRes.totalDurationMs;
-            if (chatRes.tokensPerSec > 0) {
-              loopTps = chatRes.tokensPerSec;
+            if (useGeminiLoop && geminiCfg.apiKey) {
+              const gRes = await callGeminiChat({
+                apiKey: geminiCfg.apiKey,
+                model: geminiCfg.model,
+                systemPrompt,
+                messages,
+                tools: ollamaTools,
+                temperature: 0.1,
+                timeoutMs: 15_000,
+              });
+              if (gRes.ok) {
+                loopModel = `gemini:${gRes.model}`;
+                loopBackend = 'gemini';
+                loopPromptEval += gRes.promptEvalCount;
+                loopEval += gRes.evalCount;
+                loopDurationMs += gRes.totalDurationMs;
+                if (gRes.evalCount > 0 && gRes.totalDurationMs > 0) {
+                  loopTps = Number((gRes.evalCount / (gRes.totalDurationMs / 1000)).toFixed(2));
+                }
+                stepContent = gRes.content;
+                stepToolCalls = gRes.toolCalls;
+                ollamaUsedLive = true;
+              } else {
+                stepUsedFallback = true;
+              }
+            } else if (ollamaHealth?.reachable) {
+              const chatRes = await this.harness.ollamaClient.chat({
+                model: ollamaHealth.activeMainModel,
+                messages,
+                tools: ollamaTools,
+                temperature: 0.1,
+                allowFallback: true,
+              });
+
+              loopModel = chatRes.model;
+              loopPromptEval += chatRes.promptEvalCount;
+              loopEval += chatRes.evalCount;
+              loopDurationMs += chatRes.totalDurationMs;
+              if (chatRes.tokensPerSec > 0) {
+                loopTps = chatRes.tokensPerSec;
+              }
+              stepUsedFallback = chatRes.usedFallback;
+              if (!chatRes.usedFallback) {
+                loopBackend = 'ollama';
+                ollamaUsedLive = true;
+                stepContent = chatRes.content;
+                stepToolCalls = chatRes.toolCalls;
+              }
+            } else {
+              stepUsedFallback = true;
             }
 
-            if (chatRes.usedFallback) {
+            if (stepUsedFallback) {
               break;
             }
-            ollamaUsedLive = true;
 
-            if (chatRes.toolCalls.length === 0) {
-              llmReplyText = chatRes.content.trim();
+            if (stepToolCalls.length === 0) {
+              llmReplyText = stepContent.trim();
               break;
             }
 
             messages.push({
               role: 'assistant',
-              content: chatRes.content,
-              tool_calls: chatRes.toolCalls,
+              content: stepContent,
+              tool_calls: stepToolCalls,
             });
 
-            for (const tc of chatRes.toolCalls) {
+            for (const tc of stepToolCalls) {
               const fnName = tc.function.name;
               const fnArgs = tc.function.arguments ?? {};
               let toolOutputForLlm: unknown;
@@ -1287,6 +1907,10 @@ export class RuleBasedMcpOrchestrator {
                 const res = await runDemandSignalsTool(fnArgs);
                 toolOutputForLlm = {
                   summary: res.summary,
+                  signalCounts: res.signalCounts,
+                  overallTryOnToCartRate: res.overallTryOnToCartRate,
+                  overallTryOnToCartRatePct: res.overallTryOnToCartRatePct,
+                  topTriedProducts: res.topTriedProducts.slice(0, 4),
                   highDemandLowStock: res.highDemandLowStock.slice(0, 4),
                   highDemandLowConversion: res.highDemandLowConversion.slice(0, 3),
                 };
@@ -1296,7 +1920,9 @@ export class RuleBasedMcpOrchestrator {
                   poId: res.poId,
                   poNumber: res.poNumber,
                   status: res.status,
+                  nguonTao: res.nguonTao,
                   createdSource: res.createdSource,
+                  requiresHumanApproval: res.requiresHumanApproval,
                   totalQuantity: res.totalQuantity,
                   items: res.items,
                 };
@@ -1431,6 +2057,7 @@ export class RuleBasedMcpOrchestrator {
         let finalReply = deterministicSummary;
         let finalMetrics: OllamaTurnAccumulatedMetrics = {
           aiProvider: ollamaUsedLive ? 'ollama' : 'rule_fallback',
+          llmBackend: ollamaUsedLive ? loopBackend : 'rule_fallback',
           modelUsed: ollamaUsedLive ? loopModel : 'rule-based-mcp-orchestrator',
           fallbackUsed: !ollamaUsedLive,
           tierUsed: ollamaUsedLive ? 2 : 1,
@@ -1442,7 +2069,7 @@ export class RuleBasedMcpOrchestrator {
 
         if (ollamaUsedLive && llmReplyText && !completedExtraStep) {
           finalReply = llmReplyText;
-        } else if (ollamaHealth?.reachable) {
+        } else if (ollamaHealth?.reachable || Boolean(geminiCfg.apiKey)) {
           const synth = await this.synthesizeVietnameseWithOllama(
             caller,
             maskedMessage,
@@ -1450,6 +2077,7 @@ export class RuleBasedMcpOrchestrator {
             citations,
             sanitizedUntrustedNotes,
             finalMetrics,
+            preferredProvider,
           );
           finalReply = synth.reply;
           finalMetrics = synth.metrics;
@@ -1623,6 +2251,8 @@ export class RuleBasedMcpOrchestrator {
       tokensPerSec: params.metrics.tokensPerSec,
       cacheHit: false,
       correlationId: params.caller.correlationId,
+      traceId: params.caller.correlationId,
+      portal: 'ADMIN_PORTAL',
       status: 'SUCCESS',
       usedFallback: params.metrics.fallbackUsed,
     });
@@ -1639,6 +2269,13 @@ export class RuleBasedMcpOrchestrator {
     };
 
     const rawPayload: ExtendedCopilotChatResponse = {
+      traceId: params.caller.correlationId,
+      tier: `TIER_${params.metrics.tierUsed}`,
+      model: params.metrics.modelUsed,
+      blockedInjection: false,
+      toolCalls: params.toolTraces
+        .filter((t) => t.authorized)
+        .map((t) => t.toolName),
       reply: params.reply,
       sessionId: params.sessionId,
       tierUsed: params.metrics.tierUsed,
@@ -1664,6 +2301,8 @@ export class RuleBasedMcpOrchestrator {
       latencyMs,
       ollamaTelemetry,
       aiProvider: params.metrics.aiProvider,
+      llmBackend: params.metrics.llmBackend,
+      geminiConfigured: Boolean(getGeminiConfig().apiKey),
       embedModel: params.embedModel,
       promptEvalCount: params.metrics.promptEvalCount,
       evalCount: params.metrics.evalCount,
@@ -1673,5 +2312,833 @@ export class RuleBasedMcpOrchestrator {
     };
 
     return redactRestrictedFields(rawPayload, params.caller.roles);
+  }
+
+  private async handleStorefrontChat(
+    request: ExtendedCopilotChatRequest,
+    caller: CallerAuthContext,
+    startedAt: number,
+    sessionId: string,
+    traceId: string,
+    contextObj: Record<string, unknown>,
+  ): Promise<CopilotChatExecutionResult> {
+    const embedModel = this.ragService.getEmbedModel();
+    const isGuest = !caller.bearerToken;
+    const storefrontRoleLabel = isGuest ? 'GUEST_CUSTOMER' : Role.CUSTOMER;
+    const storefrontCaller: CallerAuthContext = {
+      ...caller,
+      roles: [Role.CUSTOMER],
+    };
+    const geminiCfg = getGeminiConfig();
+
+    // Layer 6: Strict Storefront Guardrails (blocks prompt injection, costPriceVnd/supplier exfil, & Admin tool escalation)
+    const guardrailScan = detectStorefrontPromptInjection(request.message);
+    if (guardrailScan.blocked) {
+      const latencyMs = Date.now() - startedAt;
+      this.harness.telemetry.record({
+        userId: caller.userId,
+        roles: [storefrontRoleLabel],
+        toolName: 'storefront_guardrail',
+        tier: 0,
+        latencyMs,
+        aiProvider: 'ollama',
+        modelUsed: 'layer6-guardrail',
+        correlationId: caller.correlationId,
+        traceId,
+        portal: 'STOREFRONT',
+        status: 'BLOCKED_GUARDRAIL',
+        metadata: { matchedRules: guardrailScan.matchedRules, portal: 'STOREFRONT' },
+      });
+
+      const refusalPayload = redactStorefrontPayload<ExtendedCopilotChatResponse>({
+        traceId,
+        reply:
+          'Xin lỗi quý khách, cố vấn thời trang Tầm Xuân Atelier trên Storefront chỉ hỗ trợ tư vấn sản phẩm bán lẻ, chọn kích cỡ, phối đồ và chính sách khách hàng. Hệ thống bảo mật không cung cấp dữ liệu nội bộ và không thực hiện tác vụ quản trị.',
+        citations: [],
+        recommendedProducts: [],
+        toolCalls: [],
+        tier: 'TIER_0',
+        model: 'layer6-guardrail',
+        blockedInjection: true,
+        sessionId,
+        tierUsed: 0,
+        modelUsed: 'layer6-guardrail',
+        fallbackUsed: false,
+        cacheHit: false,
+        guardrailBlocked: true,
+        guardrailReason: `STOREFRONT_GUARDRAIL_BLOCKED (${guardrailScan.matchedRules.join(', ')})`,
+        actionCards: [],
+        toolTraces: [],
+        correlationId: caller.correlationId,
+        createdAt: new Date().toISOString(),
+        safetyReport: {
+          promptInjectionDetected: true,
+          mutatingToolsBlocked: 1,
+          untrustedNotesWrapped: 0,
+          costFieldsRedacted: true,
+          matchedPatterns: guardrailScan.matchedRules,
+        },
+        promptInjectionDetected: true,
+        sanitizedUntrustedNotes: [],
+        latencyMs,
+        aiProvider: 'ollama',
+        llmBackend: 'rule_fallback',
+        geminiConfigured: Boolean(geminiCfg.apiKey),
+        embedModel,
+        promptEvalCount: 0,
+        evalCount: 0,
+        tokensPerSec: 0,
+        totalDurationMs: latencyMs,
+        costUsd: 0,
+        ollamaTelemetry: {
+          aiProvider: 'ollama',
+          modelUsed: 'layer6-guardrail',
+          embedModel,
+          promptEvalCount: 0,
+          evalCount: 0,
+          tokensPerSec: 0,
+          totalDurationMs: latencyMs,
+          costUsd: 0,
+        },
+      });
+
+      return { ok: true, statusCode: 200, data: refusalPayload };
+    }
+
+    const maskedMessage = maskPii(request.message);
+    const folded = foldVietnamese(maskedMessage);
+
+    // Load System Prompt CUSTOMER_STYLIST v1.1.0 & ONLY CUSTOMER READ_ONLY Ollama tools (ZERO Admin / MUTATING_DRAFT!)
+    const systemPrompt = this.harness.promptRegistry.renderSystemPrompt(
+      'CUSTOMER_STYLIST',
+      {
+        callerRole: storefrontRoleLabel,
+        portal: 'STOREFRONT',
+        locale: 'vi-VN',
+      },
+      'v1.1.0',
+    );
+
+    const candidateCustomerTools: string[] = [
+      McpToolName.SEARCH_CATALOG_AND_SIZE_GUIDE,
+      McpToolName.CALCULATE_VERIFIED_SIZE,
+      McpToolName.GET_OUTFIT_COMPATIBILITY_ADVICE,
+      McpToolName.SEARCH_IN_STOCK_OUTFITS,
+      ...(!isGuest ? [CUSTOMER_ORDERS_RMA_TOOL_NAME] : []),
+    ];
+
+    const verifiedReadOnlyCustomerNames = candidateCustomerTools.filter((name) => {
+      const def = this.harness.toolRegistry.get(name);
+      return Boolean(
+        def && def.scope === 'CUSTOMER' && def.classification === 'READ_ONLY',
+      );
+    });
+    const customerOllamaTools: OllamaToolDefinition[] =
+      this.harness.toolRegistry.toOllamaTools(
+        'CUSTOMER',
+        verifiedReadOnlyCustomerNames,
+      );
+
+    // Parse customer intent & slots from Vietnamese/English message + bodyProfile
+    const hasExplicitMeasurements =
+      /\b(1[3-9]\d|2[0-2]\d)\s*cm\b|\b1m[4-9]\d\b/.test(folded) ||
+      /\b([3-9]\d|1[0-5]\d)\s*kg\b/.test(folded) ||
+      typeof contextObj.heightCm === 'number' ||
+      typeof contextObj.weightKg === 'number';
+    const wantsSizeAdvice =
+      /\b(tu van size|chon size|tinh size|bang size|kich co|chieu cao|can nang|mac size gi|vua khong|so do)\b/.test(
+        folded,
+      ) || hasExplicitMeasurements;
+    const wantsOrderLookup =
+      /\b(don hang cua toi|don cua toi|tra cuu don|trang thai don|kiem tra don|don rma cua toi|ord-|tx-)\b/.test(
+        folded,
+      );
+    const wantsPolicyOrPrivacy =
+      /\b(chinh sach|quy dinh|doi tra|doi size|7[\s–-]*14|14 ngay|7 ngay|bao mat|15 phut|xoa anh|xoa cung|rieng tu|bao quan|bao hanh|giat tay|giat kho|giat hap|thanh toan|vietqr|giao hang|hoa toc|dong goi|hop qua|vip|thanh vien|uu dai|cham soc)\b/.test(
+        folded,
+      );
+    const wantsStylingOrOutfits =
+      /\b(phoi do|goi y|di tiec|cong so|dao pho|resort|cuoi|outfit|mix|combo|mac gi|tim ao|tim dam|tim vay|tim quan|con size|con hang|blazer|so mi|dam|vay|quan|cashmere|lua|linen)\b/.test(
+        folded,
+      );
+
+    const requestedSizeRaw = extractRequestedSize(maskedMessage);
+    const validSizeSet = new Set<string>(Object.values(SizeCode));
+    const requestedSize: SizeCode | undefined =
+      requestedSizeRaw && validSizeSet.has(requestedSizeRaw)
+        ? (requestedSizeRaw as SizeCode)
+        : undefined;
+
+    const detectedOccasion: string | undefined = /\b(di tiec|da tiec|tiec toi|su kien|gala)\b/.test(
+      folded,
+    )
+      ? 'du-tiec-toi'
+      : /\b(cong so|di lam|van phong|hop)\b/.test(folded)
+        ? 'cong-so-hien-dai'
+        : /\b(cuoi|le cuoi|ao dai)\b/.test(folded)
+          ? 'le-cuoi-thanh-lich'
+          : /\b(dao pho|cuoi tuan|cafe|di choi)\b/.test(folded)
+            ? 'cuoi-tuan-thu-thai'
+            : /\b(trien lam|nghe thuat|qua tang)\b/.test(folded)
+              ? 'trien-lam-nghe-thuat'
+              : undefined;
+
+    const budgetMillionMatch = /\b(\d+(?:[.,]\d+)?)\s*(?:trieu|tr)\b/.exec(folded);
+    const budgetVndMatch = /\b([1-9]\d{5,7})\s*(?:d|vnd|dong)\b/.exec(folded);
+    const maxBudgetVnd = budgetMillionMatch
+      ? Math.round(Number(budgetMillionMatch[1].replace(',', '.')) * 1_000_000)
+      : budgetVndMatch
+        ? Number(budgetVndMatch[1])
+        : undefined;
+
+    const bodySpec = extractBodyMeasurementsFromMessage(maskedMessage, contextObj);
+    const fitPrefRaw =
+      typeof contextObj.fitPreference === 'string'
+        ? contextObj.fitPreference.toUpperCase()
+        : FitPreference.REGULAR;
+    const fitPreference: FitPreference =
+      fitPrefRaw === FitPreference.SLIM || fitPrefRaw === FitPreference.RELAXED
+        ? (fitPrefRaw as FitPreference)
+        : FitPreference.REGULAR;
+
+    const orderCodeMatch = /\b((?:ORD|TX|AT)-[A-Z0-9-]{4,})\b/i.exec(maskedMessage);
+
+    const toolTraces: ToolExecutionTrace[] = [];
+    const citations: GroundedCitation[] = [];
+    const recommendedProducts: StorefrontRecommendedProduct[] = [];
+    const seenCitationIds = new Set<string>();
+    const seenProductSlugs = new Set<string>();
+    const deterministicNotes: string[] = [];
+
+    const addCitations = (list: readonly GroundedCitation[]): void => {
+      for (const c of list) {
+        if (!c?.sourceId || seenCitationIds.has(c.sourceId)) continue;
+        seenCitationIds.add(c.sourceId);
+        citations.push(c);
+      }
+    };
+
+    const addProducts = (list: readonly StorefrontRecommendedProduct[]): void => {
+      for (const p of list) {
+        const clean = redactStorefrontPayload(p);
+        const key = clean.slug || clean.productId;
+        if (!key || seenProductSlugs.has(key)) continue;
+        seenProductSlugs.add(key);
+        recommendedProducts.push(clean);
+      }
+    };
+
+    const runWithCallerContext = async <T>(fn: () => Promise<T>): Promise<T> => {
+      if (!isGuest) {
+        return this.harness.jwtContext.run(storefrontCaller, fn);
+      }
+      return fn();
+    };
+
+    // Always query Hybrid RAG (pgvector 768-dim over Vietnamese policy docs excluding internal SOPs + Meilisearch)
+    const ragStart = Date.now();
+    const ragResult = await this.ragService.retrieveStorefront(maskedMessage, 3);
+    const ragLatency = Date.now() - ragStart;
+    if (ragResult.status === 'GROUNDED' && ragResult.citations.length > 0) {
+      addCitations(ragResult.citations);
+      if (wantsPolicyOrPrivacy || (!wantsSizeAdvice && !wantsStylingOrOutfits && !wantsOrderLookup)) {
+        toolTraces.push({
+          toolName: 'hybrid_rag_policy_lookup',
+          mode: 'READ_ONLY',
+          tier: 1,
+          authorized: true,
+          cacheHit: false,
+          latencyMs: ragLatency,
+          promptTokens: 0,
+          completionTokens: 0,
+          estimatedCostUsd: 0,
+          errorCode: null,
+          executedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    const executedState = {
+      sizeResult: null as EnrichedVerifiedSizeResult | null,
+      outfitsCount: 0,
+      catalogSearched: false,
+      outfitAdviceDone: false,
+      ordersChecked: false,
+    };
+
+    const runStorefrontTool = async (
+      toolName: string,
+      args: Record<string, unknown> = {},
+    ): Promise<unknown> => {
+      if (!verifiedReadOnlyCustomerNames.includes(toolName)) {
+        return { error: `Tool "${toolName}" is strictly prohibited on Storefront.` };
+      }
+
+      const t0 = Date.now();
+
+      if (toolName === McpToolName.CALCULATE_VERIFIED_SIZE) {
+        const h = Number(args.heightCm ?? bodySpec.heightCm);
+        const w = Number(args.weightKg ?? bodySpec.weightKg);
+        const res = await this.executors.calculateVerifiedSize({
+          productId:
+            typeof args.productId === 'string' && args.productId.trim()
+              ? args.productId.trim()
+              : bodySpec.productId,
+          productSlug:
+            typeof args.productSlug === 'string' && args.productSlug.trim()
+              ? args.productSlug.trim()
+              : bodySpec.productSlug ?? 'ao-blazer-linen-dang-suong',
+          heightCm: Number.isFinite(h) && h >= 120 && h <= 230 ? h : 162,
+          weightKg: Number.isFinite(w) && w >= 25 && w <= 200 ? w : 52,
+          bustCm: typeof args.bustCm === 'number' ? args.bustCm : typeof contextObj.bustCm === 'number' ? contextObj.bustCm : undefined,
+          waistCm: typeof args.waistCm === 'number' ? args.waistCm : typeof contextObj.waistCm === 'number' ? contextObj.waistCm : undefined,
+          hipCm: typeof args.hipCm === 'number' ? args.hipCm : typeof contextObj.hipCm === 'number' ? contextObj.hipCm : undefined,
+          shoulderCm: typeof args.shoulderCm === 'number' ? args.shoulderCm : typeof contextObj.shoulderCm === 'number' ? contextObj.shoulderCm : undefined,
+          fitPreference,
+        });
+        executedState.sizeResult = res;
+        addCitations(res.citations);
+        if (res.recommendedProducts) {
+          addProducts(res.recommendedProducts);
+        }
+        toolTraces.push({
+          toolName: McpToolName.CALCULATE_VERIFIED_SIZE,
+          mode: 'READ_ONLY',
+          tier: 0,
+          authorized: true,
+          cacheHit: false,
+          latencyMs: Date.now() - t0,
+          promptTokens: 0,
+          completionTokens: 0,
+          estimatedCostUsd: 0,
+          errorCode: null,
+          executedAt: new Date().toISOString(),
+        });
+        const zoneText =
+          res.fitZones && res.fitZones.length > 0
+            ? ` Độ vừa: ${res.fitZones.map((z) => `${z.labelVi} (${z.statusVi})`).join(', ')}.`
+            : '';
+        deterministicNotes.push(
+          `Tư vấn kích cỡ cho dáng ${Number.isFinite(h) ? h : 162}cm · ${Number.isFinite(w) ? w : 52}kg: **Size ${res.recommendedSize}** (độ tin cậy ${Math.round(res.confidence * 100)}%${res.crowdAdjusted ? ', đã hiệu chỉnh theo đánh giá thực tế' : ''}).${res.crowdAdjustmentReason ? ` ${res.crowdAdjustmentReason}` : ''}${zoneText}`,
+        );
+        return redactStorefrontPayload({
+          productSlug: res.productSlug,
+          recommendedSize: res.recommendedSize,
+          confidence: res.confidence,
+          crowdAdjusted: res.crowdAdjusted,
+          crowdAdjustmentReason: res.crowdAdjustmentReason,
+          fitNotes: res.fitNotes,
+          alternatives: res.alternatives,
+        });
+      }
+
+      if (toolName === McpToolName.SEARCH_IN_STOCK_OUTFITS) {
+        const argSize =
+          typeof args.size === 'string' && validSizeSet.has(args.size.toUpperCase())
+            ? (args.size.toUpperCase() as SizeCode)
+            : requestedSize;
+        const res = await this.executors.searchInStockOutfits({
+          query: typeof args.query === 'string' && args.query.trim() ? args.query.trim() : undefined,
+          occasion:
+            typeof args.occasion === 'string' && args.occasion.trim()
+              ? args.occasion.trim()
+              : detectedOccasion,
+          season: typeof args.season === 'string' && args.season.trim() ? args.season.trim() : undefined,
+          size: argSize,
+          maxBudgetVnd:
+            typeof args.maxBudgetVnd === 'number' && args.maxBudgetVnd > 0
+              ? args.maxBudgetVnd
+              : maxBudgetVnd,
+          tryOnOnly: Boolean(args.tryOnOnly),
+          limit: typeof args.limit === 'number' ? Math.min(8, Math.max(1, Math.floor(args.limit))) : 4,
+        });
+        executedState.outfitsCount = res.recommendedProducts.length;
+        addCitations(res.citations);
+        addProducts(res.recommendedProducts);
+        toolTraces.push({
+          toolName: McpToolName.SEARCH_IN_STOCK_OUTFITS,
+          mode: 'READ_ONLY',
+          tier: 0,
+          authorized: true,
+          cacheHit: false,
+          latencyMs: Date.now() - t0,
+          promptTokens: 0,
+          completionTokens: 0,
+          estimatedCostUsd: 0,
+          errorCode: null,
+          executedAt: new Date().toISOString(),
+        });
+        if (res.recommendedProducts.length > 0) {
+          deterministicNotes.push(
+            `Thiết kế đang còn hàng${argSize ? ` (Size ${argSize})` : ''}: ${res.recommendedProducts
+              .slice(0, 3)
+              .map(
+                (p) =>
+                  `**${p.name}** (${new Intl.NumberFormat('vi-VN').format(p.priceVnd)}₫ · còn size ${p.inStockSizes.join(', ')})`,
+              )
+              .join('; ')}.`,
+          );
+        }
+        return redactStorefrontPayload({
+          totalMatched: res.totalMatched,
+          items: res.items.slice(0, 4),
+          appliedFilters: res.appliedFilters,
+        });
+      }
+
+      if (toolName === McpToolName.SEARCH_CATALOG_AND_SIZE_GUIDE) {
+        const res = await this.executors.searchCatalogAndSizeGuide({
+          query:
+            typeof args.query === 'string' && args.query.trim()
+              ? args.query.trim()
+              : maskedMessage.slice(0, 120),
+          occasion:
+            typeof args.occasion === 'string' && args.occasion.trim()
+              ? args.occasion.trim()
+              : detectedOccasion,
+          preferredSize:
+            typeof args.preferredSize === 'string' && args.preferredSize.trim()
+              ? args.preferredSize.trim()
+              : requestedSize ?? executedState.sizeResult?.recommendedSize,
+          heightCm: hasExplicitMeasurements ? bodySpec.heightCm : undefined,
+          weightKg: hasExplicitMeasurements ? bodySpec.weightKg : undefined,
+          maxPriceVnd: maxBudgetVnd,
+          limit: 4,
+        });
+        executedState.catalogSearched = true;
+        addCitations(res.citations);
+        addProducts(res.recommendedProducts);
+        toolTraces.push({
+          toolName: McpToolName.SEARCH_CATALOG_AND_SIZE_GUIDE,
+          mode: 'READ_ONLY',
+          tier: 0,
+          authorized: true,
+          cacheHit: false,
+          latencyMs: Date.now() - t0,
+          promptTokens: 0,
+          completionTokens: 0,
+          estimatedCostUsd: 0,
+          errorCode: null,
+          executedAt: new Date().toISOString(),
+        });
+        if (res.fitAdvice && !executedState.sizeResult) {
+          deterministicNotes.push(res.fitAdvice);
+        }
+        if (res.recommendedProducts.length > 0 && executedState.outfitsCount === 0) {
+          deterministicNotes.push(
+            `Gợi ý thiết kế phù hợp: ${res.recommendedProducts
+              .slice(0, 3)
+              .map(
+                (p) =>
+                  `**${p.name}** (${new Intl.NumberFormat('vi-VN').format(p.priceVnd)}₫ · size ${p.availableSizes.join(', ')})`,
+              )
+              .join('; ')}.`,
+          );
+        }
+        return redactStorefrontPayload({
+          recommendedSize: res.recommendedSize,
+          fitAdvice: res.fitAdvice,
+          items: res.items.slice(0, 4),
+        });
+      }
+
+      if (toolName === McpToolName.GET_OUTFIT_COMPATIBILITY_ADVICE) {
+        const selectedIds = Array.isArray(args.selectedProductIds)
+          ? args.selectedProductIds.map((x) => String(x)).filter(Boolean)
+          : recommendedProducts.length > 0
+            ? [recommendedProducts[0].productId]
+            : ['ao-blazer-linen-dang-suong'];
+        const res = await this.executors.getOutfitCompatibilityAdvice({
+          selectedProductIds: selectedIds.slice(0, 6),
+          occasion:
+            typeof args.occasion === 'string' && args.occasion.trim()
+              ? args.occasion.trim()
+              : detectedOccasion ?? 'cong-so-hien-dai',
+          season: typeof args.season === 'string' ? args.season : undefined,
+        });
+        executedState.outfitAdviceDone = true;
+        addCitations(res.citations);
+        addProducts(res.recommendedProducts);
+        toolTraces.push({
+          toolName: McpToolName.GET_OUTFIT_COMPATIBILITY_ADVICE,
+          mode: 'READ_ONLY',
+          tier: 1,
+          authorized: true,
+          cacheHit: false,
+          latencyMs: Date.now() - t0,
+          promptTokens: 0,
+          completionTokens: 0,
+          estimatedCostUsd: 0,
+          errorCode: null,
+          executedAt: new Date().toISOString(),
+        });
+        deterministicNotes.push(
+          `Gợi ý phối đồ (điểm hài hòa ${res.compatibilityScore}/100 · ưu đãi Combo Set giảm ${res.comboDiscountPct}%): ${res.colorHarmonyNote} ${res.fabricPairingNote}`,
+        );
+        return redactStorefrontPayload({
+          compatibilityScore: res.compatibilityScore,
+          colorHarmonyNote: res.colorHarmonyNote,
+          fabricPairingNote: res.fabricPairingNote,
+          comboDiscountPct: res.comboDiscountPct,
+          suggestedPairings: res.suggestedPairings,
+        });
+      }
+
+      if (toolName === CUSTOMER_ORDERS_RMA_TOOL_NAME) {
+        const res = await this.executors.getCustomerOrdersAndRmaStatus(
+          {
+            orderCode:
+              typeof args.orderCode === 'string' && args.orderCode.trim()
+                ? args.orderCode.trim()
+                : orderCodeMatch?.[1],
+            limit: 5,
+          },
+          {
+            userId: storefrontCaller.userId,
+            bearerToken: storefrontCaller.bearerToken,
+            roles: storefrontCaller.roles,
+          },
+        );
+        executedState.ordersChecked = true;
+        toolTraces.push({
+          toolName: CUSTOMER_ORDERS_RMA_TOOL_NAME,
+          mode: 'READ_ONLY',
+          tier: 0,
+          authorized: true,
+          cacheHit: false,
+          latencyMs: Date.now() - t0,
+          promptTokens: 0,
+          completionTokens: 0,
+          estimatedCostUsd: 0,
+          errorCode: null,
+          executedAt: new Date().toISOString(),
+        });
+        deterministicNotes.push(res.summary);
+        return redactStorefrontPayload(res);
+      }
+
+      return { error: `Tool "${toolName}" is not available on Storefront.` };
+    };
+
+    try {
+      return await runWithCallerContext(async () => {
+        const ollamaHealth = this.harness.ollamaClient.isLiveAvailable()
+          ? await this.harness.ollamaClient.checkHealth()
+          : null;
+
+        let llmReplyText = '';
+        let loopPromptEval = 0;
+        let loopEval = 0;
+        let loopDurationMs = 0;
+        let loopTps = 0;
+        let loopModel = this.harness.ollamaClient.getMainModel();
+        let ollamaUsedLive = false;
+
+        if (ollamaHealth?.reachable && customerOllamaTools.length > 0) {
+          const ragContextBlock =
+            citations.length > 0
+              ? `\n\nTrích dẫn chính sách Atelier liên quan:\n${citations
+                  .map((c) => `- [${c.sourceId}] ${c.title}: ${c.snippet}`)
+                  .join('\n')}`
+              : '';
+
+          const historyMessages: OllamaChatMessage[] = Array.isArray(request.history)
+            ? request.history
+                .slice(-4)
+                .filter(
+                  (h) =>
+                    (h.role === 'user' || h.role === 'assistant') &&
+                    typeof h.content === 'string' &&
+                    h.content.trim().length > 0,
+                )
+                .map((h) => ({
+                  role: h.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+                  content: maskPii(h.content.trim()).slice(0, 600),
+                }))
+            : [];
+
+          const messages: OllamaChatMessage[] = [
+            { role: 'system', content: `${systemPrompt}${ragContextBlock}` },
+            ...historyMessages,
+            { role: 'user', content: maskedMessage },
+          ];
+
+          for (let step = 1; step <= 3; step += 1) {
+            const chatRes = await this.harness.ollamaClient.chat({
+              model: ollamaHealth.activeMainModel,
+              messages,
+              tools: customerOllamaTools,
+              temperature: 0.15,
+              allowFallback: true,
+            });
+            loopModel = chatRes.model;
+            loopPromptEval += chatRes.promptEvalCount;
+            loopEval += chatRes.evalCount;
+            loopDurationMs += chatRes.totalDurationMs;
+            if (chatRes.tokensPerSec > 0) {
+              loopTps = chatRes.tokensPerSec;
+            }
+            if (chatRes.usedFallback) {
+              break;
+            }
+            ollamaUsedLive = true;
+            if (chatRes.toolCalls.length === 0) {
+              llmReplyText = chatRes.content.trim();
+              break;
+            }
+            messages.push({
+              role: 'assistant',
+              content: chatRes.content,
+              tool_calls: chatRes.toolCalls,
+            });
+            for (const tc of chatRes.toolCalls) {
+              const fnName = tc.function.name;
+              const toolOut = await runStorefrontTool(
+                fnName,
+                tc.function.arguments ?? {},
+              );
+              messages.push({
+                role: 'tool',
+                tool_name: fnName,
+                content: JSON.stringify(redactStorefrontPayload(toolOut)),
+              });
+            }
+          }
+        }
+
+        // Deterministic Completion Guard & Fallback (ensures live tools + RAG citations ALWAYS run cleanly)
+        let ranCompletionGuard = false;
+        if (wantsOrderLookup && !executedState.ordersChecked) {
+          if (isGuest) {
+            deterministicNotes.push(
+              'Quý khách vui lòng đăng nhập tài khoản thành viên Tầm Xuân Atelier để tra cứu đơn hàng cá nhân và trạng thái đổi size RMA.',
+            );
+          } else {
+            await runStorefrontTool(CUSTOMER_ORDERS_RMA_TOOL_NAME, {
+              orderCode: orderCodeMatch?.[1],
+              limit: 5,
+            });
+          }
+          ranCompletionGuard = true;
+        }
+        if (wantsSizeAdvice && !executedState.sizeResult) {
+          await runStorefrontTool(McpToolName.CALCULATE_VERIFIED_SIZE, {
+            heightCm: bodySpec.heightCm,
+            weightKg: bodySpec.weightKg,
+            productSlug: bodySpec.productSlug ?? 'ao-blazer-linen-dang-suong',
+          });
+          ranCompletionGuard = true;
+        }
+        if (wantsStylingOrOutfits && executedState.outfitsCount === 0) {
+          await runStorefrontTool(McpToolName.SEARCH_IN_STOCK_OUTFITS, {
+            occasion: detectedOccasion,
+            size: requestedSize ?? (executedState.sizeResult?.recommendedSize as SizeCode | undefined),
+            maxBudgetVnd,
+            limit: 4,
+          });
+          ranCompletionGuard = true;
+          if (/\b(phoi|mix|combo|di tiec|cong so)\b/.test(folded) && !executedState.outfitAdviceDone) {
+            await runStorefrontTool(McpToolName.GET_OUTFIT_COMPATIBILITY_ADVICE, {
+              selectedProductIds:
+                recommendedProducts.length > 0
+                  ? [recommendedProducts[0].productId]
+                  : ['ao-blazer-linen-dang-suong'],
+              occasion: detectedOccasion ?? 'cong-so-hien-dai',
+            });
+          }
+        } else if (
+          !wantsPolicyOrPrivacy &&
+          !wantsOrderLookup &&
+          recommendedProducts.length === 0 &&
+          !executedState.catalogSearched
+        ) {
+          await runStorefrontTool(McpToolName.SEARCH_CATALOG_AND_SIZE_GUIDE, {
+            query: maskedMessage.slice(0, 120),
+            occasion: detectedOccasion,
+            preferredSize: requestedSize,
+            limit: 4,
+          });
+          ranCompletionGuard = true;
+        }
+
+        const hasStrongRagEvidence =
+          ragResult.status === 'GROUNDED' &&
+          ragResult.citations.length > 0 &&
+          (wantsPolicyOrPrivacy ||
+            (!wantsSizeAdvice && !wantsOrderLookup && !wantsStylingOrOutfits) ||
+            (ragResult.fusedHits[0]?.score ?? 0) >= 0.025);
+
+        if (hasStrongRagEvidence && citations.length > 0) {
+          const policyLines = citations
+            .slice(0, 2)
+            .map((c) => `• **${c.title}**: ${c.snippet}`);
+          deterministicNotes.push(
+            `Theo quy chuẩn dịch vụ Tầm Xuân Atelier:\n${policyLines.join('\n')}`,
+          );
+        }
+
+        if (deterministicNotes.length === 0) {
+          if (citations.length > 0) {
+            deterministicNotes.push(
+              `Thông tin từ Tầm Xuân Atelier:\n${citations
+                .slice(0, 2)
+                .map((c) => `• **${c.title}**: ${c.snippet}`)
+                .join('\n')}`,
+            );
+          } else {
+            deterministicNotes.push(
+              'Tôi là Cố vấn Thời trang Tầm Xuân Atelier — sẵn sàng hỗ trợ quý khách chọn kích cỡ theo chiều cao/cân nặng, gợi ý phối đồ còn hàng đúng size, hoặc giải đáp chính sách đổi size 7–14 ngày và bảo mật ảnh thử đồ 15 phút.',
+            );
+          }
+        }
+
+        const deterministicReply = deterministicNotes.join('\n\n');
+        let finalReply = deterministicReply;
+        let finalMetrics: OllamaTurnAccumulatedMetrics = {
+          aiProvider: ollamaUsedLive ? 'ollama' : 'rule_fallback',
+          llmBackend: ollamaUsedLive ? 'ollama' : 'rule_fallback',
+          modelUsed: ollamaUsedLive ? loopModel : 'rule-based-mcp-orchestrator',
+          fallbackUsed: !ollamaUsedLive,
+          tierUsed: ollamaUsedLive ? 2 : toolTraces.some((t) => t.tier === 1) ? 1 : 0,
+          promptEvalCount: loopPromptEval,
+          evalCount: loopEval,
+          totalDurationMs: Number(loopDurationMs.toFixed(2)),
+          tokensPerSec: loopTps,
+        };
+
+        if (ollamaUsedLive && llmReplyText && !ranCompletionGuard) {
+          finalReply = llmReplyText;
+        } else if (ollamaHealth?.reachable) {
+          const synthPrompt = [
+            `Câu hỏi khách hàng (đã che PII): ${maskedMessage}`,
+            `Dữ liệu thực tế từ hệ thống Storefront (CHỈ dùng số liệu này, không nhắc giá vốn hay quy trình nội bộ):\n${deterministicReply}`,
+            citations.length > 0
+              ? `Trích dẫn chính sách Atelier:\n${citations.slice(0, 3).map((c) => `- ${c.title}: ${c.snippet}`).join('\n')}`
+              : '',
+            'Hãy viết câu trả lời tiếng Việt thanh lịch, ngắn gọn (3–5 câu) theo phong cách Quiet Luxury của Tầm Xuân Atelier.',
+          ]
+            .filter(Boolean)
+            .join('\n\n');
+          const synthRes = await this.harness.ollamaClient.chat({
+            model: ollamaHealth.activeMainModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: synthPrompt },
+            ],
+            temperature: 0.15,
+            allowFallback: true,
+            fallbackText: deterministicReply,
+          });
+          if (!synthRes.usedFallback && synthRes.content.trim()) {
+            finalReply = synthRes.content.trim();
+            finalMetrics = {
+              aiProvider: 'ollama',
+              llmBackend: 'ollama',
+              modelUsed: synthRes.model,
+              fallbackUsed: false,
+              tierUsed: 2,
+              promptEvalCount: loopPromptEval + synthRes.promptEvalCount,
+              evalCount: loopEval + synthRes.evalCount,
+              totalDurationMs: Number((loopDurationMs + synthRes.totalDurationMs).toFixed(2)),
+              tokensPerSec: synthRes.tokensPerSec > 0 ? synthRes.tokensPerSec : loopTps,
+            };
+          }
+        }
+
+        // Strict final PII scrubbing & internal-field redaction
+        const safeReply = maskPii(finalReply);
+        const latencyMs = Date.now() - startedAt;
+        const totalDurationMs =
+          finalMetrics.totalDurationMs > 0 ? finalMetrics.totalDurationMs : latencyMs;
+        const executedToolNames = toolTraces
+          .filter((t) => t.authorized)
+          .map((t) => t.toolName);
+
+        this.harness.telemetry.record({
+          userId: caller.userId,
+          roles: [storefrontRoleLabel],
+          toolName: executedToolNames[0] ?? 'storefront_stylist_chat',
+          tier: finalMetrics.tierUsed,
+          latencyMs,
+          aiProvider: finalMetrics.aiProvider,
+          modelUsed: finalMetrics.modelUsed,
+          promptEvalCount: finalMetrics.promptEvalCount,
+          evalCount: finalMetrics.evalCount,
+          totalDurationMs,
+          tokensPerSec: finalMetrics.tokensPerSec,
+          cacheHit: false,
+          correlationId: caller.correlationId,
+          traceId,
+          portal: 'STOREFRONT',
+          status: 'SUCCESS',
+          usedFallback: finalMetrics.fallbackUsed,
+        });
+
+        const rawStorefrontPayload: ExtendedCopilotChatResponse = {
+          traceId,
+          reply: safeReply,
+          citations: citations.slice(0, 4),
+          recommendedProducts: recommendedProducts.slice(0, 4),
+          toolCalls: executedToolNames,
+          tier: `TIER_${finalMetrics.tierUsed}`,
+          model: finalMetrics.modelUsed,
+          blockedInjection: false,
+          sessionId,
+          tierUsed: finalMetrics.tierUsed,
+          modelUsed: finalMetrics.modelUsed,
+          fallbackUsed: finalMetrics.fallbackUsed,
+          cacheHit: false,
+          guardrailBlocked: false,
+          guardrailReason: null,
+          actionCards: [],
+          toolTraces,
+          correlationId: caller.correlationId,
+          createdAt: new Date().toISOString(),
+          safetyReport: {
+            promptInjectionDetected: false,
+            mutatingToolsBlocked: 0,
+            untrustedNotesWrapped: 0,
+            costFieldsRedacted: true,
+            matchedPatterns: [],
+          },
+          promptInjectionDetected: false,
+          sanitizedUntrustedNotes: [],
+          latencyMs,
+          aiProvider: finalMetrics.aiProvider,
+          llmBackend: finalMetrics.llmBackend,
+          geminiConfigured: Boolean(geminiCfg.apiKey),
+          embedModel,
+          promptEvalCount: finalMetrics.promptEvalCount,
+          evalCount: finalMetrics.evalCount,
+          tokensPerSec: finalMetrics.tokensPerSec,
+          totalDurationMs,
+          costUsd: 0,
+          ollamaTelemetry: {
+            aiProvider: finalMetrics.aiProvider,
+            modelUsed: finalMetrics.modelUsed,
+            embedModel,
+            promptEvalCount: finalMetrics.promptEvalCount,
+            evalCount: finalMetrics.evalCount,
+            tokensPerSec: finalMetrics.tokensPerSec,
+            totalDurationMs,
+            costUsd: 0,
+          },
+        };
+
+        return {
+          ok: true,
+          statusCode: 200,
+          data: redactStorefrontPayload(rawStorefrontPayload),
+        };
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        statusCode: 500,
+        code: ErrorCode.INTERNAL_ERROR,
+        message: error instanceof Error ? error.message : String(error),
+        details: { toolTraces },
+      };
+    }
   }
 }

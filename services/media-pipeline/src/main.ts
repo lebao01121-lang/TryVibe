@@ -5,6 +5,9 @@ import { HTTP_HEADERS } from '@atelier/contracts';
 import {
   correlationIdMiddleware,
   createLogger,
+  createPrometheusHttpMiddleware,
+  createPrometheusMetricsRouteMiddleware,
+  initOpenTelemetry,
   TRACEPARENT_HEADER,
 } from '@atelier/observability';
 import { AppModule } from './app.module';
@@ -17,6 +20,7 @@ import {
 async function bootstrap(): Promise<void> {
   const config = loadMediaPipelineConfig();
   const logger = createLogger(config.serviceName);
+  initOpenTelemetry({ serviceName: 'media-pipeline', serviceVersion: '3.1.0' });
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn'],
@@ -26,7 +30,13 @@ async function bootstrap(): Promise<void> {
   // Support up to 20MB JSON payloads for base64 image uploads (raw image cap is strictly 10MB)
   app.useBodyParser('json', { limit: '20mb' });
   app.useBodyParser('urlencoded', { extended: true, limit: '20mb' });
+  app.useBodyParser('raw', {
+    type: ['image/*', 'application/octet-stream'],
+    limit: '15mb',
+  });
   app.use(correlationIdMiddleware);
+  app.use(createPrometheusHttpMiddleware('media-pipeline'));
+  app.use(createPrometheusMetricsRouteMiddleware());
 
   app.enableCors({
     origin: (

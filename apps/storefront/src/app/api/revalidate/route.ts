@@ -3,8 +3,23 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 interface RevalidateRequestBody {
   tags?: string[];
+  tag?: string;
   paths?: string[];
+  path?: string;
+  slug?: string;
+  slugs?: string[];
 }
+
+const DEFAULT_REVALIDATE_TAGS = [
+  'storefront',
+  'products',
+  'rack',
+  'bootstrap',
+  'occasions',
+  'seasons',
+] as const;
+
+const DEFAULT_REVALIDATE_PATHS = ['/', '/bo-suu-tap'] as const;
 
 export async function POST(request: NextRequest) {
   const expectedSecret =
@@ -28,23 +43,79 @@ export async function POST(request: NextRequest) {
     body = {};
   }
 
-  const tags = Array.isArray(body.tags)
-    ? body.tags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
-    : [];
-  const paths = Array.isArray(body.paths)
-    ? body.paths.filter((p): p is string => typeof p === 'string' && p.startsWith('/'))
-    : [];
+  const tagSet = new Set<string>();
+  const pathSet = new Set<string>();
+
+  if (Array.isArray(body.tags)) {
+    for (const t of body.tags) {
+      if (typeof t === 'string' && t.trim().length > 0) {
+        tagSet.add(t.trim());
+      }
+    }
+  }
+  if (typeof body.tag === 'string' && body.tag.trim().length > 0) {
+    tagSet.add(body.tag.trim());
+  }
+
+  if (Array.isArray(body.paths)) {
+    for (const p of body.paths) {
+      if (typeof p === 'string' && p.trim().startsWith('/')) {
+        pathSet.add(p.trim());
+      }
+    }
+  }
+  if (typeof body.path === 'string' && body.path.trim().startsWith('/')) {
+    pathSet.add(body.path.trim());
+  }
+
+  const slugList: string[] = [];
+  if (typeof body.slug === 'string' && body.slug.trim().length > 0) {
+    slugList.push(body.slug.trim());
+  }
+  if (Array.isArray(body.slugs)) {
+    for (const s of body.slugs) {
+      if (typeof s === 'string' && s.trim().length > 0) {
+        slugList.push(s.trim());
+      }
+    }
+  }
+  for (const slug of slugList) {
+    const cleanSlug = slug.replace(/^\/+/, '');
+    tagSet.add(`product:${cleanSlug}`);
+    pathSet.add(`/san-pham/${cleanSlug}`);
+  }
+
+  const isDefaultRevalidate = tagSet.size === 0 && pathSet.size === 0;
+  if (isDefaultRevalidate) {
+    for (const tag of DEFAULT_REVALIDATE_TAGS) {
+      tagSet.add(tag);
+    }
+    for (const path of DEFAULT_REVALIDATE_PATHS) {
+      pathSet.add(path);
+    }
+  }
+
+  const tags = Array.from(tagSet);
+  const paths = Array.from(pathSet);
 
   for (const tag of tags) {
     revalidateTag(tag);
   }
   for (const path of paths) {
-    revalidatePath(path);
+    if (path.includes('[')) {
+      revalidatePath(path, 'page');
+    } else {
+      revalidatePath(path);
+    }
   }
 
-  if (tags.length === 0 && paths.length === 0) {
-    revalidateTag('storefront');
-    revalidatePath('/');
+  if (
+    isDefaultRevalidate ||
+    tagSet.has('products') ||
+    tagSet.has('storefront')
+  ) {
+    revalidatePath('/bo-suu-tap/[[...slug]]', 'page');
+    revalidatePath('/san-pham/[slug]', 'page');
   }
 
   return NextResponse.json(

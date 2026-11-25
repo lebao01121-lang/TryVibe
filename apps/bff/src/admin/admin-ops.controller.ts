@@ -32,6 +32,7 @@ import {
 import type { Request } from 'express';
 import { BffRedisService } from '../common/redis.service';
 import { BFF_CONFIG_TOKEN, type BffConfig } from '../config/env';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { AuditLoggerService } from '../security/audit-logger.service';
 import {
   CurrentUser,
@@ -169,6 +170,7 @@ export class AdminOpsController {
     @Inject(BFF_CONFIG_TOKEN) private readonly config: BffConfig,
     @Inject(BffRedisService) private readonly redis: BffRedisService,
     @Inject(AuditLoggerService) private readonly audit: AuditLoggerService,
+    @Inject(RealtimeGateway) private readonly realtimeGateway: RealtimeGateway,
   ) {}
 
   // ============================================================================
@@ -695,6 +697,22 @@ export class AdminOpsController {
     Permission.INVENTORY_STOCK_READ,
   )
   async getAiFunnel(@Req() req: Request): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.buildAiOpsHealthSnapshot(req);
+  }
+
+  @Get('ai-health')
+  @RequireAnyPermission(
+    Permission.ADMIN_AUDIT_READ,
+    Permission.TRYON_SIGNALS_READ,
+    Permission.INVENTORY_STOCK_READ,
+  )
+  async getAiHealth(@Req() req: Request): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.buildAiOpsHealthSnapshot(req);
+  }
+
+  private async buildAiOpsHealthSnapshot(
+    req: Request,
+  ): Promise<ApiResponse<Record<string, unknown>>> {
     const correlationId = getOrCreateCorrelationId(req.headers as HeaderBag);
     const parentTraceparent = getOrCreateTraceparent(req.headers as HeaderBag);
 
@@ -752,7 +770,27 @@ export class AdminOpsController {
     const failedSessions = asNum(t.failedSessions, 0);
     const mockCount = asNum(t.mockCount, 0);
     const falCount = asNum(t.falCount, 0);
+    const hfGradioCount = asNum(t.hfGradioCount ?? t.hfGradioVtonCount, 0);
+    const smartPoseWarpCount = asNum(t.smartPoseWarpCount, 0);
+    const photometricInpaintCount = asNum(t.photometricInpaintCount, 0);
     const cacheHitCount = asNum(t.cacheHitCount, 0);
+    const rawProviderBreakdown =
+      t.providerBreakdown &&
+      typeof t.providerBreakdown === 'object' &&
+      !Array.isArray(t.providerBreakdown)
+        ? (t.providerBreakdown as Record<string, unknown>)
+        : {};
+    const providerBreakdown = {
+      FAL_CATVTON: asNum(rawProviderBreakdown.FAL_CATVTON, falCount),
+      HF_GRADIO_VTON: asNum(rawProviderBreakdown.HF_GRADIO_VTON, hfGradioCount),
+      SMART_POSE_WARP: asNum(rawProviderBreakdown.SMART_POSE_WARP, smartPoseWarpCount),
+      PHOTOMETRIC_INPAINT: asNum(
+        rawProviderBreakdown.PHOTOMETRIC_INPAINT,
+        photometricInpaintCount,
+      ),
+      MOCK: asNum(rawProviderBreakdown.MOCK, mockCount),
+      CACHE_HIT: asNum(rawProviderBreakdown.CACHE_HIT, cacheHitCount),
+    };
     const demandEventsCount = asNum(t.demandEventsCount, 0);
     const addToCartAfterTryonCount = asNum(t.addToCartAfterTryonCount, 0);
     const estimatedApiCostUsd = asNum(t.estimatedApiCostUsd, 0);
@@ -838,12 +876,107 @@ export class AdminOpsController {
       1,
     );
 
+    const rawCopilotFeedback =
+      cp.copilotFeedback &&
+      typeof cp.copilotFeedback === 'object' &&
+      !Array.isArray(cp.copilotFeedback)
+        ? (cp.copilotFeedback as Record<string, unknown>)
+        : {};
+    const rawFeedbackSummary =
+      cp.feedbackSummary &&
+      typeof cp.feedbackSummary === 'object' &&
+      !Array.isArray(cp.feedbackSummary)
+        ? (cp.feedbackSummary as Record<string, unknown>)
+        : {};
+    const mergedFeedbackSource: Record<string, unknown> = {
+      ...rawFeedbackSummary,
+      ...rawCopilotFeedback,
+    };
+    const feedbackUpCount = asNum(
+      mergedFeedbackSource.upCount ??
+        mergedFeedbackSource.thumbsUp ??
+        mergedFeedbackSource.up ??
+        cp.upCount ??
+        cp.thumbsUp,
+      0,
+    );
+    const feedbackDownCount = asNum(
+      mergedFeedbackSource.downCount ??
+        mergedFeedbackSource.thumbsDown ??
+        mergedFeedbackSource.down ??
+        cp.downCount ??
+        cp.thumbsDown,
+      0,
+    );
+    const feedbackTotal = asNum(
+      mergedFeedbackSource.total ?? cp.feedbackTotal,
+      feedbackUpCount + feedbackDownCount,
+    );
+    const rawSatisfactionPct =
+      mergedFeedbackSource.satisfactionRatePct ??
+      mergedFeedbackSource.satisfactionPct ??
+      cp.satisfactionRatePct ??
+      cp.satisfactionPct;
+    const feedbackSatisfactionRatePct =
+      rawSatisfactionPct !== undefined
+        ? Number(asNum(rawSatisfactionPct, 0).toFixed(2))
+        : feedbackTotal > 0
+          ? Number(((feedbackUpCount / feedbackTotal) * 100).toFixed(2))
+          : 0;
+    const recentReasons = Array.isArray(mergedFeedbackSource.recentReasons)
+      ? mergedFeedbackSource.recentReasons
+      : [];
+    const feedbackSummary = {
+      total: feedbackTotal,
+      upCount: feedbackUpCount,
+      downCount: feedbackDownCount,
+      satisfactionRatePct: feedbackSatisfactionRatePct,
+      thumbsUp: feedbackUpCount,
+      thumbsDown: feedbackDownCount,
+      satisfactionPct: feedbackSatisfactionRatePct,
+      recentReasons,
+    };
+
+    const persistenceBackend = asStr(cp.persistenceBackend, 'in-memory');
+    const persistedTelemetryCount = asNum(
+      cp.persistedTelemetryCount ??
+        cp.totalTelemetryEvents ??
+        cp.persistedEventsCount ??
+        cp.totalChatTurns,
+      0,
+    );
+
+    const rawReviewSentiment =
+      rev.sentimentSummary &&
+      typeof rev.sentimentSummary === 'object' &&
+      !Array.isArray(rev.sentimentSummary)
+        ? (rev.sentimentSummary as Record<string, unknown>)
+        : {};
+    const reviewSentimentSummary = {
+      positiveCount: asNum(rawReviewSentiment.positiveCount, 0),
+      neutralCount: asNum(rawReviewSentiment.neutralCount, 0),
+      negativeCount: asNum(rawReviewSentiment.negativeCount, 0),
+      positivePct: asNum(rawReviewSentiment.positivePct, 0),
+      neutralPct: asNum(rawReviewSentiment.neutralPct, 0),
+      negativePct: asNum(rawReviewSentiment.negativePct, 0),
+      averageSentimentScore: Number(
+        asNum(rawReviewSentiment.averageSentimentScore, 0).toFixed(3),
+      ),
+      totalScored: asNum(rawReviewSentiment.totalScored, 0),
+    };
+
     return createApiResponse(
       {
         generatedAt: new Date().toISOString(),
         estimatedAiCostPerOrderUsd,
         cacheHitSavingsPct,
         rmaSizeExchangeByProduct,
+        tryonProviderBreakdown: providerBreakdown,
+        providerBreakdown,
+        feedbackSummary,
+        copilotFeedback: feedbackSummary,
+        copilotFeedbackSummary: feedbackSummary,
+        copilotSatisfaction: feedbackSummary,
         localAi: {
           provider: aiProvider,
           badge: 'Local AI · Ollama Qwen 2.5 (0₫ / Offline Privacy)',
@@ -868,9 +1001,13 @@ export class AdminOpsController {
           rackOrOutfitInteractions,
           tryOnModalOpens,
           tryOnCompleted: completedSessions,
-          tryOnMockCount: mockCount,
-          tryOnFalCount: falCount,
-          tryOnCacheHitCount: cacheHitCount,
+          tryOnMockCount: providerBreakdown.MOCK,
+          tryOnFalCount: providerBreakdown.FAL_CATVTON,
+          tryOnHfGradioCount: providerBreakdown.HF_GRADIO_VTON,
+          tryOnSmartPoseWarpCount: providerBreakdown.SMART_POSE_WARP,
+          tryOnPhotometricInpaintCount: providerBreakdown.PHOTOMETRIC_INPAINT,
+          tryOnCacheHitCount: providerBreakdown.CACHE_HIT,
+          providerBreakdown,
           addToCartAfterTryOn: addToCartAfterTryonCount,
           paidOrders,
         },
@@ -878,9 +1015,15 @@ export class AdminOpsController {
           totalSessions,
           completedSessions,
           failedSessions,
-          mockCount,
-          falCount,
-          cacheHitCount,
+          mockCount: providerBreakdown.MOCK,
+          falCount: providerBreakdown.FAL_CATVTON,
+          falCatvtonCount: providerBreakdown.FAL_CATVTON,
+          hfGradioCount: providerBreakdown.HF_GRADIO_VTON,
+          hfGradioVtonCount: providerBreakdown.HF_GRADIO_VTON,
+          smartPoseWarpCount: providerBreakdown.SMART_POSE_WARP,
+          photometricInpaintCount: providerBreakdown.PHOTOMETRIC_INPAINT,
+          cacheHitCount: providerBreakdown.CACHE_HIT,
+          providerBreakdown,
           cacheHitRatePct: cacheHitSavingsPct,
           cacheHitSavingsPct,
           estimatedSavingsUsd,
@@ -941,6 +1084,17 @@ export class AdminOpsController {
           estimatedGeminiCostUsd,
           fallbackModeUsed: fallbackMode,
           averageLatencyMs: asNum(cp.averageLatencyMs, 0),
+          persistenceBackend,
+          persistedTelemetryCount,
+          totalTelemetryEvents: persistedTelemetryCount,
+          upCount: feedbackUpCount,
+          downCount: feedbackDownCount,
+          satisfactionRatePct: feedbackSatisfactionRatePct,
+          thumbsUp: feedbackUpCount,
+          thumbsDown: feedbackDownCount,
+          satisfactionPct: feedbackSatisfactionRatePct,
+          feedbackSummary,
+          copilotFeedback: feedbackSummary,
         },
         reviews: {
           totalVerifiedReviews: asNum(rev.totalVerifiedReviews, 0),
@@ -948,6 +1102,8 @@ export class AdminOpsController {
           notificationsSentCount: asNum(rev.notificationsSentCount, 0),
           totalNotificationLogs: asNum(rev.totalNotificationLogs, 0),
           productsCovered: asNum(rev.productsCovered, 0),
+          positiveSentimentPct: reviewSentimentSummary.positivePct,
+          sentimentSummary: reviewSentimentSummary,
         },
         sources: {
           aiTryon: tryonRes.ok ? 'UP' : 'DEGRADED',
@@ -1119,6 +1275,7 @@ export class AdminOpsController {
     const startedAt = Date.now();
     const redisAlive = await this.redis.ping();
     const latencyMs = Math.max(0, Date.now() - startedAt);
+    const socketIoRedisAdapter = this.realtimeGateway.isRedisAdapterActive();
     return {
       name: 'bff',
       port: this.config.port,
@@ -1127,6 +1284,8 @@ export class AdminOpsController {
       details: {
         service: this.config.serviceName,
         redisConnected: redisAlive,
+        socketIoRedisAdapter,
+        realtimeReplayBackend: redisAlive ? 'redis' : 'memory-fallback',
         realtimeNamespaces: ['/realtime', '/'],
       },
     };

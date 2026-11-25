@@ -28,6 +28,12 @@ CREATE TABLE IF NOT EXISTS product_reviews (
 ALTER TABLE product_reviews ADD COLUMN IF NOT EXISTS sentiment_score NUMERIC(4,3) DEFAULT 0.75;
 ALTER TABLE product_reviews ADD COLUMN IF NOT EXISTS sentiment_label VARCHAR(16) DEFAULT 'POSITIVE';
 
+-- Idempotent Stage P2.1 review moderation columns
+ALTER TABLE product_reviews ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE product_reviews ADD COLUMN IF NOT EXISTS moderation_note TEXT NULL;
+ALTER TABLE product_reviews ADD COLUMN IF NOT EXISTS moderated_by VARCHAR(140) NULL;
+ALTER TABLE product_reviews ADD COLUMN IF NOT EXISTS moderated_at TIMESTAMPTZ NULL;
+
 CREATE INDEX IF NOT EXISTS idx_product_reviews_prod_mod_fit
   ON product_reviews (product_id, moderation_status, fit_feedback);
 
@@ -53,6 +59,10 @@ CREATE TABLE IF NOT EXISTS notification_logs (
 ALTER TABLE notification_logs ADD COLUMN IF NOT EXISTS subject VARCHAR(255) NULL;
 ALTER TABLE notification_logs ADD COLUMN IF NOT EXISTS payload_jsonb JSONB NULL;
 ALTER TABLE notification_logs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE notification_logs ADD COLUMN IF NOT EXISTS provider_message_id TEXT NULL;
+ALTER TABLE notification_logs ADD COLUMN IF NOT EXISTS provider_error_code TEXT NULL;
+ALTER TABLE notification_logs ADD COLUMN IF NOT EXISTS provider_error_message TEXT NULL;
+ALTER TABLE notification_logs ADD COLUMN IF NOT EXISTS delivery_mode TEXT NOT NULL DEFAULT 'LIVE';
 
 CREATE INDEX IF NOT EXISTS idx_notification_logs_sent_at
   ON notification_logs (sent_at DESC);

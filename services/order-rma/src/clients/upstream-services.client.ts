@@ -308,6 +308,7 @@ export class UpstreamServicesClient {
           method: 'POST',
           headers: this.buildTraceHeaders(trace, {
             'Content-Type': 'application/json',
+            'x-internal-secret': this.config.internalServiceSecret,
           }),
           body: JSON.stringify({
             ...(skuIds.length > 0 ? { skuIds } : {}),
@@ -915,7 +916,7 @@ export class UpstreamServicesClient {
     reason: 'RELEASE_EXPIRED' | 'CANCEL_RELEASE',
     reservationId: string | null | undefined,
     trace: string | TraceContext,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const correlationId = this.getCorrelationId(trace);
     const body = JSON.stringify({
       referenceId,
@@ -942,12 +943,15 @@ export class UpstreamServicesClient {
           { status: res.status, referenceId, reason, correlationId },
           'Inventory release reservation returned non-OK status',
         );
+        return false;
       }
+      return true;
     } catch (error: unknown) {
       this.logger.warn(
         { err: error instanceof Error ? error.message : String(error), referenceId, correlationId },
         'Non-fatal inventory release reservation failed',
       );
+      return false;
     }
   }
 
@@ -1157,17 +1161,67 @@ export class UpstreamServicesClient {
     }
   }
 
+  async notifyRmaRejectedNonFatal(
+    payload: {
+      eventId: string;
+      rmaId: string;
+      rmaCode: string;
+      orderCode: string;
+      customerEmail: string;
+      customerPhone?: string | null;
+      customerName?: string | null;
+      reason: string;
+      rejectedBy?: string | null;
+    },
+    trace: string | TraceContext,
+  ): Promise<boolean> {
+    const correlationId = this.getCorrelationId(trace);
+    try {
+      const res = await this.fetchJson(
+        `${this.config.upstreams.notifyReviewServiceUrl}/internal/notify/rma-rejected`,
+        {
+          method: 'POST',
+          headers: this.buildTraceHeaders(trace, {
+            'Content-Type': 'application/json',
+            'x-internal-secret': this.config.internalServiceSecret,
+          }),
+          body: JSON.stringify(payload),
+        },
+        3500,
+      );
+      if (!res.ok) {
+        this.logger.warn(
+          { status: res.status, rmaCode: payload.rmaCode, orderCode: payload.orderCode, correlationId },
+          'Non-fatal rma-rejected notification returned non-OK status',
+        );
+        return false;
+      }
+      return true;
+    } catch (error: unknown) {
+      this.logger.warn(
+        {
+          err: error instanceof Error ? error.message : String(error),
+          rmaCode: payload.rmaCode,
+          correlationId,
+        },
+        'Non-fatal rma-rejected notification failed',
+      );
+      return false;
+    }
+  }
+
   // ==========================================================================
   // 7. BFF Realtime Socket.io Hub (:4000)
   // ==========================================================================
 
   async emitRealtimeOrderEventNonFatal(
     payload: {
-      event: 'order:paid' | 'order:updated';
+      event: 'order:paid' | 'order:updated' | 'order:packed' | 'order:shipped' | 'order:delivered';
       orderId: string;
       orderCode: string;
       status: string;
       shipment?: ShipmentDTO | null;
+      trackingEvent?: Record<string, unknown> | null;
     },
     trace: string | TraceContext,
   ): Promise<void> {
@@ -1187,11 +1241,13 @@ export class UpstreamServicesClient {
             orderCode: payload.orderCode,
             status: payload.status,
             ...(payload.shipment ? { shipment: payload.shipment } : {}),
+            ...(payload.trackingEvent ? { trackingEvent: payload.trackingEvent } : {}),
             payload: {
               orderId: payload.orderId,
               orderCode: payload.orderCode,
               status: payload.status,
               ...(payload.shipment ? { shipment: payload.shipment } : {}),
+              ...(payload.trackingEvent ? { trackingEvent: payload.trackingEvent } : {}),
             },
           }),
         },

@@ -100,6 +100,11 @@ class TryOnSession(Base):
     total_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cache_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    lighting_preset: Mapped[str | None] = mapped_column(String(32), nullable=True, default="atelier")
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    is_purged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    purged_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 

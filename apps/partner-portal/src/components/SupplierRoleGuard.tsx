@@ -106,7 +106,7 @@ export function SupplierRoleGuard({
       });
       if (res.ok) {
         setInfoMessage(
-          `Đã gửi mã OTP 6 chữ số tới ${email} (xem hộp thư Mailpit :8025).`,
+          `Đã gửi mã OTP 6 chữ số tới ${email}. Kiểm tra hộp thư Gmail/SMTP thật (nếu đã cấu hình SMTP_USER/SMTP_PASS) hoặc Mailpit cục bộ (http://localhost:8025).`,
         );
       } else {
         setErrorMessage(res.error?.message || 'Gửi Email OTP thất bại.');
@@ -191,10 +191,10 @@ export function SupplierRoleGuard({
             }`}
           >
             <p className="font-semibold uppercase tracking-[0.14em]">
-              Email OTP (Mailpit)
+              Email OTP (SMTP / Mailpit)
             </p>
             <p className="mt-0.5 text-[11px] opacity-80">
-              Nhận mã 6 số qua email đăng ký
+              Nhận mã 6 số qua Gmail SMTP hoặc Mailpit :8025
             </p>
           </button>
 

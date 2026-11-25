@@ -51,6 +51,7 @@ export interface BffConfig {
   vtonProvider: BffVtonProviderMode;
   redisUrl: string;
   redisConfigured: boolean;
+  socketIoRedisEnabled: boolean;
   rabbitmqConfigured: boolean;
   meilisearchHost: string;
   minioPublicUrl: string;
@@ -142,8 +143,9 @@ export function loadBffConfig(): BffConfig {
       `http://${process.env.MINIO_ENDPOINT?.trim() || '127.0.0.1'}:${parsePort(process.env.MINIO_PORT, 9000)}`,
   );
 
+  const mailpitHost = process.env.MAILPIT_HOST?.trim() || '127.0.0.1';
   const mailpitUiUrl = trimTrailingSlash(
-    `http://${process.env.SMTP_HOST?.trim() || '127.0.0.1'}:${parsePort(process.env.MAILPIT_UI_PORT, 8025)}`,
+    `http://${mailpitHost}:${parsePort(process.env.MAILPIT_UI_PORT, 8025)}`,
   );
 
   const rabbitmqMgmtUrl = trimTrailingSlash(
@@ -224,6 +226,8 @@ export function loadBffConfig(): BffConfig {
     vtonProvider,
     redisUrl,
     redisConfigured: Boolean(process.env.REDIS_URL && process.env.REDIS_URL.trim().length > 0),
+    socketIoRedisEnabled:
+      (process.env.SOCKET_IO_REDIS_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
     rabbitmqConfigured: Boolean(
       process.env.RABBITMQ_URL && process.env.RABBITMQ_URL.trim().length > 0,
     ),

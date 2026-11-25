@@ -18,7 +18,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint --no-error-on-unmatched-pattern ."
   },
   "devDependencies": {
     "@atelier/typescript-config": "workspace:*",

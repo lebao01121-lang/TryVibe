@@ -256,6 +256,7 @@ async function main() {
     if (products.length < 23) {
       await fetchJson('http://127.0.0.1:4002/v1/catalog/internal/reseed', {
         method: 'POST',
+        headers: { 'x-internal-secret': internalSecret },
         timeoutMs: 30_000,
       });
       prodRes = await fetchJson('http://127.0.0.1:4002/v1/catalog/admin/products?pageSize=50');
@@ -303,6 +304,7 @@ async function main() {
     if (brokenImages.length > 0) {
       await fetchJson('http://127.0.0.1:4002/v1/catalog/internal/reseed', {
         method: 'POST',
+        headers: { 'x-internal-secret': internalSecret },
         timeoutMs: 30_000,
       });
       brokenImages = await checkImages();
@@ -405,7 +407,7 @@ async function main() {
     // 5. Verify Auth 6 RBAC roles & accounts (including customer-b & supplier-c)
     if (onlineMap['auth-customer']) {
       const demoAccounts = [
-        { email: 'admin@atelier.local', password: 'Atelier_Admin2026!', role: 'SUPER_ADMIN' },
+        { email: 'lebao01121@gmail.com', password: 'Atelier@2026!', role: 'SUPER_ADMIN' },
         { email: 'catalog-ai@atelier.local', password: 'Atelier_Catalog2026!', role: 'CATALOG_AI_OPERATOR' },
         { email: 'warehouse@atelier.local', password: 'Atelier_Warehouse2026!', role: 'WAREHOUSE_MANAGER' },
         { email: 'orders@atelier.local', password: 'Atelier_Order2026!', role: 'ORDER_STAFF' },

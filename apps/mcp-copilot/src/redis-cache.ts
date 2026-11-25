@@ -5,9 +5,18 @@ import { parseSafeConnectionTarget } from './config.js';
 export const COPILOT_CACHE_KEY_PREFIX = 'copilot:cache:';
 export const DEFAULT_COPILOT_CACHE_TTL_SECONDS = 300;
 
+type RespValue = string | null | RespValue[];
+
 interface ParsedRespValue {
-  value: string | null;
+  value: RespValue;
   nextOffset: number;
+}
+
+export interface CopilotCacheFlushResult {
+  prefix: string;
+  memoryCleared: number;
+  redisCleared: number;
+  redisReachable: boolean;
 }
 
 function encodeRespCommand(args: readonly string[]): Buffer {
@@ -69,6 +78,31 @@ function tryParseOneRespValue(
     };
   }
 
+  if (prefix === 0x2a) {
+    // '*' RESP array (used by SCAN / KEYS)
+    const count = Number.parseInt(
+      buf.subarray(offset + 1, lineEnd).toString('utf8'),
+      10,
+    );
+    if (Number.isNaN(count)) {
+      return null;
+    }
+    if (count < 0) {
+      return { value: null, nextOffset: lineEnd + 2 };
+    }
+    const items: RespValue[] = [];
+    let cursor = lineEnd + 2;
+    for (let i = 0; i < count; i += 1) {
+      const element = tryParseOneRespValue(buf, cursor);
+      if (!element) {
+        return null;
+      }
+      items.push(element.value);
+      cursor = element.nextOffset;
+    }
+    return { value: items, nextOffset: cursor };
+  }
+
   return null;
 }
 
@@ -97,10 +131,10 @@ export class RedisSemanticCache {
       : `${COPILOT_CACHE_KEY_PREFIX}${rawHash}`;
   }
 
-  private execRedisCommand(
+  private execRedisRaw(
     args: readonly string[],
     timeoutMs = 350,
-  ): Promise<{ ok: boolean; value: string | null }> {
+  ): Promise<{ ok: boolean; value: RespValue }> {
     if (!this.host) {
       return Promise.resolve({ ok: false, value: null });
     }
@@ -121,7 +155,7 @@ export class RedisSemanticCache {
       let settled = false;
       let buffer: Buffer = Buffer.alloc(0);
 
-      const finish = (ok: boolean, value: string | null): void => {
+      const finish = (ok: boolean, value: RespValue): void => {
         if (settled) {
           return;
         }
@@ -144,7 +178,7 @@ export class RedisSemanticCache {
         buffer = Buffer.concat([buffer, piece]);
 
         let cursor = 0;
-        let lastValue: string | null = null;
+        let lastValue: RespValue = null;
         let parsedCount = 0;
 
         while (parsedCount < expectedReplies) {
@@ -164,6 +198,17 @@ export class RedisSemanticCache {
     });
   }
 
+  private async execRedisCommand(
+    args: readonly string[],
+    timeoutMs = 350,
+  ): Promise<{ ok: boolean; value: string | null }> {
+    const res = await this.execRedisRaw(args, timeoutMs);
+    return {
+      ok: res.ok,
+      value: typeof res.value === 'string' ? res.value : null,
+    };
+  }
+
   public async ping(): Promise<{ reachable: boolean; latencyMs: number }> {
     const startedAt = Date.now();
     const res = await this.execRedisCommand(['PING'], 300);
@@ -173,7 +218,9 @@ export class RedisSemanticCache {
     };
   }
 
-  public async getJson<T>(rawKey: string): Promise<{ value: T | null; backend: 'redis' | 'memory' | 'miss' }> {
+  public async getJson<T>(
+    rawKey: string,
+  ): Promise<{ value: T | null; backend: 'redis' | 'memory' | 'miss' }> {
     const key = this.formatKey(rawKey);
     const redisRes = await this.execRedisCommand(['GET', key]);
     if (redisRes.ok && redisRes.value) {
@@ -205,6 +252,73 @@ export class RedisSemanticCache {
     const serialized = JSON.stringify(value);
     const effectiveTtl = Math.max(10, Math.floor(ttlSeconds));
     this.memoryFallback.set(key, serialized, effectiveTtl * 1000);
-    await this.execRedisCommand(['SET', key, serialized, 'EX', String(effectiveTtl)]);
+    await this.execRedisCommand([
+      'SET',
+      key,
+      serialized,
+      'EX',
+      String(effectiveTtl),
+    ]);
+  }
+
+  public async flushByPrefix(
+    prefix = COPILOT_CACHE_KEY_PREFIX,
+  ): Promise<CopilotCacheFlushResult> {
+    const memoryCleared = this.memoryFallback.getStats().size;
+    this.memoryFallback.clear();
+
+    if (!this.host) {
+      return {
+        prefix,
+        memoryCleared,
+        redisCleared: 0,
+        redisReachable: false,
+      };
+    }
+
+    let cursor = '0';
+    let redisCleared = 0;
+    let redisReachable = false;
+    const matchPattern = prefix.endsWith('*') ? prefix : `${prefix}*`;
+
+    for (let iter = 0; iter < 100; iter += 1) {
+      const scanRes = await this.execRedisRaw(
+        ['SCAN', cursor, 'MATCH', matchPattern, 'COUNT', '200'],
+        600,
+      );
+      if (!scanRes.ok || !Array.isArray(scanRes.value) || scanRes.value.length < 2) {
+        break;
+      }
+      redisReachable = true;
+      const nextCursor =
+        typeof scanRes.value[0] === 'string' ? scanRes.value[0] : '0';
+      const rawKeys = Array.isArray(scanRes.value[1]) ? scanRes.value[1] : [];
+      const keys = rawKeys.filter(
+        (k): k is string => typeof k === 'string' && k.length > 0,
+      );
+
+      for (let i = 0; i < keys.length; i += 100) {
+        const batch = keys.slice(i, i + 100);
+        const delRes = await this.execRedisCommand(['DEL', ...batch], 600);
+        if (delRes.ok) {
+          const deletedCount = Number.parseInt(delRes.value ?? '0', 10);
+          redisCleared += Number.isFinite(deletedCount)
+            ? deletedCount
+            : batch.length;
+        }
+      }
+
+      cursor = nextCursor;
+      if (cursor === '0') {
+        break;
+      }
+    }
+
+    return {
+      prefix,
+      memoryCleared,
+      redisCleared,
+      redisReachable,
+    };
   }
 }

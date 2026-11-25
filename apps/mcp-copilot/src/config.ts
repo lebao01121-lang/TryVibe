@@ -33,6 +33,7 @@ export interface McpCopilotConfig {
   vtonProvider: 'mock' | 'fal';
   defaultSupplierId: string;
   semanticCacheTtlSeconds: number;
+  internalServiceSecret: string;
 }
 
 function loadEnvFileIfPresent(): void {
@@ -130,6 +131,9 @@ export function loadConfig(): McpCopilotConfig {
       process.env.SUPPLIER_A_ID ?? '11111111-1111-4111-8111-111111111101'
     ).trim(),
     semanticCacheTtlSeconds: 300,
+    internalServiceSecret: (
+      process.env.INTERNAL_SERVICE_SECRET ?? 'Atelier_Internal_Svc_2026!'
+    ).trim(),
   };
 }
 

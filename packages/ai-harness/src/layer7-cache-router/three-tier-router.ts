@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   OllamaModelClient,
@@ -11,6 +12,7 @@ import {
   validateStructuredOutput,
 } from '../layer2-prompts';
 import { maskPii } from '../layer6-guardrails';
+import { AiTelemetryRecorder } from '../layer8-telemetry-eval';
 import { ContentHashCache } from './content-hash-cache';
 import { SemanticCacheKeyBuilder } from './semantic-cache-key';
 
@@ -70,12 +72,28 @@ export interface ThreeTierRouterOptions {
   cacheTtlMs?: number;
 }
 
+export interface AnalyzeVietnameseSentimentOptions {
+  ollamaClient?: OllamaModelClient;
+  telemetry?: AiTelemetryRecorder;
+  rating?: number;
+  timeoutMs?: number;
+  correlationId?: string;
+  userId?: string;
+}
+
 export interface VietnameseSentimentResult {
+  score: number;
   sentimentScore: number;
   label: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE';
+  provider: 'ollama' | 'vietnamese_lexicon_fallback';
+  maskedInput: string;
   summary: string;
   modelUsed: string;
   tokensPerSec: number;
+  promptEvalCount: number;
+  evalCount: number;
+  latencyMs: number;
+  costUsd: 0;
   fallbackUsed: boolean;
 }
 
@@ -173,18 +191,32 @@ function normalizeIntentText(input: string): string {
 const POSITIVE_VN_TERMS = [
   'tuyet voi',
   'rat dep',
+  'dep',
   'xinh',
   'sang trong',
   'vua van',
   'chuan phom',
+  'chuan',
   'ung y',
   'hai long',
   'mem mai',
+  'mem',
+  'min',
   'thoang mat',
+  'mat',
   'chat luong tot',
+  'chat luong',
   'dang dep',
+  'ton dang',
+  'tinh te',
+  'chinh chu',
+  'sac net',
+  'thoai mai',
+  'thu cong',
+  'dang tien',
   'thich lam',
   'giao nhanh',
+  'xuat sac',
   '5 sao',
 ];
 
@@ -192,23 +224,57 @@ const NEGATIVE_VN_TERMS = [
   'chat vai',
   'hoi chat',
   'qua chat',
+  'chat',
   'qua rong',
+  'rong qua',
   'loi duong may',
   'loi san xuat',
+  'duong may hoi loi',
+  'buc chi',
+  'loi',
   'rach',
   'ban',
   'phai mau',
   'khong vua',
   'khong giong',
   'that vong',
+  'mong qua',
+  'ngua',
+  'cung',
+  'nhan',
   'te',
+  'xau',
+  'kem',
   'giao cham',
   'hoan tien',
   'tra hang',
+  'tra lai',
 ];
 
-function fallbackVietnameseSentiment(text: string): VietnameseSentimentResult {
-  const folded = normalizeIntentText(text);
+let sharedDefaultSentimentClient: OllamaModelClient | null = null;
+const defaultSentimentTelemetryRecorder = new AiTelemetryRecorder();
+
+export function getDefaultSentimentTelemetryRecorder(): AiTelemetryRecorder {
+  return defaultSentimentTelemetryRecorder;
+}
+
+function getSharedSentimentOllamaClient(): OllamaModelClient {
+  if (!sharedDefaultSentimentClient) {
+    sharedDefaultSentimentClient = new OllamaModelClient();
+  }
+  return sharedDefaultSentimentClient;
+}
+
+function clampSentimentScore(value: number): number {
+  return Number(Math.max(-1, Math.min(1, value)).toFixed(2));
+}
+
+function fallbackVietnameseSentiment(
+  maskedInput: string,
+  rating: number | undefined,
+  latencyMs: number,
+): VietnameseSentimentResult {
+  const folded = normalizeIntentText(maskedInput);
   let posHits = 0;
   let negHits = 0;
 
@@ -220,14 +286,28 @@ function fallbackVietnameseSentiment(text: string): VietnameseSentimentResult {
   }
 
   let score = 0;
-  if (posHits > 0 || negHits > 0) {
-    score = Number(
-      Math.max(-1, Math.min(1, (posHits - negHits) / Math.max(1, posHits + negHits))).toFixed(2),
+  if (typeof rating === 'number' && Number.isFinite(rating)) {
+    const clampedRating = Math.min(5, Math.max(1, Math.round(rating)));
+    const baseByRating: Record<number, number> = {
+      1: -0.82,
+      2: -0.45,
+      3: 0.05,
+      4: 0.58,
+      5: 0.85,
+    };
+    score = clampSentimentScore(
+      (baseByRating[clampedRating] ?? 0.25) +
+        Math.min(posHits, 4) * 0.05 -
+        Math.min(negHits, 4) * 0.14,
+    );
+  } else if (posHits > 0 || negHits > 0) {
+    score = clampSentimentScore(
+      (posHits - negHits) / Math.max(1, posHits + negHits),
     );
   }
 
   const label: VietnameseSentimentResult['label'] =
-    score >= 0.25 ? 'POSITIVE' : score <= -0.25 ? 'NEGATIVE' : 'NEUTRAL';
+    score >= 0.2 ? 'POSITIVE' : score <= -0.2 ? 'NEGATIVE' : 'NEUTRAL';
 
   const summary =
     label === 'POSITIVE'
@@ -237,34 +317,110 @@ function fallbackVietnameseSentiment(text: string): VietnameseSentimentResult {
         : 'Phản hồi trung tính mang tính mô tả thông tin.';
 
   return {
+    score,
     sentimentScore: score,
     label,
+    provider: 'vietnamese_lexicon_fallback',
+    maskedInput,
     summary,
     modelUsed: 'vietnamese-lexicon-fallback',
     tokensPerSec: 0,
+    promptEvalCount: 0,
+    evalCount: 0,
+    latencyMs: Math.max(0, Math.round(latencyMs)),
+    costUsd: 0,
     fallbackUsed: true,
   };
 }
 
 /**
  * Tier-1 Vietnamese NLP sentiment analyzer powered by local Ollama (`OLLAMA_FAST_MODEL = qwen2.5:3b`)
- * using structured JSON `format` schema, with deterministic Vietnamese lexicon fallback when offline.
+ * with mandatory Layer 6 `maskPii` pre-redaction, Layer 1 `CircuitBreaker` protection,
+ * Layer 8 Telemetry recording, and deterministic Vietnamese fashion lexicon fallback when offline.
  */
 export async function analyzeVietnameseSentimentWithOllama(
   text: string,
-  ollamaClient?: OllamaModelClient,
+  clientOrOptions?: OllamaModelClient | AnalyzeVietnameseSentimentOptions,
 ): Promise<VietnameseSentimentResult> {
-  const safeText = maskPii(typeof text === 'string' ? text : String(text ?? '')).trim();
-  const deterministic = fallbackVietnameseSentiment(safeText);
+  const startedAt = Date.now();
+  const options: AnalyzeVietnameseSentimentOptions =
+    clientOrOptions instanceof OllamaModelClient
+      ? { ollamaClient: clientOrOptions }
+      : (clientOrOptions ?? {});
+
+  const safeText = maskPii(
+    typeof text === 'string' ? text : String(text ?? ''),
+  ).trim();
+  const telemetry = options.telemetry ?? defaultSentimentTelemetryRecorder;
+  const correlationId =
+    options.correlationId ?? `sentiment-${randomUUID().slice(0, 12)}`;
+  const userId = options.userId ?? 'system-review-sentiment';
+
+  const recordSentimentTelemetry = (
+    res: VietnameseSentimentResult,
+    reason?: string,
+  ): VietnameseSentimentResult => {
+    telemetry.record({
+      userId,
+      roles: ['SYSTEM'],
+      toolName: 'analyze_vietnamese_sentiment',
+      tier: 1,
+      latencyMs: res.latencyMs,
+      aiProvider: res.fallbackUsed ? 'rule_fallback' : 'ollama',
+      modelUsed: res.modelUsed,
+      promptEvalCount: res.promptEvalCount,
+      evalCount: res.evalCount,
+      totalDurationMs: res.latencyMs,
+      tokensPerSec: res.tokensPerSec,
+      correlationId,
+      traceId: correlationId,
+      portal: 'INTERNAL',
+      status: 'SUCCESS',
+      usedFallback: res.fallbackUsed,
+      metadata: {
+        provider: res.provider,
+        label: res.label,
+        score: res.score,
+        ...(reason ? { fallbackReason: reason } : {}),
+      },
+    });
+    return res;
+  };
 
   if (!safeText) {
-    return deterministic;
+    return recordSentimentTelemetry(
+      fallbackVietnameseSentiment(
+        '',
+        options.rating,
+        Date.now() - startedAt,
+      ),
+      'EMPTY_INPUT',
+    );
   }
 
-  const client = ollamaClient ?? new OllamaModelClient();
+  const client = options.ollamaClient ?? getSharedSentimentOllamaClient();
   if (!client.isLiveAvailable()) {
-    return deterministic;
+    const circuitState = client.getCircuitBreaker().getState();
+    return recordSentimentTelemetry(
+      fallbackVietnameseSentiment(
+        safeText,
+        options.rating,
+        Date.now() - startedAt,
+      ),
+      circuitState === 'OPEN' ? 'CIRCUIT_BREAKER_OPEN' : 'OLLAMA_OFFLINE_MODE',
+    );
   }
+
+  const userPrompt =
+    typeof options.rating === 'number' && Number.isFinite(options.rating)
+      ? `Điểm sao: ${Math.min(5, Math.max(1, Math.round(options.rating)))}/5. Phân tích cảm xúc đánh giá sau: "${safeText.slice(0, 600)}"`
+      : `Phân tích cảm xúc đánh giá sau: "${safeText.slice(0, 600)}"`;
+
+  const deterministicPreview = fallbackVietnameseSentiment(
+    safeText,
+    options.rating,
+    Date.now() - startedAt,
+  );
 
   const response = await client.chat({
     model: client.getFastModel(),
@@ -279,37 +435,68 @@ export async function analyzeVietnameseSentimentWithOllama(
       },
       {
         role: 'user',
-        content: `Phân tích cảm xúc đánh giá sau: "${safeText.slice(0, 500)}"`,
+        content: userPrompt,
       },
     ],
     jsonSchema: SENTIMENT_JSON_SCHEMA,
     temperature: 0.05,
-    timeoutMs: 12_000,
+    timeoutMs: options.timeoutMs ?? 12_000,
     allowFallback: true,
     fallbackText: JSON.stringify({
-      sentimentScore: deterministic.sentimentScore,
-      label: deterministic.label,
-      summary: deterministic.summary,
+      sentimentScore: deterministicPreview.sentimentScore,
+      label: deterministicPreview.label,
+      summary: deterministicPreview.summary,
     }),
   });
 
   if (response.usedFallback) {
-    return deterministic;
+    return recordSentimentTelemetry(
+      fallbackVietnameseSentiment(
+        safeText,
+        options.rating,
+        Date.now() - startedAt,
+      ),
+      response.fallbackReason ?? 'OLLAMA_FALLBACK',
+    );
   }
 
   const parsed = validateStructuredOutput(SENTIMENT_OUTPUT_SCHEMA, response.content);
   if (!parsed.ok) {
-    return deterministic;
+    return recordSentimentTelemetry(
+      fallbackVietnameseSentiment(
+        safeText,
+        options.rating,
+        Date.now() - startedAt,
+      ),
+      'STRUCTURED_OUTPUT_INVALID',
+    );
   }
 
-  return {
-    sentimentScore: Number(parsed.data.sentimentScore.toFixed(2)),
-    label: parsed.data.label,
-    summary: parsed.data.summary,
+  let finalScore = clampSentimentScore(parsed.data.sentimentScore);
+  const label = parsed.data.label;
+  if (label === 'POSITIVE' && finalScore < 0.1) {
+    finalScore = clampSentimentScore(Math.max(0.35, Math.abs(finalScore)));
+  } else if (label === 'NEGATIVE' && finalScore > -0.1) {
+    finalScore = clampSentimentScore(-Math.max(0.35, Math.abs(finalScore)));
+  }
+
+  const result: VietnameseSentimentResult = {
+    score: finalScore,
+    sentimentScore: finalScore,
+    label,
+    provider: 'ollama',
+    maskedInput: safeText,
+    summary: parsed.data.summary.trim().slice(0, 240) || deterministicPreview.summary,
     modelUsed: response.model,
     tokensPerSec: response.tokensPerSec,
+    promptEvalCount: response.promptEvalCount,
+    evalCount: response.evalCount,
+    latencyMs: Math.max(0, Math.round(Date.now() - startedAt)),
+    costUsd: 0,
     fallbackUsed: false,
   };
+
+  return recordSentimentTelemetry(result);
 }
 
 interface ClassificationRule {

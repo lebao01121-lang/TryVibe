@@ -49,6 +49,40 @@ class MinioStorageClient:
             ),
         )
 
+    def _enforce_private_bucket_policy_sync(self) -> bool:
+        """Explicitly remove any public bucket policy on private try-on bucket so unsigned GET returns 403."""
+        try:
+            self._client.delete_bucket_policy(Bucket=self.private_bucket)
+            logger.info(
+                "Cleared bucket policy on %s to enforce locked-private 403 policy.",
+                self.private_bucket,
+            )
+            return True
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            status_code = int(
+                exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0)
+            )
+            if status_code == 404 or code in ("NoSuchBucketPolicy", "404", "NotFound"):
+                return True
+            logger.warning(
+                "Could not delete bucket policy on %s (%s / HTTP %d)",
+                self.private_bucket,
+                code,
+                status_code,
+            )
+            return False
+        except Exception as exc:
+            logger.warning(
+                "Private bucket policy check skipped for %s (%s)",
+                self.private_bucket,
+                exc.__class__.__name__,
+            )
+            return False
+
+    async def enforce_private_bucket_policy(self) -> bool:
+        return await asyncio.to_thread(self._enforce_private_bucket_policy_sync)
+
     def _ensure_buckets_sync(self) -> bool:
         if self._buckets_verified:
             return True
@@ -72,6 +106,8 @@ class MinioStorageClient:
                             pass
                     else:
                         raise
+            # Enforce locked-private policy on atelier-private-tryon (direct unsigned GET -> 403)
+            self._enforce_private_bucket_policy_sync()
             self._buckets_verified = True
             return True
         except Exception as exc:

@@ -1,0 +1,64 @@
+{
+  "timestamp": "2026-11-25T04:52:06.111Z",
+  "mode": "node-hnsw-768d",
+  "pg16Reachable": false,
+  "totalChunks": 10000,
+  "embeddingDim": 768,
+  "rrfK": 60,
+  "indexSpec": {
+    "type": "hnsw",
+    "opClass": "vector_cosine_ops",
+    "m": 16,
+    "efConstruction": 64,
+    "efSearch": 32
+  },
+  "queryCount": 50,
+  "corpusGenMs": 286.21,
+  "buildTimeMs": 11889.87,
+  "minMs": 1.273,
+  "meanMs": 2.312,
+  "p50Ms": 2.18,
+  "p95Ms": 3.284,
+  "p99Ms": 5.025,
+  "maxMs": 5.025,
+  "recallAt5": 0.74,
+  "targetP95Ms": 50,
+  "passed": true,
+  "sampleQueries": [
+    {
+      "query": "Chính sách đổi size RMA 2 chiều miễn phí trong bao nhiêu ngày?",
+      "latencyMs": 1.464,
+      "topDocId": 3402,
+      "topTitle": "Chính sách đổi size RMA 2 chiều miễn phí 7-14 ngày — Áo Len Cổ Lọ (Tầm Xuân 2026) #3403",
+      "topRrfScore": 0.016393
+    },
+    {
+      "query": "Ảnh tải lên Phòng Thử Đồ AI lưu bao lâu và có xóa cứng sau 15 phút không?",
+      "latencyMs": 3.169,
+      "topDocId": 9343,
+      "topTitle": "Cam kết quyền riêng tư Phòng Thử Đồ AI xóa cứng sau 15 phút — Áo Len Cổ Lọ (Resort Ban Mai) #9344",
+      "topRrfScore": 0.016393
+    },
+    {
+      "query": "Cao 162cm nặng 53kg mặc áo blazer linen dáng suông size M hay S?",
+      "latencyMs": 1.788,
+      "topDocId": 494,
+      "topTitle": "Bảng thông số kích cỡ Áo Blazer, Sơ Mi Lụa & Đầm Midi Atelier — Áo Blazer Dáng Suông (Atelier Di Sản) #495",
+      "topRrfScore": 0.016393
+    },
+    {
+      "query": "Cách giặt và bảo quản áo lụa tơ tằm 19 momme không bị mất phom?",
+      "latencyMs": 2.867,
+      "topDocId": 7095,
+      "topTitle": "Hướng dẫn bảo quản Lụa Tơ Tằm, Cashmere, Linen & Tweed Thủ Công — Áo Dài Cách Tân (Atelier Di Sản) #7096",
+      "topRrfScore": 0.029199
+    },
+    {
+      "query": "Áo len cashmere và cardigan merino nên giặt tay hay giặt khô?",
+      "latencyMs": 2.531,
+      "topDocId": 8901,
+      "topTitle": "Hướng dẫn bảo quản Lụa Tơ Tằm, Cashmere, Linen & Tweed Thủ Công — Áo Len Cổ Lọ (Atelier Di Sản) #8902",
+      "topRrfScore": 0.016393
+    }
+  ]
+}

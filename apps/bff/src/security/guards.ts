@@ -61,7 +61,7 @@ function timingSafeStringEqual(a: string, b: string): boolean {
 function extractRequestOrigin(req: Request): string | null {
   const originHeader = req.headers.origin;
   if (typeof originHeader === 'string' && originHeader.trim().length > 0) {
-    return originHeader.trim();
+    return originHeader.trim().replace(/\/+$/, '');
   }
   const refererHeader = req.headers.referer;
   if (typeof refererHeader === 'string' && refererHeader.trim().length > 0) {
@@ -87,12 +87,31 @@ export class JwtAuthGuard implements CanActivate {
   }
 }
 
+const EXTERNAL_WEBHOOK_PATH_PREFIXES: readonly string[] = [
+  '/bff/v1/payments/webhooks/',
+  '/bff/v1/storefront/payments/webhooks/',
+  '/bff/v1/payments/vnpay/ipn',
+  '/bff/v1/payments/momo/ipn',
+  '/bff/v1/payments/payos/webhook',
+  '/bff/v1/webhooks/shipping/',
+];
+
+function isExternalWebhookPath(pathname: string): boolean {
+  const clean = (pathname || '').split('?')[0] ?? '';
+  return EXTERNAL_WEBHOOK_PATH_PREFIXES.some((prefix) =>
+    prefix.endsWith('/') ? clean.startsWith(prefix) : clean === prefix,
+  );
+}
+
 @Injectable()
 export class CsrfOriginGuard implements CanActivate {
   constructor(@Inject(BFF_CONFIG_TOKEN) private readonly config: BffConfig) {}
 
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    if (isExternalWebhookPath(req.originalUrl || req.url || '')) {
+      return true;
+    }
     const correlationId = getOrCreateCorrelationId(req.headers as HeaderBag);
 
     // 1. Validate Origin (or Referer origin) against strict allowlist
@@ -127,8 +146,22 @@ export class CsrfOriginGuard implements CanActivate {
       );
     }
 
-    const csrfCookie = extractCookieValue(req, 'atelier_csrf_token');
-    if (csrfCookie && !timingSafeStringEqual(csrfHeader, csrfCookie)) {
+    const rawCsrfCookie = extractCookieValue(req, 'atelier_csrf_token');
+    const csrfCookie = rawCsrfCookie?.trim();
+
+    if (!csrfCookie) {
+      throw new HttpException(
+        createApiErrorResponse(
+          ErrorCode.CSRF_INVALID,
+          'Missing required atelier_csrf_token cookie.',
+          undefined,
+          { correlationId, service: this.config.serviceName },
+        ),
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    if (!timingSafeStringEqual(csrfHeader, csrfCookie)) {
       throw new HttpException(
         createApiErrorResponse(
           ErrorCode.CSRF_INVALID,

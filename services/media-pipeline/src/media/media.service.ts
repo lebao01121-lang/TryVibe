@@ -27,12 +27,15 @@ import {
 import { MediaDbService } from '../db/media-db.service';
 import { MediaEventPublisherService } from '../messaging/media-event-publisher.service';
 import {
+  analyzeGarmentImage,
   computeDominantHex,
+  computePixelBoundingBox,
   detectMagicBytes,
   generateLookbookVariants,
   generateRackCutoutVariants,
   generateTryOnFlatLayVariants,
   inspectAspectAndAlpha,
+  type GarmentValidationResult,
 } from '../pipeline/image-processor';
 import { MinioStorageService, type StoredObjectResult } from '../storage/minio-storage.service';
 
@@ -122,6 +125,20 @@ export interface DirectUploadInput {
   layerZHint?: number;
   productId?: string;
   variantId?: string;
+}
+
+export interface ValidateGarmentInput {
+  buffer?: Buffer;
+  filename?: string;
+  mimeType?: string;
+  assetId?: string;
+  bucket?: string;
+  objectKey?: string;
+}
+
+export interface ValidateGarmentServiceResult extends GarmentValidationResult {
+  resolvedAssetId?: string | null;
+  source: 'buffer' | 'asset' | 'storage';
 }
 
 export interface ListMediaQuery {
@@ -739,7 +756,10 @@ export class MediaService {
       );
     }
 
-    const dominantHex = await computeDominantHex(buffer);
+    const [dominantHex, computedBoundingBox] = await Promise.all([
+      computeDominantHex(buffer),
+      computePixelBoundingBox(buffer),
+    ]);
     const publicBucket = this.config.infra.buckets.public;
     const garmentsBucket = this.config.infra.buckets.garments;
 
@@ -849,11 +869,11 @@ export class MediaService {
       publishedBucket = 'atelier-public';
       publishedKey = key720;
 
-      // Initialize asset_spatial_metadata
+      // Initialize asset_spatial_metadata with REAL pixel-computed boundingBoxJsonb
       const anchorX = opts.hangerAnchorX ?? DEFAULT_HANGER_ANCHOR_X;
       const anchorY = opts.hangerAnchorY ?? DEFAULT_HANGER_ANCHOR_Y;
       const boundingBox =
-        opts.boundingBoxJsonb !== undefined ? opts.boundingBoxJsonb : DEFAULT_BOUNDING_BOX;
+        opts.boundingBoxJsonb !== undefined ? opts.boundingBoxJsonb : computedBoundingBox;
       const layerZHint = opts.layerZHint ?? DEFAULT_LAYER_Z_HINT;
 
       await this.db.query(
@@ -969,6 +989,34 @@ export class MediaService {
 
       publishedBucket = 'atelier-public';
       publishedKey = key1600;
+    }
+
+    // Persist REAL pixel-computed boundingBoxJsonb for TRYON_FLAT_3_4 & LOOKBOOK_PHOTO as well
+    if (
+      row.asset_type === MediaAssetType.TRYON_FLAT_3_4 ||
+      row.asset_type === MediaAssetType.LOOKBOOK_PHOTO
+    ) {
+      const anchorX = opts.hangerAnchorX ?? DEFAULT_HANGER_ANCHOR_X;
+      const anchorY = opts.hangerAnchorY ?? DEFAULT_HANGER_ANCHOR_Y;
+      const boundingBox =
+        opts.boundingBoxJsonb !== undefined ? opts.boundingBoxJsonb : computedBoundingBox;
+      const layerZHint = opts.layerZHint ?? DEFAULT_LAYER_Z_HINT;
+
+      await this.db.query(
+        `
+        INSERT INTO asset_spatial_metadata (
+          asset_id, hanger_anchor_x, hanger_anchor_y, bounding_box_jsonb, layer_z_hint, updated_at
+        )
+        VALUES ($1, $2, $3, $4::jsonb, $5, NOW())
+        ON CONFLICT (asset_id) DO UPDATE SET
+          hanger_anchor_x = EXCLUDED.hanger_anchor_x,
+          hanger_anchor_y = EXCLUDED.hanger_anchor_y,
+          bounding_box_jsonb = EXCLUDED.bounding_box_jsonb,
+          layer_z_hint = EXCLUDED.layer_z_hint,
+          updated_at = NOW()
+        `,
+        [assetId, anchorX, anchorY, boundingBox ? JSON.stringify(boundingBox) : null, layerZHint],
+      );
     }
 
     await this.db.query(
@@ -1150,6 +1198,77 @@ export class MediaService {
     }
 
     return this.mapRowToDto(row);
+  }
+
+  async deleteAsset(
+    assetId: string,
+    actor: MediaActorContext,
+  ): Promise<{ deleted: true; assetId: string }> {
+    const row = await this.fetchJoinedAssetRow(assetId);
+    if (!row) {
+      throw new MediaApiException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy tài nguyên media "${assetId}". / Media asset not found.`,
+      );
+    }
+
+    if (actor.supplierId && row.supplier_id !== actor.supplierId) {
+      throw new MediaApiException(
+        HttpStatus.FORBIDDEN,
+        ErrorCode.FORBIDDEN,
+        'Bạn không có quyền xóa tài nguyên media của nhà cung cấp khác. / Cross-tenant media delete denied.',
+      );
+    }
+
+    const targets = new Map<string, { bucket: string; key: string }>();
+    const addTarget = (bucket: string, key: string) => {
+      const cleanBucket = bucket.trim();
+      const cleanKey = key.trim().replace(/^\/+/, '');
+      if (cleanBucket && cleanKey) {
+        targets.set(`${cleanBucket}::${cleanKey}`, {
+          bucket: cleanBucket,
+          key: cleanKey,
+        });
+      }
+    };
+
+    addTarget(row.bucket_name, row.original_key);
+
+    const variants = parseJsonObject<Record<string, MediaVariantEntry>>(
+      row.variants_jsonb,
+      {},
+    );
+    const publicBucket = this.config.infra.buckets.public;
+    const garmentsBucket = this.config.infra.buckets.garments;
+
+    for (const entry of Object.values(variants)) {
+      if (entry && typeof entry === 'object' && typeof entry.key === 'string' && entry.key.trim()) {
+        const key = entry.key.trim();
+        const inferredBucket = key.startsWith('garments/') ? garmentsBucket : publicBucket;
+        addTarget(inferredBucket, key);
+      }
+    }
+
+    // Best-effort MinIO cleanup — never crash if object already missing or storage offline
+    for (const target of targets.values()) {
+      try {
+        await this.storage.deleteObject(target.bucket, target.key);
+      } catch (err: unknown) {
+        this.logger.warn(
+          {
+            assetId,
+            bucket: target.bucket,
+            key: target.key,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'Best-effort MinIO deleteObject skipped/failed during asset deletion',
+        );
+      }
+    }
+
+    await this.db.query('DELETE FROM media_assets WHERE id = $1', [row.id]);
+    return { deleted: true, assetId: row.id };
   }
 
   async getSpatialMetadataMap(): Promise<SpatialMetadataMap> {
@@ -1336,7 +1455,7 @@ export class MediaService {
     const input = parsed.data;
     const existingBox = parseJsonObject<Record<string, unknown> | null>(
       row.bounding_box_jsonb,
-      DEFAULT_BOUNDING_BOX,
+      null,
     );
     const nextBoundingBox =
       input.boundingBoxJsonb !== undefined ? input.boundingBoxJsonb : existingBox;
@@ -1440,5 +1559,191 @@ export class MediaService {
     }
 
     return stored;
+  }
+
+  async validateGarment(
+    input: ValidateGarmentInput,
+    actor: MediaActorContext,
+  ): Promise<ValidateGarmentServiceResult> {
+    if (Buffer.isBuffer(input.buffer)) {
+      if (input.buffer.length === 0) {
+        return {
+          isValid: false,
+          qualityScore: 0,
+          detectedAspectRatio: 'unknown',
+          width: 0,
+          height: 0,
+          aspectRatio: 0,
+          hasAlpha: false,
+          cornerTransparencyRatio: 0,
+          sharpnessScore: 0,
+          contrastScore: 0,
+          edgeClipped: false,
+          warnings: ['Tệp ảnh rỗng (0 bytes) — không thể kiểm định cho Phòng Thử Đồ AI.'],
+          metrics: {
+            magicBytesValid: false,
+            detectedFormat: null,
+            mimeType: null,
+            sizeBytes: 0,
+            aspectDeviationPct: 100,
+            laplacianVariance: 0,
+            luminanceStdDev: 0,
+            maxBorderTouchRatio: 0,
+            borderTouchRatios: { top: 0, bottom: 0, left: 0, right: 0 },
+            transparentCornerPixels: 0,
+            totalCornerPixels: 0,
+            corrupted: false,
+          },
+          resolvedAssetId: null,
+          source: 'buffer',
+        };
+      }
+
+      if (input.buffer.length > this.config.maxUploadBytes) {
+        throw new MediaApiException(
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+          'Kích thước tệp vượt quá giới hạn tối đa 10MB. / File size exceeds 10MB limit.',
+          { sizeBytes: input.buffer.length, maxUploadBytes: this.config.maxUploadBytes },
+        );
+      }
+
+      const analysis = await analyzeGarmentImage(input.buffer);
+      return {
+        ...analysis,
+        resolvedAssetId: null,
+        source: 'buffer',
+      };
+    }
+
+    if (input.assetId && input.assetId.trim().length > 0) {
+      const assetId = input.assetId.trim();
+      const row = await this.fetchJoinedAssetRow(assetId);
+      if (!row) {
+        throw new MediaApiException(
+          HttpStatus.NOT_FOUND,
+          ErrorCode.NOT_FOUND,
+          `Không tìm thấy tài nguyên media "${assetId}" để kiểm định ảnh trang phục.`,
+        );
+      }
+      if (actor.supplierId && row.supplier_id !== actor.supplierId) {
+        throw new MediaApiException(
+          HttpStatus.FORBIDDEN,
+          ErrorCode.FORBIDDEN,
+          'Bạn không có quyền kiểm định tài nguyên media của nhà cung cấp khác.',
+        );
+      }
+      const storedBuffer = await this.storage.getObjectBuffer(row.bucket_name, row.original_key);
+      if (!storedBuffer) {
+        return {
+          isValid: false,
+          qualityScore: 0,
+          detectedAspectRatio: 'unknown',
+          width: 0,
+          height: 0,
+          aspectRatio: 0,
+          hasAlpha: false,
+          cornerTransparencyRatio: 0,
+          sharpnessScore: 0,
+          contrastScore: 0,
+          edgeClipped: false,
+          warnings: [
+            `Không tìm thấy tệp ảnh gốc (${row.bucket_name}/${row.original_key}) trên MinIO để phân tích nhị phân.`,
+          ],
+          metrics: {
+            magicBytesValid: false,
+            detectedFormat: null,
+            mimeType: null,
+            sizeBytes: 0,
+            aspectDeviationPct: 100,
+            laplacianVariance: 0,
+            luminanceStdDev: 0,
+            maxBorderTouchRatio: 0,
+            borderTouchRatios: { top: 0, bottom: 0, left: 0, right: 0 },
+            transparentCornerPixels: 0,
+            totalCornerPixels: 0,
+            corrupted: false,
+          },
+          resolvedAssetId: row.id,
+          source: 'asset',
+        };
+      }
+      const analysis = await analyzeGarmentImage(storedBuffer);
+      return {
+        ...analysis,
+        resolvedAssetId: row.id,
+        source: 'asset',
+      };
+    }
+
+    if (input.bucket && input.objectKey) {
+      const cleanBucket = input.bucket.trim();
+      const cleanKey = input.objectKey.trim().replace(/^\/+/, '');
+      if (cleanBucket === this.config.infra.buckets.privateTryOn) {
+        throw new MediaApiException(
+          HttpStatus.FORBIDDEN,
+          ErrorCode.FORBIDDEN,
+          'Không được phép kiểm định trực tiếp đối tượng trong bucket atelier-private-tryon.',
+        );
+      }
+      const allowedBuckets = new Set([
+        this.config.infra.buckets.public,
+        this.config.infra.buckets.garments,
+      ]);
+      if (!allowedBuckets.has(cleanBucket) || !cleanKey || cleanKey.includes('..') || cleanKey.includes('\0')) {
+        throw new MediaApiException(
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+          'Bucket hoặc objectKey không hợp lệ để kiểm định ảnh trang phục.',
+        );
+      }
+      const storedBuffer = await this.storage.getObjectBuffer(cleanBucket, cleanKey);
+      if (!storedBuffer) {
+        return {
+          isValid: false,
+          qualityScore: 0,
+          detectedAspectRatio: 'unknown',
+          width: 0,
+          height: 0,
+          aspectRatio: 0,
+          hasAlpha: false,
+          cornerTransparencyRatio: 0,
+          sharpnessScore: 0,
+          contrastScore: 0,
+          edgeClipped: false,
+          warnings: [
+            `Không tìm thấy tệp ảnh "${cleanBucket}/${cleanKey}" trên MinIO để phân tích nhị phân.`,
+          ],
+          metrics: {
+            magicBytesValid: false,
+            detectedFormat: null,
+            mimeType: null,
+            sizeBytes: 0,
+            aspectDeviationPct: 100,
+            laplacianVariance: 0,
+            luminanceStdDev: 0,
+            maxBorderTouchRatio: 0,
+            borderTouchRatios: { top: 0, bottom: 0, left: 0, right: 0 },
+            transparentCornerPixels: 0,
+            totalCornerPixels: 0,
+            corrupted: false,
+          },
+          resolvedAssetId: null,
+          source: 'storage',
+        };
+      }
+      const analysis = await analyzeGarmentImage(storedBuffer);
+      return {
+        ...analysis,
+        resolvedAssetId: null,
+        source: 'storage',
+      };
+    }
+
+    throw new MediaApiException(
+      HttpStatus.BAD_REQUEST,
+      ErrorCode.VALIDATION_ERROR,
+      'Vui lòng gửi tệp ảnh (multipart "file", raw image body, JSON "imageBase64"/"fileBase64") hoặc "assetId"/"bucket"+"objectKey".',
+    );
   }
 }

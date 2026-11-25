@@ -1,0 +1,162 @@
+{
+  "generatedAt": "2026-11-25T02:20:46.288Z",
+  "bootedEphemeralStack": true,
+  "checks": {
+    "checkA_storefrontChatbot": {
+      "status": "PASS",
+      "guest": {
+        "httpStatus": 200,
+        "elapsedMs": 22257.8,
+        "tier": "TIER_2",
+        "model": "qwen2.5:3b",
+        "citationsCount": 4,
+        "recommendedProductsCount": 4,
+        "sensitiveFieldsLeaked": 0
+      },
+      "customer": {
+        "httpStatus": 200,
+        "elapsedMs": 18086.9,
+        "tier": "TIER_2",
+        "model": "qwen2.5:3b",
+        "citationsCount": 4,
+        "sensitiveFieldsLeaked": 0
+      },
+      "adversarialInjection": {
+        "httpStatus": 200,
+        "blockedInjection": true,
+        "adminToolsExecuted": 0,
+        "sensitiveFieldsLeaked": 0
+      },
+      "adminPortalIsolation": {
+        "customerHttpStatus": 403,
+        "guestHttpStatus": 401
+      }
+    },
+    "checkB_authPasswordRecovery": {
+      "status": "PASS",
+      "account": "customer-b@atelier.local",
+      "forgotStatus": 200,
+      "mailpitOtpReceived": true,
+      "resetStatus": 200,
+      "oldPasswordLoginStatus": 401,
+      "newPasswordLoginStatus": 200,
+      "restoreChangePasswordStatus": 200,
+      "restoredSeedLoginStatus": 200
+    },
+    "checkC_serverVtonAndAiHealth": {
+      "status": "PASS",
+      "quotaInitial": {
+        "remainingQuota": 15,
+        "dailyLimit": 15
+      },
+      "portraitFile": "apps/storefront/public/images/tryon-models/vn-model-balanced-s.webp",
+      "session1": {
+        "sessionId": "544bc724-6993-4439-b0da-02a2b132f010",
+        "status": "COMPLETED",
+        "providerUsed": "PHOTOMETRIC_INPAINT",
+        "resultHttpStatus": 200
+      },
+      "repeatCacheHit": {
+        "httpStatus": 200,
+        "elapsedMs": 39.6,
+        "providerUsed": "CACHE_HIT",
+        "cacheHit": true,
+        "quotaBefore": 14,
+        "quotaAfter": 14,
+        "quotaDeducted": 0
+      },
+      "aiHealth": {
+        "httpStatus": 200,
+        "funnelTryOnCompleted": 19,
+        "providerBreakdown": {
+          "FAL_CATVTON": 0,
+          "HF_GRADIO_VTON": 5,
+          "SMART_POSE_WARP": 18,
+          "PHOTOMETRIC_INPAINT": 0,
+          "MOCK": 0,
+          "CACHE_HIT": 5
+        },
+        "copilotFeedbackBeforeCheckE": {
+          "total": 0,
+          "upCount": 0,
+          "downCount": 0,
+          "satisfactionRatePct": 0,
+          "thumbsUp": 0,
+          "thumbsDown": 0,
+          "satisfactionPct": 0,
+          "recentReasons": []
+        }
+      }
+    },
+    "checkD_reviewsPromotionsSelfCancel": {
+      "status": "PASS",
+      "reviewsSentiment": {
+        "httpStatus": 200,
+        "reviewCount": 6,
+        "sentimentSummary": {
+          "positiveCount": 6,
+          "neutralCount": 0,
+          "negativeCount": 0,
+          "positivePct": 100,
+          "neutralPct": 0,
+          "negativePct": 0,
+          "averageSentimentScore": 0.9,
+          "totalScored": 6
+        },
+        "sampleReview": {
+          "sentimentScore": 0.97,
+          "sentimentLabel": "POSITIVE"
+        }
+      },
+      "promotions": {
+        "httpStatus": 200,
+        "activeCount": 4,
+        "codes": [
+          "ODD_SIZE_XS_XL",
+          "FLASH200K",
+          "FREESHIP",
+          "ATELIER10"
+        ]
+      },
+      "selfCancelOrder": {
+        "orderCode": "TX-2026193FBA",
+        "initialStatus": "AWAITING_PAYMENT",
+        "cancelHttpStatus": 200,
+        "finalStatus": "CANCELLED",
+        "stockBefore": 18,
+        "stockAfterRelease": 18
+      }
+    },
+    "checkE_copilotFeedbackAndSftExport": {
+      "status": "PASS",
+      "upFeedbackHttpStatus": 200,
+      "downFeedbackHttpStatus": 200,
+      "upTraceId": "p1-verify-up-b94bb47f",
+      "downTraceId": "p1-verify-down-b94bb47f",
+      "aiHealthCopilotFeedback": {
+        "total": 2,
+        "upCount": 1,
+        "downCount": 1,
+        "satisfactionRatePct": 50,
+        "thumbsUp": 1,
+        "thumbsDown": 1,
+        "satisfactionPct": 50,
+        "recentReasons": [
+          "Cần nêu rõ phân bổ theo size S/M/L và trích dẫn tài liệu RAG",
+          "Chính xác và tuân thủ NHAP_AI"
+        ]
+      },
+      "sftExport": {
+        "file": "artifacts/ai-sft-preference-dataset.jsonl",
+        "totalRecords": 47,
+        "copilotFeedbackDpoRecords": 2,
+        "foundUpInJsonl": true,
+        "foundDownInJsonl": true,
+        "piiLeaks": 0
+      }
+    }
+  },
+  "passCount": 5,
+  "failCount": 0,
+  "totalSec": 126.9
+}

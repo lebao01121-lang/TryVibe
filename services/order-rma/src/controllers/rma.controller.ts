@@ -22,7 +22,7 @@ import {
   type HeaderBag,
 } from '@atelier/observability';
 import { ORDER_CONFIG_TOKEN, SERVICE_NAME, type OrderRmaConfig } from '../config/env';
-import { OrderRmaService } from '../services/order-rma.service';
+import { OrderRmaService, type RmaMutationResult } from '../services/order-rma.service';
 import { extractOrderActor } from './orders.controller';
 
 @Controller()
@@ -78,13 +78,15 @@ export class RmaController {
     });
   }
 
-  @Get('v1/admin/rma')
-  async listAdminRmas(
+  @Get('v1/rma')
+  async listRmas(
     @Query('status') status: string | undefined,
     @Query('rmaType') rmaType: string | undefined,
     @Query('reasonCode') reasonCode: string | undefined,
     @Query('orderCode') orderCode: string | undefined,
     @Query('productId') productId: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
     @Query('limit') limitRaw: string | undefined,
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<RmaRequestDTO[]>> {
@@ -96,10 +98,72 @@ export class RmaController {
       reasonCode,
       orderCode,
       productId,
+      from,
+      to,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : 500,
+    });
+    return createApiResponse(data, {
+      correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('v1/rma/:rmaId/reject')
+  @HttpCode(HttpStatus.OK)
+  async rejectRmaDirect(
+    @Param('rmaId') rmaId: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<RmaMutationResult>> {
+    const actor = extractOrderActor(headers, this.config.internalServiceSecret);
+    const data = await this.orderRmaService.rejectRma(rmaId, body, actor);
+    return createApiResponse(data, {
+      correlationId: actor.correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Get('v1/admin/rma')
+  async listAdminRmas(
+    @Query('status') status: string | undefined,
+    @Query('rmaType') rmaType: string | undefined,
+    @Query('reasonCode') reasonCode: string | undefined,
+    @Query('orderCode') orderCode: string | undefined,
+    @Query('productId') productId: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @Query('limit') limitRaw: string | undefined,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<RmaRequestDTO[]>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+    const data = await this.orderRmaService.listAdminRmas({
+      status,
+      rmaType,
+      reasonCode,
+      orderCode,
+      productId,
+      from,
+      to,
       limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
     });
     return createApiResponse(data, {
       correlationId,
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('v1/admin/rma/:rmaId/reject')
+  @HttpCode(HttpStatus.OK)
+  async rejectRmaAdmin(
+    @Param('rmaId') rmaId: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<RmaMutationResult>> {
+    const actor = extractOrderActor(headers, this.config.internalServiceSecret);
+    const data = await this.orderRmaService.rejectRma(rmaId, body, actor);
+    return createApiResponse(data, {
+      correlationId: actor.correlationId,
       service: SERVICE_NAME,
     });
   }

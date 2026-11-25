@@ -4,6 +4,8 @@ import { NotifyDbService } from './db/notify-db.service';
 import { ReviewEventPublisherService } from './messaging/review-event-publisher.service';
 import { InternalNotifyController } from './notifications/internal-notify.controller';
 import { NotificationService } from './notifications/notification.service';
+import { NotifyDlqService } from './notifications/notify-dlq.service';
+import { ZaloZnsClient } from './notifications/zalo-zns.client';
 import { ReviewsController } from './reviews/reviews.controller';
 import { ReviewsService } from './reviews/reviews.service';
 import { SentimentService } from './reviews/sentiment.service';
@@ -17,6 +19,8 @@ import { NotifyReviewController } from './service.controller';
       useFactory: () => loadNotifyReviewConfig(),
     },
     NotifyDbService,
+    ZaloZnsClient,
+    NotifyDlqService,
     NotificationService,
     ReviewEventPublisherService,
     SentimentService,

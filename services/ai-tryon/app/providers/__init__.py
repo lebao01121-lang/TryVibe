@@ -1,28 +1,60 @@
-"""VTON provider protocol, 3-tier Auto orchestrator, Fal CatVTON, HF Gradio, and Smart Pose-Warp."""
+"""VTON provider protocol, 4-tier CompositeVtonRouter, Cloud/LAN/HF Diffusion, and Tier 4 Photometric Inpaint."""
 
-from app.providers.auto_provider import AutoVTONProvider
+from app.providers.auto_provider import AutoVTONProvider, CompositeVtonRouter
 from app.providers.base import (
+    CACHE_HIT_BADGE,
     DEFAULT_POSE_TOO_CLOSE_MESSAGE,
     GENERATIVE_VTON_BADGE,
+    PHOTOMETRIC_INPAINT_BADGE,
     POSE_WARP_BADGE,
     PROVIDER_DISPLAY_BADGES,
+    BaseVtonProvider,
+    ClothType,
     GarmentCategory,
+    LightingPreset,
     PoseTooCloseError,
     ProviderCapabilities,
+    TryOnGenerationRequest,
+    TryOnGenerationResult,
     VTONProvider,
     VTONProviderType,
     VTONRenderStepResult,
     VTONRequest,
     VTONResult,
     VTONStepCategory,
+    build_english_garment_prompt,
+    cloth_type_to_step_category,
     get_provider_display_badge,
+    normalize_cloth_type,
+    normalize_lighting_preset,
 )
-from app.providers.fal_provider import FalCatVTONProvider
-from app.providers.hf_gradio_provider import HuggingFaceGradioVTONProvider
+from app.providers.circuit_breaker import (
+    CircuitState,
+    ProviderCircuitBreaker,
+    is_quota_or_fatal_error,
+)
+from app.providers.fal_provider import FalCatVtonProvider, FalCatVTONProvider
+from app.providers.fashn_provider import FashnVtonProvider
+from app.providers.hf_gradio_provider import (
+    HF_VTON_SPACES,
+    HuggingFaceGradioVTONProvider,
+    HuggingFaceZeroGpuVtonProvider,
+)
+from app.providers.local_gpu_provider import LocalGpuVtonProvider
 from app.providers.mock_provider import (
     MockVTONProvider,
     get_vton_provider,
     list_registered_providers,
+)
+from app.providers.photometric_inpaint_provider import (
+    AnatomicalPose,
+    GarmentAnchors,
+    PhotometricInpaintWarpProvider,
+    PreparedGarmentData,
+    composite_garment_studio_white,
+    detect_anatomical_pose,
+    normalize_output_768x1024,
+    prepare_clean_garment_rgba,
 )
 from app.providers.smart_pose_warp_provider import (
     DetectedPose,
@@ -31,27 +63,55 @@ from app.providers.smart_pose_warp_provider import (
 )
 
 __all__ = [
+    "AnatomicalPose",
     "AutoVTONProvider",
+    "BaseVtonProvider",
+    "CACHE_HIT_BADGE",
+    "CircuitState",
+    "ClothType",
+    "CompositeVtonRouter",
     "DEFAULT_POSE_TOO_CLOSE_MESSAGE",
     "DetectedPose",
+    "FalCatVtonProvider",
     "FalCatVTONProvider",
+    "FashnVtonProvider",
     "GENERATIVE_VTON_BADGE",
+    "GarmentAnchors",
     "GarmentCategory",
+    "HF_VTON_SPACES",
     "HuggingFaceGradioVTONProvider",
+    "HuggingFaceZeroGpuVtonProvider",
+    "LightingPreset",
+    "LocalGpuVtonProvider",
     "MockVTONProvider",
+    "PHOTOMETRIC_INPAINT_BADGE",
     "POSE_WARP_BADGE",
     "PROVIDER_DISPLAY_BADGES",
+    "PhotometricInpaintWarpProvider",
     "PoseTooCloseError",
+    "PreparedGarmentData",
     "ProviderCapabilities",
+    "ProviderCircuitBreaker",
     "SmartPoseWarpVTONProvider",
+    "TryOnGenerationRequest",
+    "TryOnGenerationResult",
     "VTONProvider",
     "VTONProviderType",
     "VTONRenderStepResult",
     "VTONRequest",
     "VTONResult",
     "VTONStepCategory",
+    "build_english_garment_prompt",
+    "cloth_type_to_step_category",
+    "composite_garment_studio_white",
+    "detect_anatomical_pose",
     "detect_pose_and_validate",
     "get_provider_display_badge",
     "get_vton_provider",
+    "is_quota_or_fatal_error",
     "list_registered_providers",
+    "normalize_cloth_type",
+    "normalize_lighting_preset",
+    "normalize_output_768x1024",
+    "prepare_clean_garment_rgba",
 ]

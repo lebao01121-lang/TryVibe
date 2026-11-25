@@ -65,18 +65,11 @@ const SEASONS_SPEC = [
     crop: [0.16, 0.145, 0.90, 0.761],
     editorialGrade: { warmth: 1.03, contrast: 1.04, brightness: 1.01, saturation: 0.96 },
     segmentationStrategy: 's01_garden_blouse_pleated',
-    accessoryComposite: {
-      productSlug: 'vi-cam-tay-clutch-champagne',
-      anchorCenterX: 0.65,
-      anchorCenterY: 0.60,
-      widthRatio: 0.25,
-      angleDeg: -10,
-      shadowOpacity: 0.34,
-    },
     wearableSlots: [
       {
         slotKey: 'TOP',
         productSlug: 'ao-so-mi-lua-to-tam-tam-xuan',
+        pinPosition: { xPercent: 46, yPercent: 36 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.45, shadowDepth: 0.34 },
         variants: [
           {
@@ -114,6 +107,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'BOTTOM',
         productSlug: 'chan-vay-xep-ly-midi-cap-cao',
+        pinPosition: { xPercent: 42, yPercent: 75 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.36, shadowDepth: 0.38 },
         variants: [
           {
@@ -151,6 +145,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'ACCESSORY',
         productSlug: 'vi-cam-tay-clutch-champagne',
+        pinPosition: { xPercent: 60, yPercent: 56 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.52, shadowDepth: 0.34 },
         variants: [
           {
@@ -192,18 +187,11 @@ const SEASONS_SPEC = [
     crop: [0.0, 0.03, 0.88, 0.763],
     editorialGrade: { warmth: 1.03, contrast: 1.03, brightness: 1.0, saturation: 0.96 },
     segmentationStrategy: 's02_sunlit_linen_trousers',
-    accessoryComposite: {
-      productSlug: 'khan-lua-hoa-tiet-tam-xuan',
-      anchorCenterX: 0.45,
-      anchorCenterY: 0.35,
-      widthRatio: 0.23,
-      angleDeg: 8,
-      shadowOpacity: 0.25,
-    },
     wearableSlots: [
       {
         slotKey: 'TOP',
         productSlug: 'ao-so-mi-lua-to-tam-bao-loc',
+        pinPosition: { xPercent: 38, yPercent: 55 },
         materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.16, shadowDepth: 0.28 },
         variants: [
           {
@@ -234,6 +222,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'BOTTOM',
         productSlug: 'quan-culottes-linen-huu-co',
+        pinPosition: { xPercent: 52, yPercent: 75 },
         materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.14, shadowDepth: 0.30 },
         variants: [
           {
@@ -263,6 +252,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'ACCESSORY',
         productSlug: 'khan-lua-hoa-tiet-tam-xuan',
+        pinPosition: { xPercent: 56, yPercent: 36 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.42, shadowDepth: 0.26 },
         variants: [
           {
@@ -304,18 +294,11 @@ const SEASONS_SPEC = [
     crop: [0.0, 0.23, 0.90, 0.98],
     editorialGrade: { warmth: 1.04, contrast: 1.03, brightness: 1.01, saturation: 0.95 },
     segmentationStrategy: 's03_resort_dress_cardigan',
-    accessoryComposite: {
-      productSlug: 'khan-lua-hoa-tiet-tam-xuan',
-      anchorCenterX: 0.56,
-      anchorCenterY: 0.84,
-      widthRatio: 0.28,
-      angleDeg: -14,
-      shadowOpacity: 0.22,
-    },
     wearableSlots: [
       {
         slotKey: 'ONE_PIECE',
         productSlug: 'dam-midi-linen-phoi-dai',
+        pinPosition: { xPercent: 56, yPercent: 57 },
         materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.20, shadowDepth: 0.30 },
         variants: [
           {
@@ -345,6 +328,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'OUTERWEAR',
         productSlug: 'ao-cardigan-len-merino-khuy-sung',
+        pinPosition: { xPercent: 28, yPercent: 38 },
         materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.16, shadowDepth: 0.34 },
         variants: [
           {
@@ -374,6 +358,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'ACCESSORY',
         productSlug: 'khan-lua-hoa-tiet-tam-xuan',
+        pinPosition: { xPercent: 46, yPercent: 75 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.42, shadowDepth: 0.26 },
         variants: [
           {
@@ -415,11 +400,11 @@ const SEASONS_SPEC = [
     crop: [0.04, 0.03, 1.0, 0.828],
     editorialGrade: { warmth: 1.02, contrast: 1.03, brightness: 1.01, saturation: 0.96 },
     segmentationStrategy: 's04_tailored_blazer_trousers_belt',
-    accessoryComposite: null,
     wearableSlots: [
       {
         slotKey: 'OUTERWEAR',
         productSlug: 'ao-blazer-linen-dang-suong',
+        pinPosition: { xPercent: 36, yPercent: 36 },
         materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.18, shadowDepth: 0.35 },
         variants: [
           {
@@ -449,6 +434,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'BOTTOM',
         productSlug: 'quan-tay-ong-suong-xep-ly-doi',
+        pinPosition: { xPercent: 48, yPercent: 76 },
         materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.18, shadowDepth: 0.36 },
         variants: [
           {
@@ -478,6 +464,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'ACCESSORY',
         productSlug: 'that-lung-da-khoa-dong',
+        pinPosition: { xPercent: 56, yPercent: 58 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.50, shadowDepth: 0.36 },
         variants: [
           {
@@ -520,18 +507,11 @@ const SEASONS_SPEC = [
     crop: [0.06, 0.04, 0.84, 0.69],
     editorialGrade: { warmth: 1.04, contrast: 1.03, brightness: 1.03, saturation: 0.95 },
     segmentationStrategy: 's05_tweed_knit_gallery',
-    accessoryComposite: {
-      productSlug: 'vi-cam-tay-clutch-champagne',
-      anchorCenterX: 0.65,
-      anchorCenterY: 0.72,
-      widthRatio: 0.25,
-      angleDeg: -8,
-      shadowOpacity: 0.36,
-    },
     wearableSlots: [
       {
         slotKey: 'TOP',
         productSlug: 'ao-len-cashmere-co-lo',
+        pinPosition: { xPercent: 44, yPercent: 36 },
         materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.16, shadowDepth: 0.34 },
         variants: [
           {
@@ -561,6 +541,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'OUTERWEAR',
         productSlug: 'ao-khoac-tweed-det-thu-cong',
+        pinPosition: { xPercent: 64, yPercent: 55 },
         materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.20, shadowDepth: 0.40 },
         variants: [
           {
@@ -590,6 +571,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'ACCESSORY',
         productSlug: 'vi-cam-tay-clutch-champagne',
+        pinPosition: { xPercent: 44, yPercent: 74 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.52, shadowDepth: 0.34 },
         variants: [
           {
@@ -631,18 +613,11 @@ const SEASONS_SPEC = [
     crop: [0.09, 0.14, 0.94, 0.99],
     editorialGrade: { warmth: 1.02, contrast: 1.03, brightness: 0.99, saturation: 0.95 },
     segmentationStrategy: 's06_evening_satin_gown_wrap',
-    accessoryComposite: {
-      productSlug: 'vi-cam-tay-clutch-champagne',
-      anchorCenterX: 0.67,
-      anchorCenterY: 0.72,
-      widthRatio: 0.24,
-      angleDeg: -11,
-      shadowOpacity: 0.42,
-    },
     wearableSlots: [
       {
         slotKey: 'ONE_PIECE',
         productSlug: 'dam-du-tiec-lua-satin-co-do',
+        pinPosition: { xPercent: 48, yPercent: 38 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.50, shadowDepth: 0.36 },
         variants: [
           {
@@ -673,6 +648,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'OUTERWEAR',
         productSlug: 'ao-kieu-lua-organza-phoi-no',
+        pinPosition: { xPercent: 70, yPercent: 56 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.44, shadowDepth: 0.28 },
         variants: [
           {
@@ -702,6 +678,7 @@ const SEASONS_SPEC = [
       {
         slotKey: 'ACCESSORY',
         productSlug: 'vi-cam-tay-clutch-champagne',
+        pinPosition: { xPercent: 46, yPercent: 75 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.52, shadowDepth: 0.34 },
         variants: [
           {
@@ -1164,32 +1141,73 @@ def keep_largest_components(mask: np.ndarray, min_ratio: float = 0.12, max_count
     return np.isin(labeled, keep_ids)
 
 
-def feather_mask_to_rgba(mask_bool: np.ndarray, feather_sigma: float = 1.15) -> np.ndarray:
-    h, w = mask_bool.shape
-    mask_clean = ndimage.binary_fill_holes(mask_bool)
-    soft = ndimage.gaussian_filter(mask_clean.astype(np.float32) * 255.0, sigma=feather_sigma)
-    core = ndimage.binary_erosion(mask_clean, iterations=2)
-    alpha = np.where(core, np.maximum(soft, 255.0), soft)
-    alpha = np.where(alpha < 8.0, 0.0, alpha)
-    alpha_u8 = np.clip(np.round(alpha), 0, 255).astype(np.uint8)
+def make_empty_mask_rgba() -> np.ndarray:
+    """Returns a clean 960x1200 RGBA PNG buffer with 0 painted pixels (all RGBA = 0)."""
+    return np.zeros((EDITORIAL_H, EDITORIAL_W, 4), dtype=np.uint8)
 
+
+def soft_silhouette(mask_bool: np.ndarray, outer_sigma: float = 2.4) -> np.ndarray:
+    mask_clean = ndimage.binary_fill_holes(mask_bool)
+    soft = ndimage.gaussian_filter(mask_clean.astype(np.float32), sigma=outer_sigma)
+    core = ndimage.binary_erosion(mask_clean, iterations=2)
+    out = np.where(core, np.maximum(soft, 1.0), soft)
+    return np.clip(out, 0.0, 1.0)
+
+
+def soft_alpha_to_rgba(alpha_f: np.ndarray) -> np.ndarray:
+    h, w = alpha_f.shape
+    alpha = np.clip(alpha_f, 0.0, 1.0) * 255.0
+    alpha = np.where(alpha < 6.0, 0.0, alpha)
+    alpha_u8 = np.clip(np.round(alpha), 0, 255).astype(np.uint8)
     rgba = np.zeros((h, w, 4), dtype=np.uint8)
-    rgba[:, :, :3] = 255
+    painted = alpha_u8 > 0
+    rgba[painted, :3] = 255
     rgba[:, :, 3] = alpha_u8
     return rgba
 
 
+def build_soft_voronoi_partition(
+    region_a: np.ndarray,
+    region_b: np.ndarray,
+    feather_sigma: float = 12.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Computes a continuous organic [0..1] Voronoi partition between two adjacent garment
+    regions blurred with a wide Gaussian kernel (10%->90% transition width >= 28px at
+    sigma >= 11px). Multiplying by soft_silhouette(attire) keeps outer garment contours
+    crisp (0% face/skin/background bleed) while eliminating ANY hard rectangular box cut.
+    """
+    if not np.any(region_a):
+        z = np.zeros(region_a.shape, dtype=np.float32)
+        return z, np.ones(region_a.shape, dtype=np.float32)
+    if not np.any(region_b):
+        o = np.ones(region_a.shape, dtype=np.float32)
+        return o, np.zeros(region_a.shape, dtype=np.float32)
+    dist_a = ndimage.distance_transform_edt(~region_a)
+    dist_b = ndimage.distance_transform_edt(~region_b)
+    voronoi_a = (dist_a <= dist_b).astype(np.float32)
+    soft_a = ndimage.gaussian_filter(voronoi_a, sigma=feather_sigma)
+    soft_a = np.clip(soft_a, 0.0, 1.0)
+    return soft_a, 1.0 - soft_a
+
+
+def feather_mask_to_rgba(mask_bool: np.ndarray, feather_sigma: float = 2.4) -> np.ndarray:
+    return soft_alpha_to_rgba(soft_silhouette(mask_bool, outer_sigma=feather_sigma))
+
+
 def compute_mask_metrics(
     alpha_u8: np.ndarray,
-    avoid_points: list[tuple[float, float]],
-) -> tuple[dict[str, float], dict[str, float], float]:
+) -> tuple[dict[str, float], float]:
     h, w = alpha_u8.shape
+    if int(alpha_u8.max()) < 8:
+        return {"x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}, 0.0
+
     solid = alpha_u8 >= 128
     if int(np.count_nonzero(solid)) < 32:
         solid = alpha_u8 >= 32
     ys, xs = np.where(solid)
     if len(xs) == 0:
-        return {"xPercent": 50.0, "yPercent": 50.0}, {"x": 0.3, "y": 0.3, "w": 0.4, "h": 0.4}, 0.0
+        return {"x": 0.0, "y": 0.0, "w": 0.0, "h": 0.0}, 0.0
 
     x0, x1 = int(xs.min()), int(xs.max())
     y0, y1 = int(ys.min()), int(ys.max())
@@ -1199,97 +1217,8 @@ def compute_mask_metrics(
         "w": round((x1 - x0 + 1) / float(w), 4),
         "h": round((y1 - y0 + 1) / float(h), 4),
     }
-
-    dist = ndimage.distance_transform_edt(solid)
-    best_y, best_x = np.unravel_index(int(np.argmax(dist)), dist.shape)
-    px_pct = best_x / float(w) * 100.0
-    py_pct = best_y / float(h) * 100.0
-
-    for _ in range(3):
-        too_close = any(math.hypot(px_pct - ax, py_pct - ay) < 11.0 for ax, ay in avoid_points)
-        if not too_close:
-            break
-        yy, xx = np.mgrid[0:h:4, 0:w:4]
-        d_sub = dist[::4, ::4].copy()
-        for ax, ay in avoid_points:
-            dd = np.hypot(xx / float(w) * 100.0 - ax, yy / float(h) * 100.0 - ay)
-            d_sub *= np.clip((dd - 6.0) / 14.0, 0.05, 1.0)
-        iy, ix = np.unravel_index(int(np.argmax(d_sub)), d_sub.shape)
-        if d_sub[iy, ix] > 1.0:
-            px_pct = (ix * 4) / float(w) * 100.0
-            py_pct = (iy * 4) / float(h) * 100.0
-
     cov = float((alpha_u8 >= 128).mean())
-    return {"xPercent": round(px_pct, 1), "yPercent": round(py_pct, 1)}, bbox, cov
-
-
-def composite_accessory_onto_base(
-    base_rgb: Image.Image,
-    acc_rgba_path: Path,
-    cfg: dict[str, Any],
-) -> tuple[Image.Image, np.ndarray]:
-    acc = Image.open(acc_rgba_path).convert("RGBA")
-    arr = np.array(acc, dtype=np.uint8)
-    ys, xs = np.where(arr[:, :, 3] >= 35)
-    if len(xs) == 0:
-        raise ValueError(f"Empty accessory alpha in {acc_rgba_path}")
-    acc = acc.crop((
-        max(0, int(xs.min()) - 2),
-        max(0, int(ys.min()) - 2),
-        min(acc.width, int(xs.max()) + 3),
-        min(acc.height, int(ys.max()) + 3),
-    ))
-
-    target_w = max(80, int(round(EDITORIAL_W * float(cfg["widthRatio"]))))
-    scale = target_w / float(acc.width)
-    target_h = max(60, int(round(acc.height * scale)))
-    acc = acc.resize((target_w, target_h), Image.Resampling.LANCZOS)
-
-    angle = float(cfg.get("angleDeg", 0.0))
-    if abs(angle) > 0.1:
-        acc = acc.rotate(angle, resample=Image.Resampling.BICUBIC, expand=True)
-
-    cx = int(round(EDITORIAL_W * float(cfg["anchorCenterX"])))
-    cy = int(round(EDITORIAL_H * float(cfg["anchorCenterY"])))
-    paste_x = max(12, min(EDITORIAL_W - acc.width - 12, cx - acc.width // 2))
-    paste_y = max(12, min(EDITORIAL_H - acc.height - 12, cy - acc.height // 2))
-
-    acc_arr = np.array(acc, dtype=np.uint8)
-    shadow_alpha = ndimage.gaussian_filter(acc_arr[:, :, 3].astype(np.float32), sigma=10.0)
-    shadow_alpha = np.clip(shadow_alpha * float(cfg.get("shadowOpacity", 0.30)), 0, 255).astype(np.uint8)
-    shadow_layer = Image.new("RGBA", (EDITORIAL_W, EDITORIAL_H), (0, 0, 0, 0))
-    sh_patch = np.zeros((acc.height, acc.width, 4), dtype=np.uint8)
-    sh_patch[:, :, 0] = 28
-    sh_patch[:, :, 1] = 20
-    sh_patch[:, :, 2] = 14
-    sh_patch[:, :, 3] = shadow_alpha
-    shadow_layer.paste(
-        Image.fromarray(sh_patch, mode="RGBA"),
-        (min(EDITORIAL_W - acc.width, paste_x + 6), min(EDITORIAL_H - acc.height, paste_y + 10)),
-    )
-
-    base_arr = np.array(base_rgb, dtype=np.float32)
-    roi = base_arr[
-        max(0, paste_y - 20) : min(EDITORIAL_H, paste_y + acc.height + 20),
-        max(0, paste_x - 20) : min(EDITORIAL_W, paste_x + acc.width + 20),
-    ]
-    roi_mean = roi.mean(axis=(0, 1)) if roi.size else np.array([150.0, 140.0, 128.0])
-    acc_f = acc_arr.astype(np.float32)
-    warm_tint = roi_mean / max(1.0, float(roi_mean.mean()))
-    warm_tint = 1.0 + (warm_tint - 1.0) * 0.25
-    acc_f[:, :, :3] = np.clip(acc_f[:, :, :3] * warm_tint[None, None, :], 0, 255)
-    acc_matched = Image.fromarray(np.round(acc_f).astype(np.uint8), mode="RGBA")
-
-    fg_layer = Image.new("RGBA", (EDITORIAL_W, EDITORIAL_H), (0, 0, 0, 0))
-    fg_layer.paste(acc_matched, (paste_x, paste_y))
-
-    comp = base_rgb.convert("RGBA")
-    comp = Image.alpha_composite(comp, shadow_layer)
-    comp = Image.alpha_composite(comp, fg_layer)
-
-    raw_alpha = np.array(fg_layer, dtype=np.uint8)[:, :, 3]
-    acc_mask_rgba = feather_mask_to_rgba(raw_alpha >= 45, feather_sigma=1.05)
-    return comp.convert("RGB"), acc_mask_rgba
+    return bbox, cov
 
 
 def segment_season_masks(
@@ -1297,7 +1226,6 @@ def segment_season_masks(
     base_rgb: Image.Image,
     sessions: SessionPool,
     yunet_path: Path,
-    acc_mask_rgba: np.ndarray | None,
 ) -> tuple[dict[str, np.ndarray], dict[str, float]]:
     bgr = cv2.cvtColor(np.array(base_rgb, dtype=np.uint8), cv2.COLOR_RGB2BGR)
     lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
@@ -1334,6 +1262,10 @@ def segment_season_masks(
     elif strategy == "s01_garden_blouse_pleated":
         neck_extra = 0.48
         hair_below = 0.75
+    elif strategy == "s05_tweed_knit_gallery":
+        neck_extra = 0.45
+        hair_below = 0.35
+        skin_scale = 1.05
 
     excl, face_info = detect_face_and_skin_exclusion(
         bgr,
@@ -1344,173 +1276,261 @@ def segment_season_masks(
         skin_threshold_scale=skin_scale,
     )
 
-    acc_bool = (acc_mask_rgba[:, :, 3] >= 32) if acc_mask_rgba is not None else np.zeros((h, w), dtype=bool)
-    acc_dil = ndimage.binary_dilation(acc_bool, iterations=1) if np.any(acc_bool) else np.zeros((h, w), dtype=bool)
-
-    masks_bool: dict[str, np.ndarray] = {}
+    rgba_masks: dict[str, np.ndarray] = {}
 
     if strategy == "s01_garden_blouse_pleated":
-        attire = (m_up | m_lo | m_fu) & human_mask & ~excl
-        top_raw = m_up & human_mask & ~excl & (yn <= 0.62)
-        if top_raw.sum() < 15_000:
-            top_raw = attire & (yn >= 0.25) & (yn <= 0.57)
-        top_raw = keep_largest_components(top_raw, min_ratio=0.12, max_count=2)
-        top_raw = ndimage.binary_fill_holes(top_raw) & ~excl
+        # Protect face/hair/neck, right hand/wrist, and bare legs WITHOUT punching skin-colored holes into the beige pleated skirt!
+        strict_excl_s01, face_info = detect_face_and_skin_exclusion(
+            bgr,
+            human_mask=human_mask,
+            yunet_path=yunet_path,
+            exclude_neck_extra=0.34,
+            exclude_hair_below=0.72,
+            skin_threshold_scale=0.92,
+        )
+        head_neck_zone = yn <= 0.38
+        hand_zone = (xn >= 0.72) & (yn >= 0.56) & (yn <= 0.78)
+        legs_zone = (xn >= 0.54) & (yn >= 0.67)
+        excl_s01 = strict_excl_s01 & (head_neck_zone | hand_zone | legs_zone)
 
-        ys_top = np.where(top_raw)[0]
-        waist_y = float(np.percentile(ys_top, 95)) / float(h) if len(ys_top) else 0.56
-        bot_raw = (m_lo | (attire & (yn >= waist_y - 0.03))) & ~top_raw & ~excl
-        bot_raw &= (yn >= waist_y - 0.04) & (yn <= 0.94) & (xn >= 0.14) & (xn <= 0.78)
-        bot_raw &= ~((xn > 0.68) & (yn < 0.72))
-        bot_raw = keep_largest_components(bot_raw, min_ratio=0.15, max_count=2)
-        bot_raw = ndimage.binary_fill_holes(bot_raw) & ~top_raw & ~excl
+        # Clean attire foreground (white silk blouse + beige pleated skirt, excluding white hand fan on far right)
+        attire = (m_up | m_lo | m_fu) & human_mask & ~excl_s01 & (xn <= 0.83)
+        attire = ndimage.binary_closing(attire, iterations=4)
+        attire = keep_largest_components(attire, min_ratio=0.10, max_count=2)
+        attire = ndimage.binary_fill_holes(attire) & human_mask & ~excl_s01 & (xn <= 0.83)
 
-        masks_bool["TOP"] = top_raw & ~acc_dil
-        masks_bool["BOTTOM"] = bot_raw & ~acc_dil
-        masks_bool["ACCESSORY"] = acc_bool
+        # Natural slanted tucked-waist curve (blouse sits higher on left ~0.620, sleeve dips to ~0.68 on right)
+        waist_curve = 0.620 + 0.085 * np.clip((xn - 0.32) / 0.44, 0.0, 1.0)
+        is_ivory_blouse = (lab[:, :, 0] >= 198.0) & (lab[:, :, 2] <= 137.5)
+        top_seed = attire & (
+            m_up
+            | (yn <= waist_curve - 0.025)
+            | ((yn <= waist_curve + 0.035) & is_ivory_blouse)
+        )
+        bot_seed = attire & ~top_seed & (yn >= waist_curve - 0.030)
+        top_seed = keep_largest_components(top_seed, min_ratio=0.12, max_count=2)
+        bot_seed = keep_largest_components(bot_seed, min_ratio=0.12, max_count=2)
+
+        # Wide organic Gaussian-feathered vertical waist transition (~40px 10%->90% width, zero boxy cut!)
+        w_top, w_bot = build_soft_voronoi_partition(top_seed, bot_seed, feather_sigma=16.0)
+        sil = soft_silhouette(attire, outer_sigma=2.4)
+        rgba_masks["TOP"] = soft_alpha_to_rgba(sil * w_top)
+        rgba_masks["BOTTOM"] = soft_alpha_to_rgba(sil * w_bot)
+        # Real editorial photo does not contain the standalone clutch -> empty zero-alpha mask
+        rgba_masks["ACCESSORY"] = make_empty_mask_rgba()
 
     elif strategy == "s02_sunlit_linen_trousers":
-        top_raw = m_up & human_mask & ~excl & (yn <= 0.64)
-        top_raw = keep_largest_components(top_raw, min_ratio=0.12, max_count=2)
-        top_raw = ndimage.binary_fill_holes(top_raw) & ~excl
+        # u2net_cloth_seg m_up cleanly captures the diagonal wrap blouse; m_fu captures the white trousers!
+        chair_excl = (xn < 0.35) & (yn > 0.62) & ~m_up
+        top_seed = m_up & human_mask & ~excl
+        top_seed = ndimage.binary_closing(top_seed, iterations=2)
+        top_seed = keep_largest_components(top_seed, min_ratio=0.12, max_count=2)
+        top_seed = ndimage.binary_fill_holes(top_seed) & ~excl
 
-        bot_raw = m_lo & human_mask & ~top_raw & ~excl
-        if bot_raw.sum() < 20_000:
-            bot_raw = (m_lo | m_fu) & human_mask & ~top_raw & ~excl & (yn >= 0.50)
-        bot_raw = keep_largest_components(bot_raw, min_ratio=0.15, max_count=2)
-        bot_raw = ndimage.binary_fill_holes(bot_raw) & ~top_raw & ~excl
+        bot_seed = (m_lo | m_fu) & human_mask & ~top_seed & ~excl & ~chair_excl
+        bot_seed = ndimage.binary_closing(bot_seed, iterations=2)
+        bot_seed = keep_largest_components(bot_seed, min_ratio=0.15, max_count=2)
+        bot_seed = ndimage.binary_fill_holes(bot_seed) & ~top_seed & ~excl & ~chair_excl
 
-        masks_bool["TOP"] = top_raw & ~acc_dil
-        masks_bool["BOTTOM"] = bot_raw & ~acc_dil
-        masks_bool["ACCESSORY"] = acc_bool
+        attire = (top_seed | bot_seed) & human_mask & ~excl & ~chair_excl
+        # Smooth organic diagonal waistband feather (~32px 10%->90% width, zero hard horizontal box!)
+        w_top, w_bot = build_soft_voronoi_partition(top_seed, bot_seed, feather_sigma=12.5)
+        sil = soft_silhouette(attire, outer_sigma=2.4)
+        rgba_masks["TOP"] = soft_alpha_to_rgba(sil * w_top)
+        rgba_masks["BOTTOM"] = soft_alpha_to_rgba(sil * w_bot)
+        # Real editorial photo does not contain the silk neck scarf -> empty zero-alpha mask
+        rgba_masks["ACCESSORY"] = make_empty_mask_rgba()
 
     elif strategy == "s03_resort_dress_cardigan":
-        attire = (m_up | m_lo | m_fu) & human_mask & ~excl & (yn >= 0.34)
-        is_dress_color = (lab[:, :, 0] >= 158.0) & (lab[:, :, 2] <= 134.5) & (xn >= 0.25) & (xn <= 0.78)
-        dress_raw = attire & is_dress_color
-        dress_raw = ndimage.binary_closing(dress_raw, iterations=4)
-        dress_raw = keep_largest_components(dress_raw, min_ratio=0.15, max_count=1)
-        dress_raw = ndimage.binary_fill_holes(dress_raw) & ~excl
+        # Extra hand protection: left fingers at shoulder & bare right hand at bottom-right
+        hand_guard = (
+            ((xn >= 0.28) & (xn <= 0.43) & (yn >= 0.32) & (yn <= 0.43))
+            | ((xn >= 0.785) & (xn <= 0.875) & (yn >= 0.81) & (yn <= 0.99))
+        )
+        excl_s03 = excl | (hand_guard & human_mask & (lab[:, :, 1] >= 133.0))
 
-        cardigan_raw = (
-            attire
-            | (human_mask & (yn >= 0.36) & (lab[:, :, 2] >= 136.0) & (lab[:, :, 0] >= 55.0) & (lab[:, :, 0] <= 215.0))
-        ) & ~dress_raw & ~excl
-        cardigan_raw = ndimage.binary_closing(cardigan_raw, iterations=3)
-        cardigan_raw = keep_largest_components(cardigan_raw, min_ratio=0.10, max_count=2)
-        cardigan_raw = ndimage.binary_fill_holes(cardigan_raw) & ~dress_raw & ~excl
+        # White lace sundress cleanly predicted by m_up, filtered from brown knit overlap at left armpit
+        is_white_lace = (lab[:, :, 0] >= 152.0) & (lab[:, :, 2] <= 135.5) & (xn >= 0.30) & (xn <= 0.79)
+        dress_seed = (m_up | m_lo | m_fu) & human_mask & ~excl_s03 & (yn >= 0.36) & is_white_lace
+        dress_seed = ndimage.binary_closing(dress_seed, iterations=4)
+        dress_seed = keep_largest_components(dress_seed, min_ratio=0.15, max_count=1)
+        dress_seed = ndimage.binary_fill_holes(dress_seed) & ~excl_s03
 
-        masks_bool["ONE_PIECE"] = dress_raw & ~acc_dil
-        masks_bool["OUTERWEAR"] = cardigan_raw & ~acc_dil
-        masks_bool["ACCESSORY"] = acc_bool
+        # Chunky warm-brown knit cardigan draped on BOTH left shoulder/arm AND right lower sleeve
+        is_knit_cardigan = (
+            (lab[:, :, 2] >= 134.0)
+            & (lab[:, :, 0] >= 32.0)
+            & (lab[:, :, 0] <= 230.0)
+            & (yn >= 0.32)
+        )
+        cardigan_seed = human_mask & is_knit_cardigan & ~dress_seed & ~excl_s03
+        cardigan_seed = ndimage.binary_closing(cardigan_seed, iterations=3)
+        cardigan_seed = keep_largest_components(cardigan_seed, min_ratio=0.02, max_count=3)
+        cardigan_seed = ndimage.binary_fill_holes(cardigan_seed) & ~dress_seed & ~excl_s03
+
+        attire = (dress_seed | cardigan_seed) & human_mask & ~excl_s03
+        w_dress, w_card = build_soft_voronoi_partition(dress_seed, cardigan_seed, feather_sigma=12.0)
+        sil = soft_silhouette(attire, outer_sigma=2.4)
+        rgba_masks["ONE_PIECE"] = soft_alpha_to_rgba(sil * w_dress)
+        rgba_masks["OUTERWEAR"] = soft_alpha_to_rgba(sil * w_card)
+        # Real editorial photo does not contain the silk scarf -> empty zero-alpha mask
+        rgba_masks["ACCESSORY"] = make_empty_mask_rgba()
 
     elif strategy == "s04_tailored_blazer_trousers_belt":
-        # Re-build strict face/head/neck + hands-only exclusion so warm sand-beige blazer is NEVER eaten as skin!
+        # Protect face/neck + organic right hand + organic left fingertips WITHOUT rectangular notches on the warm sand-camel blazer!
         strict_excl, face_info = detect_face_and_skin_exclusion(
             bgr,
             human_mask=human_mask,
             yunet_path=yunet_path,
-            exclude_neck_extra=0.45,
-            exclude_hair_below=0.20,
-            skin_threshold_scale=0.72,
+            exclude_neck_extra=0.42,
+            exclude_hair_below=0.18,
+            skin_threshold_scale=0.68,
         )
-        # Keep full head/neck exclusion above collar (yn < 0.31) + right-hand over hip (xn > 0.56 & yn in 0.58..0.79) + left fingers (xn in 0.36..0.49 & yn in 0.77..0.90)
-        head_band = yn <= 0.31
-        hands_band = (
-            ((xn >= 0.56) & (xn <= 0.75) & (yn >= 0.58) & (yn <= 0.79))
-            | ((xn >= 0.36) & (xn <= 0.50) & (yn >= 0.77) & (yn <= 0.90))
-        )
-        excl = (strict_excl & (head_band | hands_band))
+        # Keep head/neck strictly above collar (yn <= 0.305) — never axis-aligned boxes over blazer fabric!
+        head_band = yn <= 0.305
+        excl_s04 = strict_excl & head_band
 
-        # Detect the genuine dark brown leather belt cleanly across waist seam (y in 0.57..0.67, x in 0.42..0.69)
-        waist_roi = human_mask & (yn >= 0.57) & (yn <= 0.67) & (xn >= 0.42) & (xn <= 0.69)
-        belt_raw = waist_roi & (lab[:, :, 0] < 118.0) & ~excl
-        belt_raw = ndimage.binary_closing(belt_raw, iterations=3)
-        belt_raw = keep_largest_components(belt_raw, min_ratio=0.15, max_count=2)
-        belt_raw = ndimage.binary_dilation(belt_raw, iterations=2) & human_mask & ~excl
+        # Organic elliptical masks + strict pink-skin LAB filter (a* >= 147, b* <= 157; camel blazer is a*<=144, b*>=158!)
+        right_hand_ell = (((xn - 0.665) / 0.068) ** 2 + ((yn - 0.742) / 0.072) ** 2) <= 1.0
+        left_fingers_ell = (((xn - 0.440) / 0.028) ** 2 + ((yn - 0.962) / 0.052) ** 2) <= 1.0
+        pink_hand_skin = (
+            (right_hand_ell | left_fingers_ell)
+            & human_mask
+            & (lab[:, :, 1] >= 147.0)
+            & (lab[:, :, 2] <= 157.5)
+            & (lab[:, :, 0] >= 105.0)
+        )
+        # Also protect glossy pale manicured nails directly inside the right-hand ellipse
+        right_nails = right_hand_ell & human_mask & (lab[:, :, 0] >= 185.0) & (lab[:, :, 1] >= 134.0) & (lab[:, :, 2] <= 153.0)
+        hand_mask = ndimage.binary_closing(pink_hand_skin | right_nails, iterations=3)
+        hand_mask = keep_largest_components(hand_mask, min_ratio=0.05, max_count=2)
+        hand_mask = ndimage.binary_fill_holes(hand_mask)
+        hand_mask = ndimage.binary_dilation(hand_mask, iterations=1)
+        excl_s04 = excl_s04 | hand_mask
+
+        # Detect ONLY the genuine dark brown leather waist belt strictly at y in [0.680, 0.722], L* < 96 (never blouse shadows above y=0.68!)
+        belt_roi = human_mask & (yn >= 0.680) & (yn <= 0.722) & (xn >= 0.448) & (xn <= 0.652) & ~excl_s04
+        belt_raw = belt_roi & (lab[:, :, 0] < 96.0) & (lab[:, :, 1] >= 132.0)
+        h_kernel = np.ones((3, 15), dtype=bool)
+        belt_raw = ndimage.binary_closing(belt_raw, structure=h_kernel)
+        belt_raw = keep_largest_components(belt_raw, min_ratio=0.25, max_count=1)
+        belt_raw = ndimage.binary_fill_holes(belt_raw) & belt_roi
         if belt_raw.sum() >= 300:
             belt_ys = np.where(belt_raw)[0]
-            belt_mid_y = float(belt_ys.mean()) / float(h)
+            belt_mid_y = float(np.median(belt_ys)) / float(h)
         else:
-            belt_mid_y = 0.625
-            belt_raw = waist_roi & (yn >= 0.605) & (yn <= 0.645)
+            belt_mid_y = 0.700
+            belt_raw = belt_roi & (yn >= 0.686) & (yn <= 0.716)
 
         belt_dil = ndimage.binary_dilation(belt_raw, iterations=1)
-        # Outerwear blazer: u2net upper (or human_mask upper torso above trousers) minus face/neck/hands/belt
-        outer_raw = (m_up | (m_fu & (yn <= belt_mid_y + 0.16))) & human_mask & ~excl & ~belt_dil
-        # Exclude lower trousers below belt inside waist-to-hem region (ivory bright trousers L > 185 & b* < 140 below belt_mid_y)
-        trouser_zone = m_lo & human_mask & (yn >= belt_mid_y) & (xn >= 0.41) & (xn <= 0.74)
-        outer_raw = outer_raw & ~trouser_zone
-        outer_raw = ndimage.binary_closing(outer_raw, iterations=3)
-        outer_raw = keep_largest_components(outer_raw, min_ratio=0.10, max_count=2)
-        outer_raw = ndimage.binary_fill_holes(outer_raw) & ~excl & ~belt_dil
 
-        # Ivory pleated trousers cleanly below belt seam
-        bot_raw = (m_lo & human_mask & (yn >= belt_mid_y - 0.01)) & ~outer_raw & ~belt_dil & ~excl
-        if bot_raw.sum() < 20_000:
-            bot_raw = (m_lo | m_fu) & human_mask & (yn >= belt_mid_y) & ~outer_raw & ~belt_dil & ~excl
-        bot_raw = ndimage.binary_closing(bot_raw, iterations=3)
-        bot_raw = keep_largest_components(bot_raw, min_ratio=0.12, max_count=2)
-        bot_raw = ndimage.binary_fill_holes(bot_raw) & ~outer_raw & ~belt_dil & ~excl
+        # Full clothed person including the draped outer-right blazer coat tail behind her right hand
+        right_blazer_tail = (
+            human_mask
+            & (xn >= 0.67)
+            & (xn <= 0.77)
+            & (yn >= 0.54)
+            & (yn <= 0.96)
+            & (lab[:, :, 1] >= 134.0)
+            & ~excl_s04
+        )
+        attire = ((m_up | m_lo | m_fu) | right_blazer_tail) & human_mask & ~excl_s04
+        attire = ndimage.binary_closing(attire, iterations=3)
+        attire = keep_largest_components(attire, min_ratio=0.06, max_count=2)
+        attire = ndimage.binary_fill_holes(attire) & human_mask & ~excl_s04
 
-        masks_bool["OUTERWEAR"] = outer_raw
-        masks_bool["BOTTOM"] = bot_raw
-        masks_bool["ACCESSORY"] = belt_raw
+        # Clean LAB separation: ivory pleated trousers (L>=132, a<=133.8) strictly below belt & between blazer lapels
+        # vs warm sand-camel blazer/blouse (a>=134, full length down both left & right draped sides!)
+        trouser_roi = attire & ~belt_dil & (yn >= belt_mid_y - 0.004) & (xn >= 0.435) & (xn <= 0.720)
+        trousers_seed = trouser_roi & (lab[:, :, 1] <= 133.8) & (lab[:, :, 0] >= 132.0)
+        trousers_seed = ndimage.binary_closing(trousers_seed, iterations=4)
+        trousers_seed = keep_largest_components(trousers_seed, min_ratio=0.18, max_count=1)
+        trousers_seed = ndimage.binary_fill_holes(trousers_seed) & attire & ~belt_dil
+
+        outer_seed = attire & ~trousers_seed & ~belt_dil
+        outer_seed = ndimage.binary_closing(outer_seed, iterations=3)
+        outer_seed = keep_largest_components(outer_seed, min_ratio=0.04, max_count=3)
+        outer_seed = ndimage.binary_fill_holes(outer_seed) & attire & ~trousers_seed & ~belt_dil
+
+        # Smooth organic feather across blazer-to-trouser edge (~30px 10%->90% width, ZERO horizontal box cut!)
+        w_outer, w_bot = build_soft_voronoi_partition(outer_seed, trousers_seed, feather_sigma=11.5)
+        sil_clothes = soft_silhouette(attire & ~belt_raw, outer_sigma=2.4)
+        sil_belt = soft_silhouette(belt_raw, outer_sigma=1.8)
+
+        rgba_masks["OUTERWEAR"] = soft_alpha_to_rgba(sil_clothes * w_outer * (1.0 - sil_belt))
+        rgba_masks["BOTTOM"] = soft_alpha_to_rgba(sil_clothes * w_bot * (1.0 - sil_belt))
+        rgba_masks["ACCESSORY"] = soft_alpha_to_rgba(sil_belt)
 
     elif strategy == "s05_tweed_knit_gallery":
-        upper_all = (m_up | (m_fu & (yn <= 0.78))) & human_mask & ~excl & (yn >= 0.24) & (yn <= 0.86)
-        inner_color = (
-            (lab[:, :, 0] < 96.0)
+        # Protect face, hair, waist hand, left hand, AND bare thighs/legs below tweed skirt hem
+        waist_hand_roi = (xn >= 0.41) & (xn <= 0.59) & (yn >= 0.51) & (yn <= 0.615)
+        left_hand_roi = (xn >= 0.26) & (xn <= 0.345) & (yn >= 0.70) & (yn <= 0.83)
+        legs_roi = yn >= 0.82
+        hand_skin = (waist_hand_roi | left_hand_roi) & human_mask & (lab[:, :, 1] >= 131.0) & (lab[:, :, 0] >= 110.0)
+        leg_skin = legs_roi & human_mask & (lab[:, :, 1] >= 133.0) & (lab[:, :, 0] >= 115.0)
+        excl_s05 = excl | ndimage.binary_dilation(hand_skin, iterations=4) | ndimage.binary_dilation(leg_skin, iterations=2)
+
+        # Full matching tweed suit + navy inner blouse (down to the natural skirt hem — ZERO artificial horizontal cut!)
+        attire = (m_up | m_lo | m_fu) & human_mask & ~excl_s05 & (yn >= 0.24) & (yn <= 0.88)
+        attire = ndimage.binary_closing(attire, iterations=3)
+        attire = keep_largest_components(attire, min_ratio=0.10, max_count=2)
+        attire = ndimage.binary_fill_holes(attire) & human_mask & ~excl_s05
+
+        # Inner smooth dark navy blouse inside the open tweed blazer lapels
+        inner_navy = (
+            (lab[:, :, 0] < 92.0)
             & (lab[:, :, 2] < 127.0)
-            & (xn >= 0.28)
-            & (xn <= 0.62)
-            & (yn >= 0.26)
-            & (yn <= 0.70)
+            & (xn >= 0.33)
+            & (xn <= 0.57)
+            & (yn >= 0.27)
+            & (yn <= 0.57)
         )
-        top_raw = upper_all & inner_color
-        top_raw = ndimage.binary_closing(top_raw, iterations=3)
-        top_raw = keep_largest_components(top_raw, min_ratio=0.15, max_count=1)
-        top_raw = ndimage.binary_fill_holes(top_raw) & ~excl
+        top_seed = attire & inner_navy
+        top_seed = ndimage.binary_closing(top_seed, iterations=3)
+        top_seed = keep_largest_components(top_seed, min_ratio=0.18, max_count=1)
+        top_seed = ndimage.binary_fill_holes(top_seed) & attire
 
-        outer_raw = upper_all & ~top_raw & ~excl
-        outer_raw = ndimage.binary_closing(outer_raw, iterations=3)
-        outer_raw = keep_largest_components(outer_raw, min_ratio=0.10, max_count=2)
-        outer_raw = ndimage.binary_fill_holes(outer_raw) & ~top_raw & ~excl
+        outer_seed = attire & ~top_seed
+        outer_seed = ndimage.binary_closing(outer_seed, iterations=3)
+        outer_seed = keep_largest_components(outer_seed, min_ratio=0.10, max_count=2)
+        outer_seed = ndimage.binary_fill_holes(outer_seed) & attire & ~top_seed
 
-        masks_bool["TOP"] = top_raw & ~acc_dil
-        masks_bool["OUTERWEAR"] = outer_raw & ~acc_dil
-        masks_bool["ACCESSORY"] = acc_bool
+        w_top, w_outer = build_soft_voronoi_partition(top_seed, outer_seed, feather_sigma=12.0)
+        sil = soft_silhouette(attire, outer_sigma=2.4)
+        rgba_masks["TOP"] = soft_alpha_to_rgba(sil * w_top)
+        rgba_masks["OUTERWEAR"] = soft_alpha_to_rgba(sil * w_outer)
+        # Real editorial photo does not contain the standalone clutch -> empty zero-alpha mask
+        rgba_masks["ACCESSORY"] = make_empty_mask_rgba()
 
     elif strategy == "s06_evening_satin_gown_wrap":
-        satin_all = ((m_up | m_lo | m_fu) | (human_mask & (lab[:, :, 1] >= 150.0))) & human_mask & ~excl & (yn >= 0.30)
-        satin_all &= lab[:, :, 1] >= 142.0
+        # Protect face, hair, earrings, AND both hands/fingers/nails while allowing the high crimson satin mock-neck collar below the chin!
+        chin_y = face_info["y"] + face_info["h"] * 0.94
+        is_crimson_collar = (yn >= chin_y) & (yn <= chin_y + 0.09) & (lab[:, :, 1] >= 156.0)
+        hands_roi = (xn >= 0.24) & (xn <= 0.64) & (yn >= 0.55) & (yn <= 0.78)
+        not_crimson = lab[:, :, 1] < 146.0
+        excl_s06 = (excl & ~is_crimson_collar) | (hands_roi & not_crimson)
+
+        satin_all = ((m_up | m_lo | m_fu) | (human_mask & (lab[:, :, 1] >= 150.0))) & human_mask & ~excl_s06 & (yn >= chin_y)
+        satin_all &= lab[:, :, 1] >= 140.0
         satin_all = ndimage.binary_closing(satin_all, iterations=3)
         satin_all = keep_largest_components(satin_all, min_ratio=0.08, max_count=2)
+        satin_all = ndimage.binary_fill_holes(satin_all) & ~excl_s06
 
+        # Organic curved armhole partition with wide 30px Gaussian feather (ZERO harsh vertical straight lines!)
         fcx = face_info["x"] + face_info["w"] * 0.5
-        in_sleeve_band = (yn >= 0.35) & (yn <= 0.76) & (np.abs(xn - fcx) > 0.165)
-        outer_raw = satin_all & in_sleeve_band
-        outer_raw = ndimage.binary_closing(outer_raw, iterations=2)
-        outer_raw = keep_largest_components(outer_raw, min_ratio=0.18, max_count=2)
-        outer_raw = ndimage.binary_fill_holes(outer_raw) & satin_all & ~excl
+        armhole_curve = 0.145 + 0.045 * np.sin(np.clip((yn - 0.34) / 0.38, 0.0, 1.0) * math.pi)
+        sleeve_region = (yn >= 0.35) & (yn <= 0.73) & (np.abs(xn - fcx) > armhole_curve)
+        sleeve_weight = ndimage.gaussian_filter(sleeve_region.astype(np.float32), sigma=30.0)
+        sleeve_weight = np.clip(sleeve_weight, 0.0, 1.0)
 
-        gown_raw = satin_all & ~outer_raw & ~excl
-        gown_raw = keep_largest_components(gown_raw, min_ratio=0.12, max_count=2)
-        gown_raw = ndimage.binary_fill_holes(gown_raw) & ~outer_raw & ~excl
-
-        masks_bool["ONE_PIECE"] = gown_raw & ~acc_dil
-        masks_bool["OUTERWEAR"] = outer_raw & ~acc_dil
-        masks_bool["ACCESSORY"] = acc_bool
+        sil = soft_silhouette(satin_all, outer_sigma=2.4)
+        rgba_masks["ONE_PIECE"] = soft_alpha_to_rgba(sil * (1.0 - sleeve_weight))
+        rgba_masks["OUTERWEAR"] = soft_alpha_to_rgba(sil * sleeve_weight)
+        # Real editorial photo does not contain the standalone clutch -> empty zero-alpha mask
+        rgba_masks["ACCESSORY"] = make_empty_mask_rgba()
 
     else:
         raise ValueError(f"Unknown segmentation strategy: {strategy}")
-
-    rgba_masks: dict[str, np.ndarray] = {}
-    for slot_key, mb in masks_bool.items():
-        if slot_key == "ACCESSORY" and acc_mask_rgba is not None:
-            rgba_masks[slot_key] = acc_mask_rgba
-        else:
-            rgba_masks[slot_key] = feather_mask_to_rgba(mb, feather_sigma=1.15)
 
     return rgba_masks, face_info
 
@@ -1820,6 +1840,7 @@ def main() -> int:
     contact_sheet_path = Path(spec["contactSheetPath"])
 
     only_season = spec.get("onlySeason")
+    lookbooks_only = bool(spec.get("lookbooksOnly", False))
     existing_manifest_by_slug: dict[str, Any] = {}
     existing_manifest_path = out_dir / "manifest.json"
     if only_season and existing_manifest_path.exists():
@@ -1836,7 +1857,7 @@ def main() -> int:
     generated_defaults: set[str] = set()
     generated_macros: set[str] = set()
 
-    if not only_season:
+    if not only_season and not lookbooks_only:
         # 1. Load clean studio cutouts for all 15 unique products
         print("[vitrine:py] Step 1/4: Loading 15 clean RGBA studio product cutouts...", flush=True)
         product_cutouts: dict[str, Image.Image] = {}
@@ -1928,13 +1949,7 @@ def main() -> int:
         base_im = aspect_fill_resize(cropped, EDITORIAL_W, EDITORIAL_H, 0.5, 0.5)
         base_im = apply_editorial_grade(base_im, season.get("editorialGrade") or {})
 
-        acc_mask_rgba = None
-        acc_cfg = season.get("accessoryComposite")
-        if acc_cfg:
-            acc_slug = acc_cfg["productSlug"]
-            acc_flat = processed_products_dir / acc_slug / f"{acc_slug}-flat-3x4.webp"
-            base_im, acc_mask_rgba = composite_accessory_onto_base(base_im, acc_flat, acc_cfg)
-
+        # 100% pure untouched editorial photograph (ZERO pasted accessory stickers!)
         save_image(base_im, out_dir / "lookbooks" / f"{slug}-base.webp", "WEBP", quality=91, method=5)
 
         rgba_masks, face_info = segment_season_masks(
@@ -1942,7 +1957,6 @@ def main() -> int:
             base_rgb=base_im,
             sessions=sessions,
             yunet_path=yunet_path,
-            acc_mask_rgba=acc_mask_rgba,
         )
 
         fx0 = int(face_info["x"] * EDITORIAL_W)
@@ -1953,7 +1967,6 @@ def main() -> int:
         v_y0, v_y1 = int(0.08 * EDITORIAL_H), int(0.22 * EDITORIAL_H)
         v_x0, v_x1 = int(0.40 * EDITORIAL_W), int(0.60 * EDITORIAL_W)
 
-        avoid_pins: list[tuple[float, float]] = []
         hydrated_slots: list[dict[str, Any]] = []
 
         for slot in season["wearableSlots"]:
@@ -1961,15 +1974,23 @@ def main() -> int:
             skey_lower = skey.lower()
             mask_rgba = rgba_masks[skey]
             mask_rgba[max(0, fy0 - 4) : min(EDITORIAL_H, fy1 + 4), max(0, fx0 - 4) : min(EDITORIAL_W, fx1 + 4), 3] = 0
-            if skey != "ACCESSORY":
-                mask_rgba[v_y0:v_y1, v_x0:v_x1, 3] = 0
+            mask_rgba[v_y0:v_y1, v_x0:v_x1, 3] = 0
 
             alpha_u8 = mask_rgba[:, :, 3]
-            pin_pos, bbox, cov = compute_mask_metrics(alpha_u8, avoid_pins)
-            avoid_pins.append((pin_pos["xPercent"], pin_pos["yPercent"]))
+            painted_px = int(np.count_nonzero(alpha_u8 > 0))
+            if painted_px == 0:
+                mask_rgba[:, :, :] = 0
+            bbox, cov = compute_mask_metrics(alpha_u8)
+
+            pin_cfg = slot["pinPosition"]
+            pin_pos = {
+                "xPercent": round(float(pin_cfg["xPercent"]), 1),
+                "yPercent": round(float(pin_cfg["yPercent"]), 1),
+            }
 
             mask_im = Image.fromarray(mask_rgba, mode="RGBA")
-            save_image(mask_im, out_dir / "masks" / f"{slug}-mask-{skey_lower}.png", "PNG", compress_level=6)
+            compress_lvl = 1 if painted_px == 0 else 6
+            save_image(mask_im, out_dir / "masks" / f"{slug}-mask-{skey_lower}.png", "PNG", compress_level=compress_lvl)
 
             slot_variants = []
             for var in slot["variants"]:
@@ -1993,7 +2014,8 @@ def main() -> int:
                 "variants": slot_variants,
             })
             print(
-                f"  [{slug}] {skey:9s}: cov={cov*100:5.1f}% pin=({pin_pos['xPercent']:4.1f}%,{pin_pos['yPercent']:4.1f}%) "
+                f"  [{slug}] {skey:9s}: cov={cov*100:5.1f}% painted={painted_px:6d} "
+                f"pin=({pin_pos['xPercent']:4.1f}%,{pin_pos['yPercent']:4.1f}%) "
                 f"bbox=({bbox['x']:.2f},{bbox['y']:.2f},{bbox['w']:.2f},{bbox['h']:.2f})",
                 flush=True,
             )
@@ -2037,6 +2059,7 @@ def main() -> int:
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest_doc, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
     # 5. Render contact sheet
@@ -2093,9 +2116,32 @@ async function verifyGeneratedAssets(sharp) {
   const productSlugs = new Set();
   for (const season of manifest.seasons) {
     await assertAsset(season.baseEditorialImageUrl, 960, 1200, 'webp');
+    const pins = [];
     for (const slot of season.wearableSlots) {
       productSlugs.add(slot.productSlug);
       await assertAsset(slot.garmentRegionMask, 960, 1200, 'png', true);
+      const { xPercent, yPercent } = slot.pinPosition ?? {};
+      if (
+        typeof xPercent !== 'number' ||
+        typeof yPercent !== 'number' ||
+        xPercent < 24 ||
+        xPercent > 72 ||
+        yPercent < 28 ||
+        yPercent > 76
+      ) {
+        throw new Error(
+          `Out-of-bounds pinPosition for ${season.seasonSlug}/${slot.slotKey}: (${xPercent}, ${yPercent})`,
+        );
+      }
+      for (const prev of pins) {
+        const dy = Math.abs(yPercent - prev.yPercent);
+        if (dy < 16) {
+          throw new Error(
+            `Pin vertical spacing < 16% in ${season.seasonSlug}: ${slot.slotKey}(y=${yPercent}) vs ${prev.slotKey}(y=${prev.yPercent})`,
+          );
+        }
+      }
+      pins.push({ slotKey: slot.slotKey, xPercent, yPercent });
       for (const variant of slot.variants) {
         await assertAsset(variant.studioCutoutUrl, 720, 960, 'webp');
         await assertAsset(variant.macroSwatchUrl, 800, 600, 'webp');
@@ -2107,7 +2153,7 @@ async function verifyGeneratedAssets(sharp) {
   }
 
   console.log(
-    `[sharp-verify] PASS: ${checked.size} unique local photography & mask files verified (>2KB, exact dimensions).`,
+    `[sharp-verify] PASS: ${checked.size} unique local photography & mask files verified (>2KB, exact dimensions, pin spacing >= 16%).`,
   );
 }
 
@@ -2116,6 +2162,7 @@ async function main() {
   const contactSheetPath = sheetArg ? sheetArg.slice('--contact-sheet='.length) : DEFAULT_CONTACT_SHEET;
   const onlySeasonArg = process.argv.find((a) => a.startsWith('--only-season='));
   const onlySeason = onlySeasonArg ? onlySeasonArg.slice('--only-season='.length) : null;
+  const lookbooksOnly = process.argv.includes('--lookbooks-only');
 
   fs.mkdirSync(PUBLIC_VITRINE_DIR, { recursive: true });
 
@@ -2139,6 +2186,7 @@ async function main() {
           yunetPath: YUNET_MODEL_PATH,
           contactSheetPath,
           onlySeason,
+          lookbooksOnly,
           seasons: SEASONS_SPEC,
           productCardSources: PRODUCT_CARD_SOURCES,
           macroBaseSources: MACRO_BASE_SOURCES,

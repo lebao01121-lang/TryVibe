@@ -7,6 +7,70 @@ export type TelemetryOutcomeStatus =
   | 'BLOCKED_RBAC'
   | 'ERROR';
 
+export type TelemetryPortalScope = 'ADMIN_PORTAL' | 'STOREFRONT' | 'INTERNAL';
+export type CopilotFeedbackRating = 'UP' | 'DOWN';
+
+export interface CopilotFeedbackRecord {
+  id: string;
+  traceId: string;
+  sessionId: string | null;
+  portal: TelemetryPortalScope;
+  role: string;
+  userId: string;
+  rating: CopilotFeedbackRating;
+  reason: string | null;
+  promptText: string | null;
+  responseText: string | null;
+  createdAt: string;
+}
+
+export interface CopilotFeedbackSummary {
+  total: number;
+  thumbsUp: number;
+  thumbsDown: number;
+  satisfactionPct: number;
+  upCount: number;
+  downCount: number;
+  satisfactionRatePct: number;
+  recentReasons: string[];
+}
+
+export function computeCopilotFeedbackSummary(
+  thumbsUp: number,
+  thumbsDown: number,
+  recentReasons: readonly string[] = [],
+): CopilotFeedbackSummary {
+  const safeUp = Math.max(0, Math.floor(thumbsUp));
+  const safeDown = Math.max(0, Math.floor(thumbsDown));
+  const total = safeUp + safeDown;
+  const satisfactionPct =
+    total > 0 ? Number(((safeUp / total) * 100).toFixed(2)) : 0;
+  const cleanedReasons: string[] = [];
+  for (const r of recentReasons) {
+    if (typeof r !== 'string') continue;
+    const trimmed = r.trim();
+    if (trimmed && !cleanedReasons.includes(trimmed)) {
+      cleanedReasons.push(trimmed);
+      if (cleanedReasons.length >= 10) break;
+    }
+  }
+  return {
+    total,
+    thumbsUp: safeUp,
+    thumbsDown: safeDown,
+    satisfactionPct,
+    upCount: safeUp,
+    downCount: safeDown,
+    satisfactionRatePct: satisfactionPct,
+    recentReasons: cleanedReasons,
+  };
+}
+
+export interface AiTelemetryPersistenceAdapter {
+  persistTelemetryEvent: (entry: AiTelemetryRecord) => Promise<void>;
+  loadTelemetryEvents?: (limit?: number) => Promise<AiTelemetryRecord[]>;
+}
+
 export type AiTelemetryProvider = 'ollama' | 'rule_fallback';
 export type VtonTelemetryProvider = 'MOCK' | 'FAL_CATVTON' | 'CACHE_HIT';
 
@@ -41,12 +105,16 @@ export interface AiTelemetryRecord {
   cacheHit: boolean;
   vtonProvider?: VtonTelemetryProvider;
   correlationId: string;
+  traceId: string;
+  portal: TelemetryPortalScope;
   status: TelemetryOutcomeStatus;
   usedFallback: boolean;
   metadata?: Record<string, unknown>;
 }
 
 export interface RecordTelemetryInput {
+  id?: string;
+  timestamp?: string;
   userId: string;
   roles: readonly string[];
   toolName: string;
@@ -66,6 +134,8 @@ export interface RecordTelemetryInput {
   cacheHit?: boolean;
   vtonProvider?: VtonTelemetryProvider;
   correlationId: string;
+  traceId?: string;
+  portal?: TelemetryPortalScope;
   status?: TelemetryOutcomeStatus;
   usedFallback?: boolean;
   metadata?: Record<string, unknown>;
@@ -100,6 +170,7 @@ export interface AiTelemetrySummary {
 export interface AiTelemetryRecorderOptions {
   maxEntries?: number;
   onRecord?: (entry: AiTelemetryRecord) => void;
+  persistence?: AiTelemetryPersistenceAdapter;
 }
 
 /**
@@ -122,11 +193,51 @@ export function estimateVtonCostUsd(
 export class AiTelemetryRecorder {
   private readonly maxEntries: number;
   private readonly onRecord?: (entry: AiTelemetryRecord) => void;
+  private persistence?: AiTelemetryPersistenceAdapter;
   private readonly records: AiTelemetryRecord[] = [];
+  private readonly knownIds = new Set<string>();
 
   constructor(options: AiTelemetryRecorderOptions = {}) {
     this.maxEntries = Math.max(10, options.maxEntries ?? 1000);
     this.onRecord = options.onRecord;
+    this.persistence = options.persistence;
+  }
+
+  public setPersistenceAdapter(
+    adapter: AiTelemetryPersistenceAdapter | undefined,
+  ): void {
+    this.persistence = adapter;
+  }
+
+  public hydrateRecords(entries: readonly AiTelemetryRecord[]): number {
+    let added = 0;
+    for (const entry of entries) {
+      if (!entry?.id || this.knownIds.has(entry.id)) {
+        continue;
+      }
+      if (this.records.length >= this.maxEntries) {
+        const evicted = this.records.shift();
+        if (evicted) {
+          this.knownIds.delete(evicted.id);
+        }
+      }
+      this.records.push(entry);
+      this.knownIds.add(entry.id);
+      added += 1;
+    }
+    return added;
+  }
+
+  public async hydrateFromPersistence(limit = 500): Promise<number> {
+    if (!this.persistence?.loadTelemetryEvents) {
+      return 0;
+    }
+    try {
+      const loaded = await this.persistence.loadTelemetryEvents(limit);
+      return this.hydrateRecords(loaded);
+    } catch {
+      return 0;
+    }
   }
 
   public record(input: RecordTelemetryInput): AiTelemetryRecord {
@@ -153,8 +264,8 @@ export class AiTelemetryRecorder {
       input.aiProvider ?? (usedFallback ? 'rule_fallback' : 'ollama');
 
     const entry: AiTelemetryRecord = {
-      id: randomUUID(),
-      timestamp: new Date().toISOString(),
+      id: input.id ?? randomUUID(),
+      timestamp: input.timestamp ?? new Date().toISOString(),
       actor_type: 'AI_COPILOT',
       aiProvider,
       modelUsed: input.modelUsed ?? (usedFallback ? 'rule-based-fallback' : 'qwen2.5:3b'),
@@ -175,18 +286,28 @@ export class AiTelemetryRecorder {
       cacheHit,
       ...(input.vtonProvider ? { vtonProvider: input.vtonProvider } : {}),
       correlationId: input.correlationId,
+      traceId: input.traceId ?? input.correlationId,
+      portal: input.portal ?? 'ADMIN_PORTAL',
       status: input.status ?? 'SUCCESS',
       usedFallback,
       metadata: input.metadata,
     };
 
     if (this.records.length >= this.maxEntries) {
-      this.records.shift();
+      const evicted = this.records.shift();
+      if (evicted) {
+        this.knownIds.delete(evicted.id);
+      }
     }
     this.records.push(entry);
+    this.knownIds.add(entry.id);
 
     if (this.onRecord) {
       this.onRecord(entry);
+    }
+
+    if (this.persistence) {
+      void this.persistence.persistTelemetryEvent(entry).catch(() => undefined);
     }
 
     return entry;
@@ -284,5 +405,6 @@ export class AiTelemetryRecorder {
 
   public clear(): void {
     this.records.length = 0;
+    this.knownIds.clear();
   }
 }

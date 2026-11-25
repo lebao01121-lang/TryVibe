@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-23T16:32:46.659Z",
+  "generatedAt": "2026-11-25T04:49:33.462Z",
   "platform": "win32",
   "nodeVersion": "v24.10.0",
   "gates": {
@@ -7,13 +7,13 @@
       "title": "Compile, Typecheck, Python & Atelier UI Isolation",
       "status": "PASS",
       "details": [
-        "pnpm typecheck: PASS (0.8s, 0 errors)",
+        "pnpm typecheck: PASS (0.7s, 0 errors)",
         "pnpm build: PASS (0.7s across all 21 workspaces incl. 3 Next.js portals)",
         "pnpm verify:ui: PASS (UI & Isolation Gate Summary: PASS=10/10 | FAIL=0)",
         "Python services/ai-tryon (compileall + import app.main): PASS"
       ],
       "metrics": {
-        "typecheckSec": 0.8,
+        "typecheckSec": 0.7,
         "buildSec": 0.7,
         "verifyUi": "UI & Isolation Gate Summary: PASS=10/10 | FAIL=0"
       }
@@ -22,35 +22,35 @@
       "title": "Infra Health, Memory Budget (<3GB), Warm /health & 10-DB Isolation",
       "status": "PASS",
       "details": [
-        "Memory Budget (LOCAL_DEV_HARNESS): PASS (11 backend services + local infra harness = 2783.8 MB < 3072 MB)",
-        "11/11 Services /health & /ready: PASS (all warm /health < 20ms, max=0.74ms; W3C traceparent echoed on 11/11 services)",
-        "Admin Ops Cluster Health (/api/v1/admin/ops/health-cluster): PASS (11/11 ready [UP=7, DEGRADED_OPTIONAL=4, DOWN=0], 5/5 infra UP, overall=DEGRADED)",
+        "Memory Budget (LOCAL_DEV_HARNESS): PASS (11 backend services + local infra harness = 2668 MB < 3072 MB)",
+        "11/11 Services /health & /ready: PASS (all warm /health < 20ms, max=0.67ms; W3C traceparent echoed on 11/11 services)",
+        "Admin Ops Cluster Health (/api/v1/admin/ops/health-cluster): PASS (11/11 ready [UP=7, DEGRADED_OPTIONAL=4, DOWN=0], 6/6 infra UP, overall=DEGRADED)",
         "10-DB Isolation & MCP Zero-DB Check: PASS (10/10 DBs REVOKE PUBLIC verified in init-isolated-dbs.sql + runtime readiness + MCP transactionalDbConnections=0)"
       ],
       "metrics": {
         "infraMode": "LOCAL_DEV_HARNESS",
-        "totalProcessMemoryMb": 2783.8,
+        "totalProcessMemoryMb": 2668,
         "memoryBudgetMb": 3072,
         "memorySource": "live_11_services_plus_harness_rss",
         "servicesHealth": [
           {
             "name": "bff",
             "port": 4000,
-            "warmHealthMs": 0.55,
+            "warmHealthMs": 0.63,
             "readyStatus": 200,
             "traceparentEchoed": true
           },
           {
             "name": "auth-customer",
             "port": 4001,
-            "warmHealthMs": 0.68,
+            "warmHealthMs": 0.6,
             "readyStatus": 200,
             "traceparentEchoed": true
           },
           {
             "name": "catalog-lookbook",
             "port": 4002,
-            "warmHealthMs": 0.48,
+            "warmHealthMs": 0.51,
             "readyStatus": 200,
             "traceparentEchoed": true
           },
@@ -64,115 +64,92 @@
           {
             "name": "inventory",
             "port": 4004,
-            "warmHealthMs": 0.66,
+            "warmHealthMs": 0.63,
             "readyStatus": 200,
             "traceparentEchoed": true
           },
           {
             "name": "cart-outfit",
             "port": 4005,
-            "warmHealthMs": 0.74,
+            "warmHealthMs": 0.6,
             "readyStatus": 200,
             "traceparentEchoed": true
           },
           {
             "name": "order-rma",
             "port": 4006,
-            "warmHealthMs": 0.61,
+            "warmHealthMs": 0.52,
             "readyStatus": 200,
             "traceparentEchoed": true
           },
           {
             "name": "payment-promo",
             "port": 4007,
-            "warmHealthMs": 0.62,
+            "warmHealthMs": 0.67,
             "readyStatus": 200,
             "traceparentEchoed": true
           },
           {
             "name": "notify-review",
             "port": 4008,
-            "warmHealthMs": 0.57,
+            "warmHealthMs": 0.48,
             "readyStatus": 200,
             "traceparentEchoed": true
           },
           {
             "name": "ai-tryon",
             "port": 4009,
-            "warmHealthMs": 0.62,
+            "warmHealthMs": 0.6,
             "readyStatus": 200,
             "traceparentEchoed": true
           },
           {
             "name": "mcp-copilot",
             "port": 4010,
-            "warmHealthMs": 0.51,
+            "warmHealthMs": 0.47,
             "readyStatus": 200,
             "traceparentEchoed": true
           }
         ],
-        "maxWarmHealthMs": 0.74,
+        "maxWarmHealthMs": 0.67,
         "clusterHealth": {
           "servicesReady": 11,
           "servicesUp": 7,
           "servicesDegradedOptional": 4,
           "servicesDown": 0,
           "totalServices": 11,
-          "infraUp": 5,
-          "totalInfra": 5,
+          "infraUp": 6,
+          "totalInfra": 6,
           "overallStatus": "DEGRADED"
         },
         "isolatedDatabasesVerified": 10,
         "mcpTransactionalDbConnections": 0
       }
     },
-    "GATE 3": {
-      "title": "8-Layer AI Security Harness (100%) & M5 SFT Dataset Export",
-      "status": "PASS",
-      "details": [
-        "pnpm eval:ai 8-Layer Scorecard: PASS (38/38 = 100%; Tool=100%, RAG=100%, Injection=100%, PII=100%, RBAC=100%)",
-        "pnpm ai:export-sft (M5 Dataset): PASS (22 valid JSONL records [DPO=7, SFT=15], 0 emails/phones/secrets leaked)"
-      ],
-      "metrics": {
-        "evalAi": {
-          "passedCases": 38,
-          "totalCases": 38,
-          "toolSelectionAccuracyPct": 100,
-          "hybridRagCitationRatePct": 100,
-          "promptInjectionBlockRatePct": 100,
-          "piiRedactionRatePct": 100,
-          "rbacEnforcementRatePct": 100,
-          "overallPassRatePct": 100
-        },
-        "sftExport": {
-          "file": "artifacts/ai-sft-preference-dataset.jsonl",
-          "totalRecords": 22,
-          "dpoCount": 7,
-          "sftCount": 15,
-          "piiLeaks": 0
-        }
-      }
-    },
     "GATE 4": {
       "title": "OWASP, CSRF, 2FA, Instant Revocation, IDOR, Rate Limit (429) & *.dlq Console",
       "status": "PASS",
       "details": [
-        "CSRF & Evil Origin Defense: PASS (missing CSRF=403, evil Origin=403)",
+        "CSRF & Evil Origin Defense: PASS (missing header=403, evil Origin=403, missing csrf cookie=403, mismatched csrf=403)",
         "Mandatory 2FA (Mailpit Email OTP): PASS (SUPER_ADMIN, WAREHOUSE_MANAGER [pre-MFA blocked 403], SUPPLIER_A & SUPPLIER_B verified)",
-        "Instant Redis permissionVersion Revocation: PASS (old unexpired JWT blocked HTTP 403 in 29.9ms < 1000ms)",
-        "Strict IDOR Defense (Customer B w/ spoofed x-user-id & SUPPLIER_B): PASS (order=403, rma=403, profile=403, tryon=403, partnerPO=404/403)",
+        "Instant Redis permissionVersion Revocation: PASS (old unexpired JWT blocked HTTP 403 in 34.6ms < 1000ms)",
+        "Strict IDOR Defense (Customer B w/ spoofed x-user-id, SUPPLIER_B & Socket.io): PASS (order=403, rma=403, profile=403, tryon=403, partnerPO=404/403, wsAnon=blocked, wsCrossUser=blocked)",
         "Tiered Sliding-Window Rate Limiter: PASS (HTTP 429 triggered at req #61, X-RateLimit-Limit=60)",
         "RabbitMQ *.dlq Ops Console: PASS (seed -> inspect -> replay -> purge -> count=0 + DLQ_REPLAY & DLQ_PURGE logged in audit_logs)"
       ],
       "metrics": {
-        "instantRevocationMs": 29.9,
+        "instantRevocationMs": 34.6,
         "idor": {
           "orderRead": 403,
           "rmaPost": 403,
           "profileRead": 403,
           "tryonRead": 403,
           "supplierPoGet": 404,
-          "supplierPoConfirm": 403
+          "supplierPoConfirm": 403,
+          "wsAnonOrderBlocked": true,
+          "wsAnonTryonBlocked": true,
+          "wsCrossUserOrderBlocked": true,
+          "wsCrossUserTryonBlocked": true
         },
         "rateLimit": {
           "triggered429AtRequest": 61,
@@ -189,13 +166,13 @@
       "title": "100-Request Flash Sale Stress (0% Oversell) & Late-Payment Edge Case",
       "status": "PASS",
       "details": [
-        "100-Request Flash Sale (stock=15, SKU=AT-ALCSCL-C1-L): PASS (201=15, 409=85, 5xx=0, deadlocks=0, oversell=0%, p50=215.27ms, p95=460.04ms, p99=460.26ms)",
-        "Late-Payment Edge Case (TX-2026571E81): PASS (avail 1->0->expire CANCELLED avail=1 -> late IPN LATE_PAYMENT_NEEDS_REFUND avail=1 [0 negative stock] -> SUPER_ADMIN refund HTTP 200)"
+        "100-Request Flash Sale (stock=15, SKU=AT-TLDKD-C1-L): PASS (201=15, 409=85, 5xx=0, deadlocks=0, oversell=0%, p50=593.66ms, p95=641.08ms, p99=641.38ms)",
+        "Late-Payment Edge Case (TX-2026851035): PASS (avail 1->0->expire CANCELLED avail=1 -> late IPN LATE_PAYMENT_NEEDS_REFUND avail=1 [0 negative stock] -> SUPER_ADMIN refund HTTP 200)"
       ],
       "metrics": {
         "flashSale": {
-          "skuId": "8456ade4-daef-47fc-86d2-aa40f664100f",
-          "skuCode": "AT-ALCSCL-C1-L",
+          "skuId": "fabc5fcd-c2e2-4931-84b9-6a73fddf021a",
+          "skuCode": "AT-TLDKD-C1-L",
           "warehouseCode": "CENTRAL_WH",
           "initialStock": 15,
           "concurrency": 100,
@@ -208,17 +185,17 @@
           "oversellPct": 0,
           "finalAvailableQty": 0,
           "finalReservedQty": 15,
-          "wallDurationMs": 463.8,
+          "wallDurationMs": 644.6,
           "latencyMs": {
-            "min": 144.98,
-            "p50": 215.27,
-            "p95": 460.04,
-            "p99": 460.26,
-            "max": 460.38
+            "min": 104.36,
+            "p50": 593.66,
+            "p95": 641.08,
+            "p99": 641.38,
+            "max": 641.42
           }
         },
         "latePayment": {
-          "orderCode": "TX-2026571E81",
+          "orderCode": "TX-2026851035",
           "statusAfterLateIpn": "LATE_PAYMENT_NEEDS_REFUND",
           "stockAfterLateIpn": 1,
           "adminRefundStatus": 200
@@ -229,60 +206,87 @@
       "title": "Golden Path E2E Across All 3 Portals (3000 -> 3001 -> 3002)",
       "status": "PASS",
       "details": [
-        "Master Seed (2x idempotent pnpm db:seed): PASS (20 designs, 20/20 MinIO images 200 OK [0 broken], 54 reviews, 166 try-on signals)",
-        "(a) Storefront Bootstrap & Meilisearch: PASS (bootstrap p50=2.29ms, p95=3.95ms < 80ms [HIT 20/20]; 'ao blazer' 19.6ms, 'vay di tiec' 15.5ms < 120ms)",
+        "Master Seed (2x idempotent pnpm db:seed): PASS (23 designs, 23/23 MinIO images 200 OK [0 broken], 88 reviews, 224 try-on signals)",
+        "(a) Storefront Bootstrap & Meilisearch: PASS (bootstrap p50=10.88ms, p95=24.87ms < 80ms [HIT 20/20]; 'ao blazer' 36.9ms, 'vay di tiec' 21.8ms < 120ms)",
         "(b) Live AI Size Advisor: PASS (158cm/47kg -> Size M, crowdAdjusted=true)",
-        "(c) 2-Step Try-On (Socket.io) + CACHE_HIT + Cart: PASS (session=a44f1a1d-9934-416d-97c6-99784beebc86, CACHE_HIT=17.6ms < 1000ms, quota unchanged 13->13, Outfit+GiftNote added)",
-        "(d) VietQR Checkout -> Pack Photo -> Deliver -> Size Exchange RMA: PASS (TX-20269DD0E7, VIP quota 27->32, Mailpit order+pack emails, RMA 879439fe-b78e-4c62-8ebb-24c3af09385d QC restock 14->15)",
-        "(e) Copilot HITL -> Partner Confirm -> Partial/Defect GRN -> AI Funnel -> 15m MinIO Purge: PASS (PO 3234f23a-4437-4882-857c-fc91330453ce NHAP_AI->confirmed->GRN 8/2, ai-funnel 200, purgedImages=3/purgedResults=2 signed=404 unsigned=403)"
+        "(c) 2-Step Try-On (Socket.io) + CACHE_HIT + Cart: PASS (session=32e3bba1-9c7d-47e2-9932-cddc4610c3be, CACHE_HIT=30.3ms < 1000ms, quota unchanged 14->14, Outfit+GiftNote added)",
+        "(d) VietQR Checkout -> Pack Photo -> Deliver -> Size Exchange RMA: PASS (TX-2026E644C0, VIP quota 87->92, Mailpit order+pack emails, RMA a9ac088a-00a9-43a5-adf1-56c0bb4f7132 QC restock 14->15)",
+        "(e) Copilot HITL -> Partner Confirm -> Partial/Defect GRN -> AI Funnel -> 15m MinIO Purge: PASS (PO 5da6b97e-96e9-4e04-a395-e665a8750064 NHAP_AI->confirmed->GRN 8/2, ai-funnel 200, purgedImages=1/purgedResults=2 signed=404 unsigned=403)"
       ],
       "metrics": {
         "seed": {
-          "products": 20,
-          "checkedImages": 20,
+          "products": 23,
+          "checkedImages": 23,
           "brokenImages": 0,
-          "verifiedReviews": 54,
-          "demandEventsCount": 166,
+          "verifiedReviews": 88,
+          "demandEventsCount": 224,
           "idempotentTwoRuns": true
         },
         "storefrontSpeed": {
-          "bootstrapP50Ms": 2.29,
-          "bootstrapP95Ms": 3.95,
+          "bootstrapP50Ms": 10.88,
+          "bootstrapP95Ms": 24.87,
           "bootstrapCacheHits": "20/20",
-          "searchNoAccentMs": 19.6,
-          "searchSynonymMs": 15.5
+          "searchNoAccentMs": 36.9,
+          "searchSynonymMs": 21.8
         },
         "sizeAdvisor": {
           "recommendedSize": "M",
           "crowdAdjusted": true
         },
         "tryon": {
-          "sessionId": "a44f1a1d-9934-416d-97c6-99784beebc86",
-          "cacheHitMs": 17.6,
-          "quotaBeforeCache": 13,
-          "quotaAfterCache": 13
+          "sessionId": "32e3bba1-9c7d-47e2-9932-cddc4610c3be",
+          "cacheHitMs": 30.3,
+          "quotaBeforeCache": 14,
+          "quotaAfterCache": 14
         },
         "orderAndRma": {
-          "orderCode": "TX-20269DD0E7",
-          "vipQuotaBonus": "27->32",
-          "rmaId": "879439fe-b78e-4c62-8ebb-24c3af09385d",
+          "orderCode": "TX-2026E644C0",
+          "vipQuotaBonus": "87->92",
+          "rmaId": "a9ac088a-00a9-43a5-adf1-56c0bb4f7132",
           "restockedSizeM": "14->15"
         },
         "b2bAndPurge": {
-          "aiPoId": "3234f23a-4437-4882-857c-fc91330453ce",
+          "aiPoId": "5da6b97e-96e9-4e04-a395-e665a8750064",
           "grnAccepted": 8,
           "grnDefect": 2,
           "aiFunnelPresent": true,
-          "purgedImages": 3,
+          "purgedImages": 1,
           "purgedResults": 2,
           "signedAfterPurge": 404,
           "unsignedAfterPurge": 403
         }
       }
+    },
+    "GATE 3": {
+      "title": "8-Layer AI Security Harness (100%) & M5 SFT Dataset Export",
+      "status": "PASS",
+      "details": [
+        "pnpm eval:ai 8-Layer Scorecard: PASS (48/48 = 100%; Tool=100%, RAG=100%, Injection=100%, PII=100%, RBAC=100%)",
+        "pnpm ai:export-sft (M5 Dataset): PASS (54 valid JSONL records [DPO=4, SFT=50], 0 emails/phones/secrets leaked)"
+      ],
+      "metrics": {
+        "evalAi": {
+          "passedCases": 48,
+          "totalCases": 48,
+          "toolSelectionAccuracyPct": 100,
+          "hybridRagCitationRatePct": 100,
+          "promptInjectionBlockRatePct": 100,
+          "piiRedactionRatePct": 100,
+          "rbacEnforcementRatePct": 100,
+          "overallPassRatePct": 100
+        },
+        "sftExport": {
+          "file": "artifacts/ai-sft-preference-dataset.jsonl",
+          "totalRecords": 54,
+          "dpoCount": 4,
+          "sftCount": 50,
+          "piiLeaks": 0
+        }
+      }
     }
   },
   "infraMode": "LOCAL_DEV_HARNESS",
-  "totalSec": 20.3,
+  "totalSec": 115.1,
   "passCount": 6,
   "failCount": 0
 }

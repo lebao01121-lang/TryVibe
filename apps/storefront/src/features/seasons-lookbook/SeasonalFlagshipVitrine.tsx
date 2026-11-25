@@ -39,6 +39,7 @@ import {
   getSeasonLookbookFallbackUrl,
   getSeasonMaskFallbackUrl,
   getVariantDefaultFallbackUrl,
+  hasSlotPhotometricCoverage,
   InteractiveAiLookbookStage,
   resolveSeasonsVitrineUrl,
   type ScanBeamTrigger,
@@ -47,10 +48,7 @@ import {
   type SeasonWearableVariantView,
   type WearableSlotKey,
 } from './InteractiveAiLookbookStage';
-import {
-  PhotometricLookbookCache,
-  type MaterialOpticalProfile,
-} from './photometric-recolor';
+import { PhotometricLookbookCache } from './photometric-recolor';
 import styles from './seasons-vitrine.module.css';
 
 export interface SeasonalFlagshipVitrineProps {
@@ -100,7 +98,7 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
         productSlug: 'ao-so-mi-lua-to-tam-tam-xuan',
         productName: 'Áo Sơ Mi Lụa Tơ Tằm Tầm Xuân',
         basePriceVnd: 1_850_000,
-        pinPosition: { xPercent: 48, yPercent: 34 },
+        pinPosition: { xPercent: 56, yPercent: 34 },
         garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-top.png',
         maskBbox: { x: 0.28, y: 0.22, w: 0.44, h: 0.28 },
         materialOpticalProfile: {
@@ -169,7 +167,7 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
         productSlug: 'chan-vay-xep-ly-midi-cap-cao',
         productName: 'Chân Váy Xếp Ly Midi Cạp Cao',
         basePriceVnd: 2_150_000,
-        pinPosition: { xPercent: 52, yPercent: 64 },
+        pinPosition: { xPercent: 48, yPercent: 56 },
         garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-bottom.png',
         maskBbox: { x: 0.24, y: 0.48, w: 0.52, h: 0.4 },
         materialOpticalProfile: {
@@ -238,9 +236,9 @@ const CANONICAL_SEASON_PRESETS: CanonicalSeasonPreset[] = [
         productSlug: 'vi-cam-tay-clutch-champagne',
         productName: 'Ví Cầm Tay Clutch Champagne',
         basePriceVnd: 1_290_000,
-        pinPosition: { xPercent: 68, yPercent: 54 },
+        pinPosition: { xPercent: 42, yPercent: 74 },
         garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-accessory.png',
-        maskBbox: { x: 0.56, y: 0.46, w: 0.22, h: 0.16 },
+        maskBbox: { x: 0, y: 0, w: 0, h: 0 },
         materialOpticalProfile: {
           sheen: 'leather',
           specularIntensity: 0.52,
@@ -1073,16 +1071,25 @@ export function SeasonalFlagshipVitrine({
         },
       }));
 
-      // 1. Fire 0.48s golden AiOpticalScanBeam over exact garment maskBbox
-      const nextScanSeq = ++scanSeqRef.current;
-      setScanTrigger({
-        slotKey: slot.slotKey,
-        maskBbox: slot.maskBbox,
-        seq: nextScanSeq,
-      });
+      // 1. Fire 0.48s golden AiOpticalScanBeam ONLY when the slot has actual painted mask pixels
+      // (Non-worn ACCESSORY slots with empty masks still update Right Card + Left Macro Swatch cleanly
+      // without drawing a distracting rectangular scan box over empty dress fabric.)
+      const cachedScene = photometricCacheRef.current?.getCached(seasonSlug) ?? null;
+      const slotHasMask = hasSlotPhotometricCoverage(slot, cachedScene, seasonSlug);
+      if (slotHasMask) {
+        const nextScanSeq = ++scanSeqRef.current;
+        setScanTrigger({
+          slotKey: slot.slotKey,
+          maskBbox: slot.maskBbox,
+          seq: nextScanSeq,
+        });
+      }
 
-      // 2. Check if all slots are back to default colors
-      const allDefault = activeSeason.wearableSlots.every((s) => {
+      // 2. Check if all masked garment slots are back to default colors
+      const allMaskedDefault = activeSeason.wearableSlots.every((s) => {
+        if (!hasSlotPhotometricCoverage(s, cachedScene, seasonSlug)) {
+          return true;
+        }
         const chosen = nextSeasonSelection[s.slotKey] ?? s.variants[0]?.colorKey;
         return chosen === s.variants[0]?.colorKey;
       });
@@ -1092,13 +1099,21 @@ export function SeasonalFlagshipVitrine({
         nextSeasonSelection,
       );
 
-      if (allDefault) {
+      if (allMaskedDefault) {
         setServerRestyleState({
           comboKey,
           sceneImageUrl: null,
           cacheHit: false,
           loading: false,
         });
+        return;
+      }
+
+      // Non-worn accessory change does not alter lookbook pixels; keep existing garment render intact
+      if (!slotHasMask) {
+        setServerRestyleState((prev) =>
+          prev.sceneImageUrl ? { ...prev, comboKey } : prev,
+        );
         return;
       }
 

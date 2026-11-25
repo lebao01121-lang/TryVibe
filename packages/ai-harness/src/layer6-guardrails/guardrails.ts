@@ -144,7 +144,10 @@ export function sanitizeCustomerNote(
 }
 
 const PROMPT_OVERRIDE_DIRECTIVE_REGEX =
-  /\b(?:system\s+instruction|system\s+prompt|developer\s+instruction|assistant\s+instruction|override\s+instruction)\s*[:\-]?/gi;
+  /\b(?:system\s+instruction|system\s+prompt|developer\s+instruction|assistant\s+instruction|override\s+instruction)\s*[:-]?/gi;
+
+const EMBEDDED_HIJACK_DIRECTIVE_REGEX =
+  /(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:previous|prior|above|earlier|system)\s+(?:instructions?|prompts?|rules?|directives?|policies?)|\b(?:drop\s+table|truncate\s+table|drop\s+database)\b/gi;
 
 export function wrapUntrustedCustomerNotes(
   notes: readonly string[],
@@ -158,6 +161,7 @@ export function wrapUntrustedCustomerNotes(
       .replace(BOUNDARY_TAG_REGEX, ' ')
       .replace(GENERIC_XML_TAG_REGEX, ' ')
       .replace(PROMPT_OVERRIDE_DIRECTIVE_REGEX, ' ')
+      .replace(EMBEDDED_HIJACK_DIRECTIVE_REGEX, '[NEUTRALIZED_DIRECTIVE]')
       .replace(/[<>]/g, ' ');
     const piiMasked = maskPii(strippedDirectives).replace(/\s+/g, ' ').trim();
     const chars = Array.from(piiMasked);
@@ -205,21 +209,21 @@ const INJECTION_RULES: readonly InjectionRuleDefinition[] = [
     severity: 'CRITICAL',
     reason: 'Attempted exfiltration of restricted procurement/COGS pricing fields.',
     pattern:
-      /(?:reveal|expose|show|dump|leak|print|return|disclose|extract|give\s+me|tiet\s+lo|hien\s+thi|xuat)\s+(?:all\s+|the\s+)?(?:internal\s+|secret\s+)?(?:cost_price|costprice|gia\s*nhap|gia_nhap|gianhap|cogs|gia\s*von)/i,
+      /(?:reveal|expose|show|dump|leak|print|return|disclose|extract|give\s+me|what\s+is|tell\s+me|tiet\s+lo|hien\s+thi|xuat|hoi|cho\s+(?:toi|minh|em)\s+(?:biet|xem)|gui\s+(?:cho\s+(?:toi|minh)\s+)?)\s+(?:all\s+|the\s+|toan\s+bo\s+)?(?:internal\s+|secret\s+|noi\s+bo\s+|supplier\s+|nha\s+cung\s+cap\s+)?(?:cost_price|costprice(?:vnd)?|unitcost(?:vnd)?|supplier_?cost|gia\s*nhap|gia_nhap|gianhap|cogs|gia\s*von)|(?:costpricevnd|cost_price|supplier\s*cost|gia\s*von|gia\s*nhap)\s+(?:cua|la\s+bao\s+nhieu|noi\s+bo|tu\s+nha\s+cung\s+cap|bao\s+nhieu)/i,
   },
   {
     ruleId: 'SYSTEM_PROMPT_OVERRIDE',
     severity: 'HIGH',
     reason: 'Attempted system prompt extraction or privileged role impersonation.',
     pattern:
-      /(?:reveal|print|dump|show|override|replace)\s+(?:your\s+|the\s+)?(?:system\s+prompt|developer\s+prompt|hidden\s+instructions?)|(?:you\s+are\s+now|act\s+as|pretend\s+to\s+be)\s+(?:a\s+)?(?:super_?admin|root|unrestricted\s+ai|system\s+override)|elevate\s+(?:my\s+)?privileges/i,
+      /(?:reveal|print|dump|show|override|replace|hien\s+thi|in\s+ra|tiet\s+lo)\s+(?:your\s+|the\s+)?(?:system\s+prompt|developer\s+prompt|hidden\s+instructions?)|(?:you\s+are\s+now|act\s+as|pretend\s+to\s+be|hay\s+dong\s+vai|tro\s+thanh|gia\s+lam)\s+(?:a\s+|mot\s+)?(?:super_?admin|root|unrestricted\s+ai|system\s+override|admin\s+noi\s+bo)|elevate\s+(?:my\s+)?privileges/i,
   },
   {
     ruleId: 'TOOL_HIJACK_OR_SQLI',
     severity: 'HIGH',
     reason: 'Attempted unauthorized tool hijacking or SQL injection payload.',
     pattern:
-      /(?:invoke|execute|call|run)\s+(?:tool\s+)?(?:delete_|drop_|truncate_|grant_|exec_sql|run_shell)|;\s*drop\s+table\b|\bunion\s+all?\s+select\b/i,
+      /(?:invoke|execute|call|run)\s+(?:tool\s+)?(?:delete_|drop_|truncate_|grant_|exec_sql|run_shell)|(?:;\s*|\b)(?:drop\s+table|truncate\s+table|drop\s+database)\b|\bunion\s+all?\s+select\b/i,
   },
 ];
 
@@ -247,6 +251,62 @@ export function detectPromptInjection(text: string): PromptInjectionResult {
   }
 
   let severity: 'NONE' | 'LOW' | 'HIGH' | 'CRITICAL' = 'NONE';
+  for (const match of matches) {
+    if (SEVERITY_ORDER[match.severity] > SEVERITY_ORDER[severity]) {
+      severity = match.severity;
+    }
+  }
+
+  return {
+    detected: matches.length > 0,
+    blocked: matches.length > 0,
+    severity,
+    matchedRules: matches.map((m) => m.ruleId),
+    matches,
+  };
+}
+
+const STOREFRONT_PRIVILEGE_RULES: readonly InjectionRuleDefinition[] = [
+  {
+    ruleId: 'STOREFRONT_COST_OR_SUPPLIER_EXFIL',
+    severity: 'CRITICAL',
+    reason:
+      'Storefront caller attempted to extract restricted costPriceVnd, COGS, margin, or internal supplier pricing.',
+    pattern:
+      /\b(?:costpricevnd|cost_price|costprice|unitcostvnd|unit_cost|supplier_?cost|wholesale_?cost|gianhap|gia_nhap|cogs)\b|\bgia\s+(?:von|nhap|goc\s+xuong|si\s+nha\s+cung\s+cap)\b|\b(?:bien\s+loi\s+nhuan|loi\s+nhuan\s+gop|chiet\s+khau\s+nha\s+cung\s+cap|supplier\s+(?:cost|price|invoice|payable|id))\b/i,
+  },
+  {
+    ruleId: 'STOREFRONT_ADMIN_TOOL_ESCALATION',
+    severity: 'CRITICAL',
+    reason:
+      'Storefront caller attempted to invoke an Admin/Warehouse mutating tool or NHAP_AI procurement workflow.',
+    pattern:
+      /\b(?:create_draft_purchase_order|create_purchase_order_draft|validate_and_process_garment_image|get_tryon_demand_signals|analyze_refund_and_sizing_issues|create_clearance_campaign_draft|nhap_ai)\b|(?:tao|lap|gui|duyet|kich\s+hoat|create|submit|approve)\s+(?:ngay\s+|giup\s+|cho\s+(?:toi|minh)\s+)?(?:ban\s+nhap\s+)?(?:don\s+nhap\s+hang|po\s+draft|purchase\s+order|draft\s+purchase\s+order|po\b|nhap\s+kho|don\s+dat\s+nhap)/i,
+  },
+];
+
+export function detectStorefrontPromptInjection(
+  text: string,
+): PromptInjectionResult {
+  const source = typeof text === 'string' ? text : String(text ?? '');
+  const base = detectPromptInjection(source);
+  const normalized = normalizeForInjectionScan(source);
+  const matches: PromptInjectionRuleMatch[] = [...base.matches];
+  const seen = new Set(base.matchedRules);
+
+  for (const rule of STOREFRONT_PRIVILEGE_RULES) {
+    const target = rule.scanRaw ? source : normalized;
+    if (rule.pattern.test(target) && !seen.has(rule.ruleId)) {
+      seen.add(rule.ruleId);
+      matches.push({
+        ruleId: rule.ruleId,
+        severity: rule.severity,
+        reason: rule.reason,
+      });
+    }
+  }
+
+  let severity: 'NONE' | 'LOW' | 'HIGH' | 'CRITICAL' = base.severity;
   for (const match of matches) {
     if (SEVERITY_ORDER[match.severity] > SEVERITY_ORDER[severity]) {
       severity = match.severity;
@@ -312,7 +372,7 @@ const UNTRUSTED_DATA_INJECTION_RULES: readonly InjectionRuleDefinition[] = [
     severity: 'CRITICAL',
     reason: 'Untrusted customer note contains an embedded SYSTEM/DEVELOPER instruction header.',
     pattern:
-      /\b(?:system\s+instruction|system\s+prompt|developer\s+instruction|assistant\s+instruction|admin\s+override|override\s+instruction)\s*[:\-]/i,
+      /\b(?:system\s+instruction|system\s+prompt|developer\s+instruction|assistant\s+instruction|admin\s+override|override\s+instruction)\s*[:-]/i,
   },
   {
     ruleId: 'UNTRUSTED_REFUND_HIJACK',
@@ -327,6 +387,14 @@ const UNTRUSTED_DATA_INJECTION_RULES: readonly InjectionRuleDefinition[] = [
     reason: 'Untrusted customer note attempts to trigger an unauthorized purchase order.',
     pattern:
       /(?:dat\s+nhap\s+(?:ngay|them|\d+)|tao\s+(?:ngay\s+)?don\s+nhap|lap\s+nhap\s+don\s+nhap|create\s+purchase\s+order|order\s+\d{2,}\s+(?:units|pcs|shirts|chiec|ao))/i,
+  },
+  {
+    ruleId: 'UNTRUSTED_APPROVAL_OR_DESTRUCTIVE_HIJACK',
+    severity: 'CRITICAL',
+    reason:
+      'Untrusted customer note attempts to hijack PO/refund approval or run destructive commands.',
+    pattern:
+      /(?:approve|submit|confirm|auto[\s_-]*approve|bypass)\s+(?:all\s+|this\s+|the\s+)?(?:po\b|purchase\s+order|draft|rma|refund)|(?:duyet|xac\s+nhan)\s+(?:ngay\s+|tu\s+dong\s+)?(?:po\b|don\s+nhap|rma)|(?:drop|truncate)\s+(?:table|database|orders?|products?)/i,
   },
 ];
 

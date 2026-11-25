@@ -40,6 +40,64 @@ export class BffRedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  isConnected(): boolean {
+    return this.client.isConnected();
+  }
+
+  async pushReplayEventSafe(
+    key: string,
+    serializedEvent: string,
+    maxItems: number,
+    ttlMs: number,
+  ): Promise<boolean> {
+    try {
+      const ok = await this.client.connect();
+      if (!ok) {
+        return false;
+      }
+      const results = await this.client.raw
+        .pipeline()
+        .rpush(key, serializedEvent)
+        .ltrim(key, -Math.max(1, maxItems), -1)
+        .pexpire(key, Math.max(1000, ttlMs))
+        .exec();
+      if (!results) {
+        return false;
+      }
+      const failed = results.find(([err]) => err !== null);
+      if (failed) {
+        this.logger.warn(
+          { key, err: failed[0] },
+          'Redis replay pipeline returned error; degrading to memory fallback',
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        { key, err: error instanceof Error ? error.message : String(error) },
+        'Redis replay write failed; degrading to memory fallback',
+      );
+      return false;
+    }
+  }
+
+  async getReplayEventsSafe(key: string): Promise<string[] | null> {
+    try {
+      const ok = await this.client.connect();
+      if (!ok) {
+        return null;
+      }
+      return await this.client.raw.lrange(key, 0, -1);
+    } catch (error) {
+      this.logger.warn(
+        { key, err: error instanceof Error ? error.message : String(error) },
+        'Redis replay read failed; degrading to memory fallback',
+      );
+      return null;
+    }
+  }
+
   async getSafe(key: string): Promise<string | null> {
     try {
       return await this.client.get(key);

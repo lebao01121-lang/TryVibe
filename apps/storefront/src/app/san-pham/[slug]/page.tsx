@@ -71,14 +71,20 @@ export default async function ProductDetailPage({
   const siteUrl = getSiteBaseUrl();
   const canonicalUrl = `${siteUrl}/san-pham/${encodeURIComponent(product.slug)}`;
 
+  const imageList = [
+    lookbookUrl,
+    ...(flatUrl && flatUrl !== lookbookUrl ? [flatUrl] : []),
+  ].filter(Boolean);
+
   const productJsonLd: Record<string, unknown> = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.name,
     description:
       product.description || product.subtitle || product.fabricComposition,
-    image: [lookbookUrl, ...(flatUrl && flatUrl !== lookbookUrl ? [flatUrl] : [])],
+    image: imageList,
     url: canonicalUrl,
+    category: product.categoryName,
     brand: {
       '@type': 'Brand',
       name: product.brandName,
@@ -90,13 +96,19 @@ export default async function ProductDetailPage({
       url: canonicalUrl,
       priceCurrency: 'VND',
       price: product.minPriceVnd,
+      itemCondition: 'https://schema.org/NewCondition',
       availability:
         product.stockStatusSummary === 'OUT_OF_STOCK'
           ? 'https://schema.org/OutOfStock'
           : 'https://schema.org/InStock',
+      seller: {
+        '@type': 'Organization',
+        name: 'Tầm Xuân Fashion Atelier',
+      },
     },
   };
 
+  // Populate real AggregateRating from live ProductFitStatsDTO (or verified reviews fallback)
   if (fitStats && fitStats.totalReviews > 0) {
     productJsonLd.aggregateRating = {
       '@type': 'AggregateRating',
@@ -105,13 +117,43 @@ export default async function ProductDetailPage({
       bestRating: 5,
       worstRating: 1,
     };
+  } else if (reviews.length > 0) {
+    const ratingSum = reviews.reduce((acc, r) => acc + Number(r.rating || 5), 0);
+    const avg = ratingSum / reviews.length;
+    productJsonLd.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: Number(avg.toFixed(1)),
+      reviewCount: reviews.length,
+      bestRating: 5,
+      worstRating: 1,
+    };
   }
+
+  if (reviews.length > 0) {
+    productJsonLd.review = reviews.slice(0, 5).map((r) => ({
+      '@type': 'Review',
+      author: {
+        '@type': 'Person',
+        name: r.reviewerName,
+      },
+      datePublished: r.createdAt?.slice(0, 10),
+      reviewBody: r.comment,
+      reviewRating: {
+        '@type': 'Rating',
+        ratingValue: r.rating,
+        bestRating: 5,
+        worstRating: 1,
+      },
+    }));
+  }
+
+  const safeJsonLd = JSON.stringify(productJsonLd).replace(/</g, '\\u003c');
 
   return (
     <InnerPageFrame>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonLd }}
       />
       <ProductDetailClient
         product={product}

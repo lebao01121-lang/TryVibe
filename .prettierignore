@@ -10,5 +10,6 @@ dist/
 build/
 out/
 coverage/
+artifacts/
 pnpm-lock.yaml
 services/ai-tryon/.tmp_vton/

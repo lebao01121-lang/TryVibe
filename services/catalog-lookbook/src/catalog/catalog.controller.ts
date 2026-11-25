@@ -1,7 +1,9 @@
+import * as crypto from 'node:crypto';
 import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Headers,
@@ -17,17 +19,18 @@ import {
 import {
   createApiResponse,
   ErrorCode,
+  FitPreference,
   FitTypeSchema,
   GenderSchema,
   ProductFitStatsDtoSchema,
   ProductStatusSchema,
   SizeCodeSchema,
-  SizeRecommendRequestSchema,
   StretchLevelSchema,
   TryOnGarmentCategorySchema,
   UpdateHomepageCampaignSchema,
   VirtualModelCodeSchema,
   type ApiResponse,
+  type SizeRecommendRequest,
 } from '@atelier/contracts';
 import {
   getOrCreateCorrelationId,
@@ -99,6 +102,22 @@ const CreateAdminProductSchema = z.object({
     .optional(),
 });
 
+const AttachMediaBodySchema = z.object({
+  assetId: z.string().min(1).nullable().optional(),
+  variantId: z.string().min(1).nullable().optional(),
+  url: z.string().min(1).nullable().optional(),
+  mediaUrl: z.string().min(1).nullable().optional(),
+  publicUrl: z.string().min(1).nullable().optional(),
+  slot: z.string().trim().min(1).max(64).optional(),
+  role: z.string().trim().min(1).max(64).optional(),
+  mediaType: z.string().trim().min(1).max(64).optional(),
+  assetType: z.string().trim().min(1).max(64).optional(),
+  objectKey: z.string().nullable().optional(),
+  spatialMetadata: z.record(z.unknown()).nullable().optional(),
+  sortOrder: z.coerce.number().int().optional(),
+  setAsPrimary: z.boolean().optional(),
+});
+
 const UpdateAdminProductSchema = z.object({
   categoryId: z.string().min(1).optional(),
   categorySlug: z.string().min(1).optional(),
@@ -115,8 +134,184 @@ const UpdateAdminProductSchema = z.object({
   tryonFlatAssetUrl: z.string().nullable().optional(),
   fitCalibrationNote: z.string().max(500).nullable().optional(),
   status: ProductStatusSchema.optional(),
+  isActive: z.boolean().optional(),
+  sizeChartId: z.string().nullable().optional(),
   occasionSlugs: z.array(z.string()).optional(),
   seasonSlugs: z.array(z.string()).optional(),
+  variantId: z.string().nullable().optional(),
+  lookbookMainUrl: z.string().nullable().optional(),
+  rackFrontAssetId: z.string().nullable().optional(),
+  rackFrontUrl: z.string().nullable().optional(),
+  mediaAttach: AttachMediaBodySchema.nullable().optional(),
+});
+
+const CreateOccasionBodySchema = z.object({
+  slug: z.string().trim().min(2).max(120).optional(),
+  key: z.string().trim().min(2).max(80).optional(),
+  name: z.string().trim().min(2).max(180),
+  tagline: z.string().trim().max(240).optional(),
+  description: z.string().max(1000).nullable().optional(),
+  themeBg: z.string().trim().min(1).max(32).optional(),
+  themeInk: z.string().trim().min(1).max(32).optional(),
+  themeAccent: z.string().trim().min(1).max(32).optional(),
+  isDark: z.boolean().optional(),
+  badgeTag: z.string().max(80).nullable().optional(),
+  coverImageUrl: z.string().nullable().optional(),
+  heroImageUrl: z.string().nullable().optional(),
+  heroCutoutUrl: z.string().nullable().optional(),
+  macroImageUrl: z.string().nullable().optional(),
+  sortOrder: z.coerce.number().int().optional(),
+  isActive: z.boolean().optional(),
+  spuIds: z.array(z.string().min(1)).optional(),
+  productSlugs: z.array(z.string().min(1)).optional(),
+});
+
+const UpdateOccasionBodySchema = CreateOccasionBodySchema.partial();
+
+const SeasonSwatchBodySchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  hex: z.string().trim().min(4).max(16),
+  fabricNote: z.string().max(240).nullable().optional(),
+  colorKey: z.string().max(64).nullable().optional(),
+  sheen: z.string().max(32).nullable().optional(),
+});
+
+const CreateSeasonBodySchema = z.object({
+  slug: z.string().trim().min(2).max(120).optional(),
+  code: z.string().trim().min(2).max(80).optional(),
+  name: z.string().trim().min(2).max(180),
+  shortName: z.string().trim().max(80).optional(),
+  subtitle: z.string().trim().max(240).optional(),
+  months: z.string().trim().max(64).optional(),
+  seasonTag: z.string().trim().max(80).optional(),
+  materialHeadline: z.string().trim().max(240).optional(),
+  note: z.string().max(1000).optional(),
+  paletteHex: z.string().trim().max(32).optional(),
+  seasonOrder: z.coerce.number().int().optional(),
+  sortOrder: z.coerce.number().int().optional(),
+  heroImageUrl: z.string().nullable().optional(),
+  coverAssetUrl: z.string().nullable().optional(),
+  swatches: z.array(SeasonSwatchBodySchema).optional(),
+  paletteJsonb: z
+    .union([z.array(SeasonSwatchBodySchema), z.record(z.unknown())])
+    .optional(),
+  lookbookMeta: z.record(z.unknown()).nullable().optional(),
+  isCurrent: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+  spuIds: z.array(z.string().min(1)).optional(),
+  productSlugs: z.array(z.string().min(1)).optional(),
+});
+
+const UpdateSeasonBodySchema = CreateSeasonBodySchema.partial();
+
+const CreateCategoryBodySchema = z.object({
+  parentId: z.string().min(1).nullable().optional(),
+  slug: z.string().trim().min(2).max(120).optional(),
+  name: z.string().trim().min(2).max(180),
+  description: z.string().max(1000).nullable().optional(),
+  sortOrder: z.coerce.number().int().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const UpdateCategoryBodySchema = CreateCategoryBodySchema.partial();
+
+const SizeChartStretchSchema = z.enum(['NONE', 'LOW', 'LIGHT', 'MEDIUM', 'HIGH']);
+
+const SizeChartRowBodySchema = z.object({
+  sizeCode: SizeCodeSchema,
+  heightMinCm: z.coerce.number().min(100).max(240).nullable().optional(),
+  heightMaxCm: z.coerce.number().min(100).max(240).nullable().optional(),
+  weightMinKg: z.coerce.number().min(20).max(220).nullable().optional(),
+  weightMaxKg: z.coerce.number().min(20).max(220).nullable().optional(),
+  chestMin: z.coerce.number().nullable().optional(),
+  chestMax: z.coerce.number().nullable().optional(),
+  chestMinCm: z.coerce.number().nullable().optional(),
+  chestMaxCm: z.coerce.number().nullable().optional(),
+  bustCm: z.coerce.number().nullable().optional(),
+  waistMin: z.coerce.number().nullable().optional(),
+  waistMax: z.coerce.number().nullable().optional(),
+  waistMinCm: z.coerce.number().nullable().optional(),
+  waistMaxCm: z.coerce.number().nullable().optional(),
+  waistCm: z.coerce.number().nullable().optional(),
+  hipMin: z.coerce.number().nullable().optional(),
+  hipMax: z.coerce.number().nullable().optional(),
+  hipMinCm: z.coerce.number().nullable().optional(),
+  hipMaxCm: z.coerce.number().nullable().optional(),
+  hipCm: z.coerce.number().nullable().optional(),
+  shoulderCm: z.coerce.number().nullable().optional(),
+  lengthCm: z.coerce.number().nullable().optional(),
+  stretchLevel: SizeChartStretchSchema.nullable().optional(),
+  fitNotes: z.string().max(500).nullable().optional(),
+});
+
+const CreateSizeChartBodySchema = z.object({
+  code: z.string().trim().min(2).max(80).optional(),
+  name: z.string().trim().min(2).max(180).optional(),
+  categoryId: z.string().min(1).nullable().optional(),
+  garmentCategory: z.string().trim().min(1).max(80).optional(),
+  garmentType: z.string().trim().min(1).max(80).optional(),
+  gender: GenderSchema.optional(),
+  stretchLevel: SizeChartStretchSchema.optional(),
+  fitNote: z.string().max(1000).nullable().optional(),
+  fitNotes: z.string().max(1000).nullable().optional(),
+  sizeCode: SizeCodeSchema.optional(),
+  chestMin: z.coerce.number().nullable().optional(),
+  chestMax: z.coerce.number().nullable().optional(),
+  waistMin: z.coerce.number().nullable().optional(),
+  waistMax: z.coerce.number().nullable().optional(),
+  hipMin: z.coerce.number().nullable().optional(),
+  hipMax: z.coerce.number().nullable().optional(),
+  shoulderCm: z.coerce.number().nullable().optional(),
+  weightMinKg: z.coerce.number().nullable().optional(),
+  weightMaxKg: z.coerce.number().nullable().optional(),
+  heightMinCm: z.coerce.number().nullable().optional(),
+  heightMaxCm: z.coerce.number().nullable().optional(),
+  rows: z.array(SizeChartRowBodySchema).optional(),
+});
+
+const UpdateSizeChartBodySchema = CreateSizeChartBodySchema.partial();
+
+const AddProductVariantBodySchema = z.object({
+  variantId: z.string().min(1).nullable().optional(),
+  sku: z.string().trim().min(2).max(80).optional(),
+  skuCode: z.string().trim().min(2).max(80).optional(),
+  size: SizeCodeSchema.optional(),
+  sizeCode: SizeCodeSchema.optional(),
+  colorName: z.string().trim().min(1).max(100),
+  colorHex: z.string().trim().min(4).max(16).optional(),
+  priceVnd: z.coerce.number().int().nonnegative().optional(),
+  basePriceVnd: z.coerce.number().int().nonnegative().optional(),
+  salePriceVnd: z.coerce.number().int().nonnegative().nullable().optional(),
+  costPriceVnd: z.coerce.number().int().nonnegative().optional(),
+  barcode: z.string().trim().max(80).nullable().optional(),
+  weightGrams: z.coerce.number().int().nonnegative().optional(),
+  isActive: z.boolean().optional(),
+  inStock: z.boolean().optional(),
+  isReturnable: z.boolean().optional(),
+  supplierId: z.string().nullable().optional(),
+  lookbookMainUrl: z.string().nullable().optional(),
+  tryonFlatPreviewUrl: z.string().nullable().optional(),
+  rackFrontUrl: z.string().nullable().optional(),
+  skus: z
+    .array(
+      z.object({
+        sku: z.string().trim().min(2).max(80).optional(),
+        skuCode: z.string().trim().min(2).max(80).optional(),
+        size: SizeCodeSchema.optional(),
+        sizeCode: SizeCodeSchema.optional(),
+        priceVnd: z.coerce.number().int().nonnegative().optional(),
+        basePriceVnd: z.coerce.number().int().nonnegative().optional(),
+        salePriceVnd: z.coerce.number().int().nonnegative().nullable().optional(),
+        costPriceVnd: z.coerce.number().int().nonnegative().optional(),
+        barcode: z.string().trim().max(80).nullable().optional(),
+        weightGrams: z.coerce.number().int().nonnegative().optional(),
+        isActive: z.boolean().optional(),
+        inStock: z.boolean().optional(),
+        isReturnable: z.boolean().optional(),
+        supplierId: z.string().nullable().optional(),
+      }),
+    )
+    .optional(),
 });
 
 const UpdateAdminSkuSchema = z.object({
@@ -225,6 +420,45 @@ function extractHeader(headers: HeaderBag, name: string): string | undefined {
   return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
 }
 
+const Stage3SizeRecommendBodySchema = z
+  .object({
+    productId: z.string().trim().min(1).optional(),
+    productSlug: z.string().trim().min(1).optional(),
+    slug: z.string().trim().min(1).optional(),
+    heightCm: z.coerce.number().min(120).max(230),
+    weightKg: z.coerce.number().min(25).max(200),
+    bustCm: z.coerce.number().min(50).max(180).nullable().optional(),
+    waistCm: z.coerce.number().min(40).max(170).nullable().optional(),
+    hipCm: z.coerce.number().min(50).max(190).nullable().optional(),
+    shoulderCm: z.coerce.number().min(28).max(70).nullable().optional(),
+    fitPreference: z
+      .enum(['SLIM', 'REGULAR', 'RELAXED', 'SNUG', 'TRUE_TO_SIZE'])
+      .optional(),
+    stretchLevel: z
+      .enum(['NONE', 'LOW', 'LIGHT', 'MEDIUM', 'HIGH'])
+      .optional(),
+  })
+  .refine((v) => Boolean(v.productId || v.productSlug || v.slug), {
+    message: 'Either productId, productSlug, or slug is required',
+  });
+
+function mapFitPreferenceInput(
+  raw: 'SLIM' | 'REGULAR' | 'RELAXED' | 'SNUG' | 'TRUE_TO_SIZE' | undefined,
+): FitPreference {
+  if (raw === 'SNUG' || raw === 'SLIM') return FitPreference.SLIM;
+  if (raw === 'RELAXED') return FitPreference.RELAXED;
+  return FitPreference.REGULAR;
+}
+
+function timingSafeSecretEquals(provided: string, expected: string): boolean {
+  const bufA = Buffer.from(provided, 'utf8');
+  const bufB = Buffer.from(expected, 'utf8');
+  if (bufA.length !== bufB.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 @Controller('v1/catalog')
 export class CatalogController {
   constructor(
@@ -236,7 +470,8 @@ export class CatalogController {
 
   private requireInternalSecret(headers: HeaderBag): void {
     const provided = extractHeader(headers, 'x-internal-secret');
-    if (!provided || provided !== this.config.infra.internalServiceSecret) {
+    const expected = this.config.infra.internalServiceSecret;
+    if (!provided || !expected || !timingSafeSecretEquals(provided, expected)) {
       throw new ForbiddenException({
         code: ErrorCode.FORBIDDEN,
         message: 'Invalid or missing x-internal-secret header',
@@ -268,20 +503,142 @@ export class CatalogController {
 
   @Get('occasions')
   async listOccasions(
+    @Query('activeOnly') activeOnlyRaw: string | undefined,
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['listOccasions']>>>> {
     const correlationId = getOrCreateCorrelationId(headers);
-    const data = await this.catalog.listOccasions();
+    const data = await this.catalog.listOccasions({
+      activeOnly: parseOptionalBoolean(activeOnlyRaw),
+    });
     return createApiResponse(data, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Get('occasions/:id')
+  async getOccasion(
+    @Param('id') id: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['getOccasionByIdOrSlug']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const data = await this.catalog.getOccasionByIdOrSlug(id);
+    return createApiResponse(data, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Post('occasions')
+  @HttpCode(HttpStatus.CREATED)
+  async createOccasion(
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['createOccasion']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const parsed = CreateOccasionBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid create occasion payload',
+        details: { issues: parsed.error.issues },
+      });
+    }
+    const created = await this.catalog.createOccasion(parsed.data);
+    return createApiResponse(created, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Patch('occasions/:id')
+  async updateOccasion(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['updateOccasion']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const parsed = UpdateOccasionBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid update occasion payload',
+        details: { issues: parsed.error.issues },
+      });
+    }
+    const updated = await this.catalog.updateOccasion(id, parsed.data);
+    return createApiResponse(updated, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Delete('occasions/:id')
+  async deleteOccasion(
+    @Param('id') id: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['deleteOccasion']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const deleted = await this.catalog.deleteOccasion(id);
+    return createApiResponse(deleted, { correlationId, service: SERVICE_NAME });
   }
 
   @Get('seasons')
   async listSeasons(
+    @Query('activeOnly') activeOnlyRaw: string | undefined,
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['listSeasons']>>>> {
     const correlationId = getOrCreateCorrelationId(headers);
-    const data = await this.catalog.listSeasons();
+    const data = await this.catalog.listSeasons({
+      activeOnly: parseOptionalBoolean(activeOnlyRaw),
+    });
     return createApiResponse(data, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Get('seasons/:id')
+  async getSeason(
+    @Param('id') id: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['getSeasonByIdOrSlug']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const data = await this.catalog.getSeasonByIdOrSlug(id);
+    return createApiResponse(data, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Post('seasons')
+  @HttpCode(HttpStatus.CREATED)
+  async createSeason(
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['createSeason']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const parsed = CreateSeasonBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid create season payload',
+        details: { issues: parsed.error.issues },
+      });
+    }
+    const created = await this.catalog.createSeason(parsed.data);
+    return createApiResponse(created, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Patch('seasons/:id')
+  async updateSeason(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['updateSeason']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const parsed = UpdateSeasonBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid update season payload',
+        details: { issues: parsed.error.issues },
+      });
+    }
+    const updated = await this.catalog.updateSeason(id, parsed.data);
+    return createApiResponse(updated, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Delete('seasons/:id')
+  async deleteSeason(
+    @Param('id') id: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['deleteSeason']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const deleted = await this.catalog.deleteSeason(id);
+    return createApiResponse(deleted, { correlationId, service: SERVICE_NAME });
   }
 
   @Get('homepage-campaign')
@@ -336,8 +693,16 @@ export class CatalogController {
           ? rawSize
           : undefined;
 
+    const statusParsed = ProductStatusSchema.safeParse(
+      typeof query.status === 'string' ? query.status.trim().toUpperCase() : undefined,
+    );
+
     const result = await this.catalog.listProducts({
       q: typeof query.q === 'string' ? query.q.trim() : undefined,
+      categoryId:
+        typeof query.categoryId === 'string' && query.categoryId.trim()
+          ? query.categoryId.trim()
+          : undefined,
       categorySlug,
       size: rawSize,
       inStockSize: rawInStockSize,
@@ -354,11 +719,91 @@ export class CatalogController {
       minPriceVnd: parseOptionalInt(query.minPriceVnd ?? query.minPrice),
       maxPriceVnd: parseOptionalInt(query.maxPriceVnd ?? query.maxPrice),
       sort: typeof query.sort === 'string' ? query.sort.trim() : undefined,
+      status: statusParsed.success ? statusParsed.data : undefined,
+      includeArchived: parseOptionalBoolean(query.includeArchived),
       page: parseOptionalInt(query.page) ?? 1,
-      pageSize: parseOptionalInt(query.pageSize ?? query.limit) ?? 20,
+      pageSize: parseOptionalInt(query.limit ?? query.pageSize) ?? 20,
       includeCostFields: false,
     });
 
+    return createApiResponse(result, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Post('products/:id/variants')
+  @HttpCode(HttpStatus.CREATED)
+  async addProductVariant(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['addProductVariant']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const parsed = AddProductVariantBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid add variant/SKU payload',
+        details: { issues: parsed.error.issues },
+      });
+    }
+    const created = await this.catalog.addProductVariant(id, parsed.data);
+    return createApiResponse(created, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Post('products/:id/media')
+  @HttpCode(HttpStatus.OK)
+  async attachProductMedia(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['attachProductMedia']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const traceparent = getOrCreateTraceparent(headers);
+    const parsed = AttachMediaBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid attach media payload',
+        details: { issues: parsed.error.issues },
+      });
+    }
+    const result = await this.catalog.attachProductMedia(
+      id,
+      parsed.data,
+      correlationId,
+      traceparent,
+    );
+    return createApiResponse(result, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Post('products/:id/archive')
+  @HttpCode(HttpStatus.OK)
+  async archiveProductPost(
+    @Param('id') id: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['archiveProduct']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const traceparent = getOrCreateTraceparent(headers);
+    const result = await this.catalog.archiveProduct(id, correlationId, traceparent);
+    return createApiResponse(result, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Patch('products/:id')
+  async updateProductAlias(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['updateAdminProduct']>>>> {
+    return this.updateAdminProduct(id, body, headers);
+  }
+
+  @Delete('products/:id')
+  async deleteProductSoftArchive(
+    @Param('id') id: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['archiveProduct']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const traceparent = getOrCreateTraceparent(headers);
+    const result = await this.catalog.archiveProduct(id, correlationId, traceparent);
     return createApiResponse(result, { correlationId, service: SERVICE_NAME });
   }
 
@@ -436,20 +881,128 @@ export class CatalogController {
 
   @Get('categories')
   async listCategories(
+    @Query('includeInactive') includeInactiveRaw: string | undefined,
+    @Query('parentId') parentId: string | undefined,
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['listCategories']>>>> {
     const correlationId = getOrCreateCorrelationId(headers);
-    const categories = await this.catalog.listCategories();
+    const categories = await this.catalog.listCategories({
+      includeInactive: parseOptionalBoolean(includeInactiveRaw),
+      parentId: parentId?.trim() || undefined,
+    });
     return createApiResponse(categories, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Post('categories')
+  @HttpCode(HttpStatus.CREATED)
+  async createCategory(
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['createCategory']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const parsed = CreateCategoryBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid create category payload',
+        details: { issues: parsed.error.issues },
+      });
+    }
+    const created = await this.catalog.createCategory(parsed.data);
+    return createApiResponse(created, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Patch('categories/:id')
+  async updateCategory(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['updateCategory']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const parsed = UpdateCategoryBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid update category payload',
+        details: { issues: parsed.error.issues },
+      });
+    }
+    const updated = await this.catalog.updateCategory(id, parsed.data);
+    return createApiResponse(updated, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Delete('categories/:id')
+  async deleteCategory(
+    @Param('id') id: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['deleteCategory']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const deleted = await this.catalog.deleteCategory(id);
+    return createApiResponse(deleted, { correlationId, service: SERVICE_NAME });
   }
 
   @Get('size-charts')
   async listSizeCharts(
+    @Query('categoryId') categoryId: string | undefined,
+    @Query('garmentType') garmentType: string | undefined,
+    @Query('gender') gender: string | undefined,
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['listSizeCharts']>>>> {
     const correlationId = getOrCreateCorrelationId(headers);
-    const charts = await this.catalog.listSizeCharts();
+    const charts = await this.catalog.listSizeCharts({
+      categoryId: categoryId?.trim() || undefined,
+      garmentType: garmentType?.trim() || undefined,
+      gender: gender?.trim() || undefined,
+    });
     return createApiResponse(charts, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Post('size-charts')
+  @HttpCode(HttpStatus.CREATED)
+  async createSizeChart(
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['createSizeChart']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const parsed = CreateSizeChartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid create size chart payload',
+        details: { issues: parsed.error.issues },
+      });
+    }
+    const created = await this.catalog.createSizeChart(parsed.data);
+    return createApiResponse(created, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Patch('size-charts/:id')
+  async updateSizeChart(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['updateSizeChart']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const parsed = UpdateSizeChartBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid update size chart payload',
+        details: { issues: parsed.error.issues },
+      });
+    }
+    const updated = await this.catalog.updateSizeChart(id, parsed.data);
+    return createApiResponse(updated, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Delete('size-charts/:id')
+  async deleteSizeChart(
+    @Param('id') id: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['deleteSizeChart']>>>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const deleted = await this.catalog.deleteSizeChart(id);
+    return createApiResponse(deleted, { correlationId, service: SERVICE_NAME });
   }
 
   @Post('size-recommend')
@@ -459,7 +1012,7 @@ export class CatalogController {
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['recommendSize']>>>> {
     const correlationId = getOrCreateCorrelationId(headers);
-    const parsed = SizeRecommendRequestSchema.safeParse(body);
+    const parsed = Stage3SizeRecommendBodySchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException({
         code: ErrorCode.VALIDATION_ERROR,
@@ -467,7 +1020,23 @@ export class CatalogController {
         details: { issues: parsed.error.issues },
       });
     }
-    const recommendation = await this.catalog.recommendSize(parsed.data);
+    const normalizedRequest: SizeRecommendRequest & {
+      stretchLevel?: 'NONE' | 'LOW' | 'LIGHT' | 'MEDIUM' | 'HIGH';
+    } = {
+      productId: parsed.data.productId,
+      productSlug: parsed.data.productSlug ?? parsed.data.slug,
+      heightCm: parsed.data.heightCm,
+      weightKg: parsed.data.weightKg,
+      bustCm: parsed.data.bustCm,
+      waistCm: parsed.data.waistCm,
+      hipCm: parsed.data.hipCm,
+      shoulderCm: parsed.data.shoulderCm,
+      fitPreference: mapFitPreferenceInput(parsed.data.fitPreference),
+      ...(parsed.data.stretchLevel
+        ? { stretchLevel: parsed.data.stretchLevel }
+        : {}),
+    };
+    const recommendation = await this.catalog.recommendSize(normalizedRequest);
     return createApiResponse(recommendation, {
       correlationId,
       service: SERVICE_NAME,
@@ -515,6 +1084,10 @@ export class CatalogController {
     );
     const result = await this.catalog.listProducts({
       q: typeof query.q === 'string' ? query.q.trim() : undefined,
+      categoryId:
+        typeof query.categoryId === 'string' && query.categoryId.trim()
+          ? query.categoryId.trim()
+          : undefined,
       categorySlug:
         typeof query.categorySlug === 'string'
           ? query.categorySlug.trim()
@@ -522,8 +1095,9 @@ export class CatalogController {
             ? query.category.trim()
             : undefined,
       status: statusParsed.success ? statusParsed.data : undefined,
+      includeArchived: parseOptionalBoolean(query.includeArchived),
       page: parseOptionalInt(query.page) ?? 1,
-      pageSize: parseOptionalInt(query.pageSize ?? query.limit) ?? 50,
+      pageSize: parseOptionalInt(query.limit ?? query.pageSize) ?? 50,
       includeCostFields: true,
     });
     return createApiResponse(result, { correlationId, service: SERVICE_NAME });
@@ -581,6 +1155,43 @@ export class CatalogController {
     }
     const updated = await this.catalog.updateAdminProduct(id, parsed.data);
     return createApiResponse(updated, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Post('admin/products/:id/variants')
+  @HttpCode(HttpStatus.CREATED)
+  async addAdminProductVariant(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['addProductVariant']>>>> {
+    return this.addProductVariant(id, body, headers);
+  }
+
+  @Post('admin/products/:id/media')
+  @HttpCode(HttpStatus.OK)
+  async attachAdminProductMedia(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['attachProductMedia']>>>> {
+    return this.attachProductMedia(id, body, headers);
+  }
+
+  @Post('admin/products/:id/archive')
+  @HttpCode(HttpStatus.OK)
+  async archiveAdminProductPost(
+    @Param('id') id: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['archiveProduct']>>>> {
+    return this.archiveProductPost(id, headers);
+  }
+
+  @Delete('admin/products/:id')
+  async deleteAdminProductSoftArchive(
+    @Param('id') id: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['archiveProduct']>>>> {
+    return this.deleteProductSoftArchive(id, headers);
   }
 
   @Patch('admin/skus/:id')
@@ -741,6 +1352,7 @@ export class CatalogController {
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['seedAndSync']>>>> {
     const correlationId = getOrCreateCorrelationId(headers);
+    this.requireInternalSecret(headers);
     const summary = await this.catalog.seedAndSync(true);
     return createApiResponse(summary, { correlationId, service: SERVICE_NAME });
   }
@@ -752,6 +1364,7 @@ export class CatalogController {
     @Headers() headers: HeaderBag,
   ): Promise<ApiResponse<Awaited<ReturnType<CatalogService['getSkusSnapshot']>>>> {
     const correlationId = getOrCreateCorrelationId(headers);
+    this.requireInternalSecret(headers);
     const parsed = SkuSnapshotBodySchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException({
@@ -773,6 +1386,7 @@ export class CatalogController {
     ApiResponse<Awaited<ReturnType<CatalogService['handleMediaProcessed']>>>
   > {
     const correlationId = getOrCreateCorrelationId(headers);
+    this.requireInternalSecret(headers);
     const parsed = MediaProcessedBodySchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException({
@@ -794,6 +1408,7 @@ export class CatalogController {
     ApiResponse<Awaited<ReturnType<CatalogService['handleFitStatsUpdated']>>>
   > {
     const correlationId = getOrCreateCorrelationId(headers);
+    this.requireInternalSecret(headers);
     const parsed = FitStatsUpdatedBodySchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException({

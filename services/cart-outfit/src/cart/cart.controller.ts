@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import {
   Body,
   Controller,
@@ -58,6 +59,15 @@ export function extractCartActor(headers: HeaderBag): CartActorContext {
     userId,
     guestSessionId,
   };
+}
+
+function timingSafeSecretEquals(provided: string, expected: string): boolean {
+  const bufA = Buffer.from(provided, 'utf8');
+  const bufB = Buffer.from(expected, 'utf8');
+  if (bufA.length !== bufB.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
 }
 
 @Controller('v1/cart')
@@ -167,7 +177,8 @@ export class CartController {
   > {
     const correlationId = getOrCreateCorrelationId(headers);
     const providedSecret = readSingleHeader(headers, 'x-internal-secret');
-    if (!providedSecret || providedSecret !== this.config.internalServiceSecret) {
+    const expectedSecret = this.config.internalServiceSecret;
+    if (!providedSecret || !expectedSecret || !timingSafeSecretEquals(providedSecret, expectedSecret)) {
       throw new CartApiException(
         HttpStatus.FORBIDDEN,
         ErrorCode.FORBIDDEN,

@@ -15,8 +15,11 @@ CREATE TABLE IF NOT EXISTS warehouses (
   supports_2h_delivery BOOLEAN NOT NULL DEFAULT FALSE,
   priority INTEGER NOT NULL DEFAULT 10,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS stock_levels (
   sku_id UUID NOT NULL,
@@ -90,7 +93,10 @@ CREATE TABLE IF NOT EXISTS inventory_ledger (
   delta_available INTEGER NOT NULL DEFAULT 0,
   delta_reserved INTEGER NOT NULL DEFAULT 0,
   delta_committed INTEGER NOT NULL DEFAULT 0,
+  delta_damaged INTEGER NOT NULL DEFAULT 0,
   balance_available_after INTEGER NOT NULL,
+  before_qty INTEGER,
+  after_qty INTEGER,
   reason VARCHAR(32) NOT NULL
     CHECK (
       reason IN (
@@ -101,24 +107,74 @@ CREATE TABLE IF NOT EXISTS inventory_ledger (
         'CANCEL_RELEASE',
         'GRN_INBOUND',
         'RMA_RESTOCK',
-        'ADJUSTMENT'
+        'ADJUSTMENT',
+        'TRANSFER_OUT',
+        'TRANSFER_IN'
       )
     ),
+  reason_code VARCHAR(64),
   reference_id VARCHAR(128),
+  transfer_ref VARCHAR(128),
   actor_id VARCHAR(128),
+  actor_email VARCHAR(255),
   note TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE inventory_ledger ADD COLUMN IF NOT EXISTS delta_committed INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE inventory_ledger ADD COLUMN IF NOT EXISTS delta_damaged INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE inventory_ledger ADD COLUMN IF NOT EXISTS before_qty INTEGER;
+ALTER TABLE inventory_ledger ADD COLUMN IF NOT EXISTS after_qty INTEGER;
+ALTER TABLE inventory_ledger ADD COLUMN IF NOT EXISTS reason_code VARCHAR(64);
+ALTER TABLE inventory_ledger ADD COLUMN IF NOT EXISTS transfer_ref VARCHAR(128);
 ALTER TABLE inventory_ledger ADD COLUMN IF NOT EXISTS actor_id VARCHAR(128);
+ALTER TABLE inventory_ledger ADD COLUMN IF NOT EXISTS actor_email VARCHAR(255);
 ALTER TABLE inventory_ledger ADD COLUMN IF NOT EXISTS note TEXT;
+
+DO $$
+DECLARE
+  c RECORD;
+BEGIN
+  FOR c IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'inventory_ledger'::regclass
+      AND contype = 'c'
+      AND (conname = 'inventory_ledger_reason_check' OR pg_get_constraintdef(oid) ILIKE '%INITIAL_SEED%')
+  LOOP
+    EXECUTE format('ALTER TABLE inventory_ledger DROP CONSTRAINT IF EXISTS %I', c.conname);
+  END LOOP;
+  ALTER TABLE inventory_ledger
+    ADD CONSTRAINT inventory_ledger_reason_check CHECK (
+      reason IN (
+        'INITIAL_SEED',
+        'RESERVE',
+        'COMMIT',
+        'RELEASE_EXPIRED',
+        'CANCEL_RELEASE',
+        'GRN_INBOUND',
+        'RMA_RESTOCK',
+        'ADJUSTMENT',
+        'TRANSFER_OUT',
+        'TRANSFER_IN'
+      )
+    );
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_inventory_ledger_created
   ON inventory_ledger (created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_inventory_ledger_sku
   ON inventory_ledger (sku_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_ledger_warehouse
+  ON inventory_ledger (warehouse_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_ledger_reason
+  ON inventory_ledger (reason, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_ledger_transfer_ref
+  ON inventory_ledger (transfer_ref);
 
 CREATE TABLE IF NOT EXISTS outbox_events (
   id UUID PRIMARY KEY,
@@ -145,13 +201,26 @@ CREATE TABLE IF NOT EXISTS suppliers (
   id UUID PRIMARY KEY,
   code VARCHAR(32) NOT NULL UNIQUE,
   name VARCHAR(160) NOT NULL,
+  contact_name VARCHAR(160),
   contact_email VARCHAR(255) NOT NULL,
+  contact_phone VARCHAR(64),
+  address TEXT,
   lead_time_days INTEGER NOT NULL DEFAULT 7 CHECK (lead_time_days > 0),
+  payment_terms_days INTEGER NOT NULL DEFAULT 30 CHECK (payment_terms_days >= 0),
   defect_rate_pct NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (defect_rate_pct >= 0),
   status VARCHAR(24) NOT NULL DEFAULT 'ACTIVE'
     CHECK (status IN ('ACTIVE', 'SUSPENDED')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS contact_name VARCHAR(160);
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(64);
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS payment_terms_days INTEGER NOT NULL DEFAULT 30 CHECK (payment_terms_days >= 0);
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS purchase_orders (
   id UUID PRIMARY KEY,
@@ -166,7 +235,9 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
         'NCC_DA_XAC_NHAN',
         'HOAN_TAT_MOT_PHAN',
         'HOAN_TAT',
-        'DA_HUY'
+        'DA_HUY',
+        'CANCELLED',
+        'SUPPLIER_REJECTED'
       )
     ),
   created_source VARCHAR(24) NOT NULL DEFAULT 'USER'
@@ -182,9 +253,52 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   approved_at TIMESTAMPTZ,
   confirmed_by VARCHAR(64),
   confirmed_at TIMESTAMPTZ,
+  cancel_reason TEXT,
+  cancelled_by VARCHAR(64),
+  cancelled_at TIMESTAMPTZ,
+  supplier_rejection_reason TEXT,
+  proposed_delivery_date VARCHAR(32),
+  rejected_by VARCHAR(64),
+  rejected_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS cancelled_by VARCHAR(64);
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS supplier_rejection_reason TEXT;
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS proposed_delivery_date VARCHAR(32);
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(64);
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ;
+
+DO $$
+DECLARE
+  c RECORD;
+BEGIN
+  FOR c IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'purchase_orders'::regclass
+      AND contype = 'c'
+      AND (conname = 'purchase_orders_status_check' OR pg_get_constraintdef(oid) ILIKE '%NHAP_AI%')
+  LOOP
+    EXECUTE format('ALTER TABLE purchase_orders DROP CONSTRAINT IF EXISTS %I', c.conname);
+  END LOOP;
+  ALTER TABLE purchase_orders
+    ADD CONSTRAINT purchase_orders_status_check CHECK (
+      status IN (
+        'NHAP_AI',
+        'CHO_NCC_XAC_NHAN',
+        'NCC_DA_XAC_NHAN',
+        'HOAN_TAT_MOT_PHAN',
+        'HOAN_TAT',
+        'DA_HUY',
+        'CANCELLED',
+        'SUPPLIER_REJECTED'
+      )
+    );
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_supplier_status
   ON purchase_orders (supplier_id, status, created_at DESC);
@@ -242,8 +356,19 @@ CREATE TABLE IF NOT EXISTS supplier_payables (
   status VARCHAR(24) NOT NULL DEFAULT 'UNPAID'
     CHECK (status IN ('UNPAID', 'PAID')),
   due_date VARCHAR(32) NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  bank_reference VARCHAR(160),
+  paid_at TIMESTAMPTZ,
+  paid_by VARCHAR(128),
+  settlement_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE supplier_payables ADD COLUMN IF NOT EXISTS bank_reference VARCHAR(160);
+ALTER TABLE supplier_payables ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+ALTER TABLE supplier_payables ADD COLUMN IF NOT EXISTS paid_by VARCHAR(128);
+ALTER TABLE supplier_payables ADD COLUMN IF NOT EXISTS settlement_note TEXT;
+ALTER TABLE supplier_payables ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE INDEX IF NOT EXISTS idx_supplier_payables_supplier
   ON supplier_payables (supplier_id, status, created_at DESC);

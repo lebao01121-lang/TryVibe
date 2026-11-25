@@ -353,9 +353,12 @@ async function getSkuAvailability(skuId) {
   return data?.items?.[skuId] || data?.list?.find((x) => x.skuId === skuId) || null;
 }
 
+let activeInternalSecret = process.env.INTERNAL_SERVICE_SECRET || 'Atelier_Internal_Svc_2026!';
+
 async function setTestStock(skuId, availableQty, reservedQty = 0) {
   const res = await apiRequest(`${INVENTORY_BASE}/v1/inventory/internal/test-set-stock`, {
     method: 'POST',
+    headers: { 'x-internal-secret': activeInternalSecret },
     body: { skuId, availableQty, reservedQty },
   });
   assert.ok(res.status >= 200 && res.status < 300, `test-set-stock failed (${res.status}): ${res.text}`);
@@ -874,7 +877,7 @@ async function runTest3LatePaymentEdgeCase(sharedState, internalSecret) {
     assert.equal(stockAfterLate.availableQty, 1, `Late payment mutated stock! Expected availableQty=1, got ${stockAfterLate.availableQty}`);
 
     // Admin (SUPER_ADMIN w/ 2FA) refunds late payment
-    const { token: adminToken } = await loginPortalUser('admin@atelier.local', {
+    const { token: adminToken } = await loginPortalUser('lebao01121@gmail.com', {
       requireMfa: true,
       origin: 'http://localhost:3001',
     });
@@ -1582,6 +1585,7 @@ async function main() {
 
   const redisPassword = envVars.REDIS_PASSWORD || 'Atelier_Redis2026!';
   const internalSecret = envVars.INTERNAL_SERVICE_SECRET || 'Atelier_Internal_Svc_2026!';
+  activeInternalSecret = internalSecret;
   const serviceEnv = {
     ...envVars,
     NODE_ENV: 'development',
@@ -1789,7 +1793,7 @@ async function main() {
 
     // Ensure adminToken exists even if Test 3 failed before admin login
     if (!sharedState.adminToken) {
-      const { token } = await loginPortalUser('admin@atelier.local', {
+      const { token } = await loginPortalUser('lebao01121@gmail.com', {
         requireMfa: true,
         origin: 'http://localhost:3001',
       });

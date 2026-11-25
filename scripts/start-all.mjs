@@ -260,7 +260,7 @@ async function main() {
   console.log(` ALL 14 SERVICES & PORTALS ONLINE! (INFRA_MODE=${infraHandle.infraMode})`);
   console.log('------------------------------------------------------------------------');
   console.log('  Storefront Editorial : http://localhost:3000');
-  console.log('  Admin Backoffice     : http://localhost:3001  (admin@atelier.local / Atelier@2026!)');
+  console.log('  Admin Backoffice     : http://localhost:3001  (lebao01121@gmail.com / Atelier@2026!)');
   console.log('  Partner B2B Portal   : http://localhost:3002  (supplier-a@atelier.local / Atelier@2026!)');
   console.log('  Fashion BFF + WS     : http://localhost:4000');
   console.log('  Mailpit 2FA Inbox    : http://localhost:8025');

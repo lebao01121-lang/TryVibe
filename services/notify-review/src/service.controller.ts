@@ -18,6 +18,8 @@ import {
 import { NOTIFY_CONFIG_TOKEN, type NotifyReviewConfig } from './config/env';
 import { NotifyDbService } from './db/notify-db.service';
 import { ReviewEventPublisherService } from './messaging/review-event-publisher.service';
+import { NotifyDlqService } from './notifications/notify-dlq.service';
+import { ZaloZnsClient } from './notifications/zalo-zns.client';
 import { ReviewsService } from './reviews/reviews.service';
 
 @Controller()
@@ -27,6 +29,8 @@ export class NotifyReviewController {
     @Inject(NotifyDbService) private readonly db: NotifyDbService,
     @Inject(ReviewEventPublisherService)
     private readonly eventPublisher: ReviewEventPublisherService,
+    @Inject(ZaloZnsClient) private readonly zaloZnsClient: ZaloZnsClient,
+    @Inject(NotifyDlqService) private readonly notifyDlq: NotifyDlqService,
     @Inject(ReviewsService) private readonly reviewsService: ReviewsService,
   ) {}
 
@@ -51,11 +55,20 @@ export class NotifyReviewController {
     const startedAtMs = Date.now();
     const mailpitProbeStart = Date.now();
 
+    const normalizedSmtpHost = this.config.infra.smtpHost.trim().toLowerCase();
+    const isLocalSmtpHost =
+      normalizedSmtpHost === '127.0.0.1' ||
+      normalizedSmtpHost === 'localhost' ||
+      normalizedSmtpHost === '::1';
+    const smtpProbeTimeoutMs = isLocalSmtpHost ? 400 : 2000;
+
     const [dbPing, mailpitReachable] = await Promise.all([
       this.db.ping(),
-      isTcpReachable(this.config.infra.smtpHost, this.config.infra.smtpPort, 400).catch(
-        () => false,
-      ),
+      isTcpReachable(
+        this.config.infra.smtpHost,
+        this.config.infra.smtpPort,
+        smtpProbeTimeoutMs,
+      ).catch(() => false),
     ]);
     const mailpitLatencyMs = Date.now() - mailpitProbeStart;
 
@@ -80,6 +93,20 @@ export class NotifyReviewController {
         detail: this.eventPublisher.isConnected()
           ? `Connected to ${RABBITMQ_EXCHANGES.DOMAIN_TOPIC}`
           : `Exchange ${RABBITMQ_EXCHANGES.DOMAIN_TOPIC} offline (HTTP catalog sync fallback active)`,
+      },
+      {
+        name: 'rabbitmq-notify-dlq',
+        status: this.notifyDlq.isConnected() ? 'up' : 'skipped',
+        detail: this.notifyDlq.isConnected()
+          ? 'Connected to atelier.notify.dlx -> atelier.notify.dlq'
+          : 'atelier.notify.dlq offline (non-fatal local mode)',
+      },
+      {
+        name: 'zalo-zns-adapter',
+        status: 'up',
+        detail: this.zaloZnsClient.isLiveConfigured()
+          ? 'Zalo OA/ZNS LIVE mode active'
+          : 'Zalo OA/ZNS LOCAL_SANDBOX_DRYRUN mode (no live credentials configured)',
       },
     ];
 
@@ -127,6 +154,8 @@ export class NotifyReviewController {
           uiPort: this.config.infra.mailpitUiPort,
           from: this.config.infra.smtpFrom,
         },
+        zaloZns: this.zaloZnsClient.getStatus(),
+        dlqTopology: this.notifyDlq.getTopology(),
         integrations: {
           catalogFitStatsWebhook: `${this.config.infra.catalogServiceUrl}/v1/catalog/internal/fit-stats-updated`,
           orderDeliveredCheckUrl: `${this.config.infra.orderRmaServiceUrl}/internal/orders/delivered-check`,
@@ -135,6 +164,8 @@ export class NotifyReviewController {
           'POST /internal/notify/order-confirmed',
           'POST /internal/notify/order-packed',
           'POST /internal/notify/po-submitted',
+          'POST /internal/notify/rma-rejected',
+          'POST /internal/notify/zns',
         ],
         messaging: {
           exchange: RABBITMQ_EXCHANGES.DOMAIN_TOPIC,

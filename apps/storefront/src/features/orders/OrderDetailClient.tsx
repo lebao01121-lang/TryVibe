@@ -1,7 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from 'react';
 import { io, type Socket } from 'socket.io-client';
 import {
   FitFeedback,
@@ -20,6 +28,7 @@ import { useScrollLock } from '@atelier/motion-kit';
 import { GiftCardPreview } from '@/features/drawer-bag/GiftCardPreview';
 import { apiFetch, getBffBaseUrl, getStoredSession } from '@/lib/api-client';
 import { FORMAT_VND } from '@/lib/catalog-data';
+import { getOrCreateGuestSessionId } from '@/lib/guest-session';
 
 export interface OrderDetailClientProps {
   orderCode: string;
@@ -94,6 +103,72 @@ const RMA_REASON_OPTIONS: Array<{ value: RmaReasonCode; label: string }> = [
   { value: RmaReasonCode.KHAC, label: 'Lý do khác' },
 ];
 
+const MAX_RMA_EVIDENCE_PHOTOS = 3;
+const MAX_RMA_EVIDENCE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_RMA_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+const CANCEL_REASON_OPTIONS = [
+  'Đổi ý — Muốn chọn lại kích cỡ hoặc thiết kế khác',
+  'Cập nhật lại địa chỉ nhận hàng hoặc thông tin liên hệ',
+  'Muốn thay đổi phương thức thanh toán',
+  'Không còn nhu cầu đặt hàng lúc này',
+] as const;
+
+interface UploadedRmaEvidence {
+  url: string;
+  objectKey?: string;
+  fileName: string;
+}
+
+interface RmaEvidenceUploadResponse {
+  url?: string;
+  publicUrl?: string;
+  processedUrl?: string;
+  originalUrl?: string;
+  objectKey?: string;
+}
+
+async function hasValidClientImageMagicBytes(file: File): Promise<boolean> {
+  try {
+    const headerBuf = await file.slice(0, 12).arrayBuffer();
+    const bytes = new Uint8Array(headerBuf);
+    if (bytes.length < 12) return false;
+    // JPEG: FF D8 FF
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+      return true;
+    }
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a
+    ) {
+      return true;
+    }
+    // WebP: RIFF....WEBP
+    if (
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    ) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function getTimelineIndex(status: OrderStatus): number {
   if (status === OrderStatus.COMPLETED) return TIMELINE_STEPS.length - 1;
   const idx = TIMELINE_STEPS.findIndex((step) => step.status === status);
@@ -120,8 +195,19 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
     RmaReasonCode.SAI_KICH_CO_CHAT,
   );
   const [rmaNote, setRmaNote] = useState('');
+  const [rmaEvidencePhotos, setRmaEvidencePhotos] = useState<UploadedRmaEvidence[]>([]);
+  const [uploadingEvidence, setUploadingEvidence] = useState(false);
+  const [rmaUploadError, setRmaUploadError] = useState<string | null>(null);
+  const rmaFileInputRef = useRef<HTMLInputElement | null>(null);
   const [submittingRma, setSubmittingRma] = useState(false);
   const [rmaFeedback, setRmaFeedback] = useState<string | null>(null);
+
+  // Customer Self-Cancel state (enabled for AWAITING_PAYMENT | CONFIRMED)
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState<string>(CANCEL_REASON_OPTIONS[0]);
+  const [cancellingOrder, setCancellingOrder] = useState(false);
+  const [cancelFeedback, setCancelFeedback] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   // Verified Fit Review Form state (unlocked ONLY when status === DELIVERED)
   const [reviewItemId, setReviewItemId] = useState('');
@@ -195,9 +281,26 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
   // Realtime Socket.io `order:subscribe` for live status transitions (`order:paid`, `order:updated`)
   useEffect(() => {
     try {
-      const socket = io(`${getBffBaseUrl()}/realtime`, {
+      const session = getStoredSession();
+      const guestSessionId = getOrCreateGuestSessionId();
+      const explicitRealtimeUrl = process.env.NEXT_PUBLIC_REALTIME_URL?.trim();
+      const realtimeSocketUrl = explicitRealtimeUrl
+        ? `${explicitRealtimeUrl.replace(/\/+$/, '')}/realtime`
+        : typeof window !== 'undefined' &&
+            window.location.port === '3000' &&
+            (window.location.hostname === '127.0.0.1' ||
+              window.location.hostname === 'localhost')
+          ? `${window.location.protocol}//${window.location.hostname}:4000/realtime`
+          : `${getBffBaseUrl()}/realtime`;
+
+      const socket = io(realtimeSocketUrl, {
+        path: '/socket.io/',
         transports: ['websocket', 'polling'],
         withCredentials: true,
+        auth: {
+          ...(session?.accessToken ? { token: session.accessToken } : {}),
+          guestSessionId,
+        },
         reconnectionAttempts: 3,
         timeout: 5000,
       });
@@ -245,14 +348,148 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
   const isDelivered =
     order?.status === OrderStatus.DELIVERED || order?.status === OrderStatus.COMPLETED;
 
+  const canCustomerCancel =
+    order?.status === OrderStatus.AWAITING_PAYMENT ||
+    order?.status === OrderStatus.CONFIRMED;
+
   const selectedReviewItem = useMemo(
     () => order?.items.find((i) => i.id === reviewItemId) ?? order?.items[0] ?? null,
     [order?.items, reviewItemId],
   );
 
+  const handleSelectRmaEvidenceFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (selectedFiles.length === 0) return;
+
+    setRmaUploadError(null);
+    const remainingSlots = MAX_RMA_EVIDENCE_PHOTOS - rmaEvidencePhotos.length;
+    if (remainingSlots <= 0) {
+      setRmaUploadError(
+        `Bạn đã tải đủ tối đa ${MAX_RMA_EVIDENCE_PHOTOS} ảnh minh chứng cho yêu cầu RMA.`,
+      );
+      return;
+    }
+
+    const filesToProcess = selectedFiles.slice(0, remainingSlots);
+    if (selectedFiles.length > remainingSlots) {
+      setRmaUploadError(
+        `Tối đa ${MAX_RMA_EVIDENCE_PHOTOS} ảnh minh chứng — chỉ tải lên ${remainingSlots} ảnh đầu tiên.`,
+      );
+    }
+
+    setUploadingEvidence(true);
+    const newlyUploaded: UploadedRmaEvidence[] = [];
+
+    for (const file of filesToProcess) {
+      if (!ALLOWED_RMA_IMAGE_MIMES.has(file.type)) {
+        setRmaUploadError(
+          `Tệp "${file.name}" không đúng định dạng. Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP.`,
+        );
+        continue;
+      }
+      if (file.size > MAX_RMA_EVIDENCE_BYTES) {
+        setRmaUploadError(
+          `Tệp "${file.name}" vượt quá dung lượng tối đa 5MB mỗi ảnh.`,
+        );
+        continue;
+      }
+      const validMagic = await hasValidClientImageMagicBytes(file);
+      if (!validMagic) {
+        setRmaUploadError(
+          `Tệp "${file.name}" không đạt kiểm tra nội dung ảnh thực (JPEG/PNG/WebP).`,
+        );
+        continue;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('fileName', file.name);
+      formData.append('mimeType', file.type);
+
+      const uploadRes = await apiFetch<RmaEvidenceUploadResponse>(
+        '/bff/v1/storefront/rma/evidence-upload',
+        {
+          method: 'POST',
+          body: formData,
+          timeoutMs: 25_000,
+        },
+      );
+
+      const uploadedUrl =
+        uploadRes.data?.url ||
+        uploadRes.data?.publicUrl ||
+        uploadRes.data?.processedUrl ||
+        uploadRes.data?.originalUrl ||
+        null;
+
+      if (!uploadRes.ok || !uploadedUrl) {
+        setRmaUploadError(
+          uploadRes.error?.message ||
+            `Không thể tải lên ảnh "${file.name}". Vui lòng thử lại.`,
+        );
+        continue;
+      }
+
+      newlyUploaded.push({
+        url: uploadedUrl,
+        objectKey: uploadRes.data?.objectKey,
+        fileName: file.name,
+      });
+    }
+
+    if (newlyUploaded.length > 0) {
+      setRmaEvidencePhotos((prev) =>
+        [...prev, ...newlyUploaded].slice(0, MAX_RMA_EVIDENCE_PHOTOS),
+      );
+    }
+    setUploadingEvidence(false);
+  };
+
+  const handleRemoveRmaEvidence = (urlToRemove: string) => {
+    setRmaEvidencePhotos((prev) => prev.filter((item) => item.url !== urlToRemove));
+    setRmaUploadError(null);
+  };
+
+  const handleConfirmCancelOrder = async () => {
+    if (!order || !canCustomerCancel) return;
+    setCancellingOrder(true);
+    setCancelError(null);
+    setCancelFeedback(null);
+
+    const hasSession = Boolean(getStoredSession()?.accessToken);
+    const res = await apiFetch<OrderDTO>(
+      `/bff/v1/storefront/orders/${encodeURIComponent(order.orderCode)}/cancel`,
+      {
+        method: 'POST',
+        skipAuthRefresh: !hasSession,
+        body: JSON.stringify({
+          reason: cancelReason.trim() || 'Khách hàng chủ động hủy đơn hàng',
+        }),
+      },
+    );
+
+    setCancellingOrder(false);
+    if (res.ok) {
+      setCancelConfirmOpen(false);
+      if (res.data && res.data.orderCode) {
+        setOrder(res.data);
+      }
+      setCancelFeedback(
+        `Đã hủy đơn hàng #${order.orderCode} thành công. Tồn kho giữ chỗ và mã ưu đãi (nếu có) đã được giải phóng.`,
+      );
+      await fetchOrderAndRma();
+    } else {
+      setCancelError(
+        res.error?.message ||
+          'Chưa thể hủy đơn hàng lúc này. Vui lòng kiểm tra trạng thái đơn hoặc đăng nhập đúng tài khoản đặt hàng.',
+      );
+    }
+  };
+
   const handleSubmitRma = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!order || !rmaItemId) return;
+    if (!order || !rmaItemId || uploadingEvidence) return;
 
     setSubmittingRma(true);
     setRmaFeedback(null);
@@ -272,7 +509,7 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
               : rmaExchangeMode,
           reasonCode: rmaReason,
           customerNote: safeNote,
-          evidencePhotoUrls: [],
+          evidencePhotoUrls: rmaEvidencePhotos.map((photo) => photo.url),
         }),
       },
     );
@@ -281,6 +518,8 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
     if (res.ok && res.data) {
       setRmaModalOpen(false);
       setRmaNote('');
+      setRmaEvidencePhotos([]);
+      setRmaUploadError(null);
       setRmaFeedback(`Đã tạo yêu cầu đổi/trả #${res.data.rmaCode} thành công.`);
       await fetchOrderAndRma();
     } else {
@@ -394,11 +633,26 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
             {ORDER_STATUS_LABELS[order.status] ?? order.status}
           </span>
 
+          {canCustomerCancel ? (
+            <button
+              type="button"
+              data-testid="customer-cancel-order-btn"
+              onClick={() => {
+                setCancelError(null);
+                setCancelConfirmOpen((prev) => !prev);
+              }}
+              className="rounded-full border border-[#8B2E2E]/55 bg-white px-5 py-2 text-xs font-medium uppercase tracking-[0.14em] text-[#8B2E2E] transition-colors hover:bg-[#8B2E2E] hover:text-white"
+            >
+              Hủy đơn hàng
+            </button>
+          ) : null}
+
           {isDelivered ? (
             <button
               type="button"
               onClick={() => {
                 setRmaFeedback(null);
+                setRmaUploadError(null);
                 setRmaModalOpen(true);
               }}
               className="btn btn--gold !px-5 !py-2.5 !text-xs"
@@ -408,6 +662,82 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
           ) : null}
         </div>
       </div>
+
+      {/* Inline Customer Self-Cancel Confirmation Panel */}
+      {canCustomerCancel && cancelConfirmOpen ? (
+        <section
+          data-testid="customer-cancel-confirm-panel"
+          className="mt-6 rounded-2xl border border-[#8B2E2E]/35 bg-[#FFF5F4] p-5 text-xs text-[#2B2019]"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="font-medium uppercase tracking-[0.14em] text-[#8B2E2E]">
+                Xác nhận hủy đơn hàng #{order.orderCode}
+              </p>
+              <p className="mt-1 text-[#5C4B41]">
+                Hệ thống sẽ lập tức giải phóng tồn kho đang giữ và mở lại lượt sử dụng mã
+                ưu đãi (nếu có). Thao tác này không thể hoàn tác.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <label className="block">
+              <span className="text-[11px] text-[#5C4B41]">Lý do hủy đơn</span>
+              <select
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-[#8B2E2E]/30 bg-white px-3 py-2 text-xs text-[#1C1410]"
+              >
+                {CANCEL_REASON_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setCancelConfirmOpen(false)}
+                disabled={cancellingOrder}
+                className="rounded-full border border-[#8A672C]/40 bg-white px-4 py-2 text-xs uppercase tracking-[0.12em] text-[#5C431C]"
+              >
+                Giữ lại đơn
+              </button>
+              <button
+                type="button"
+                data-testid="customer-cancel-confirm-btn"
+                disabled={cancellingOrder}
+                onClick={() => void handleConfirmCancelOrder()}
+                className="rounded-full bg-[#8B2E2E] px-5 py-2 text-xs font-medium uppercase tracking-[0.14em] text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {cancellingOrder ? 'Đang hủy đơn...' : 'Xác nhận hủy đơn'}
+              </button>
+            </div>
+          </div>
+
+          {cancelError ? (
+            <p
+              role="alert"
+              className="mt-3 rounded-xl border border-red-300 bg-white px-3.5 py-2 text-xs text-[#8B2E2E]"
+            >
+              {cancelError}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {cancelFeedback ? (
+        <div
+          role="status"
+          data-testid="customer-cancel-feedback"
+          className="mt-6 rounded-2xl border border-[#B08A4A]/50 bg-[#F4EBDA] px-5 py-3 text-xs font-medium text-[#1C1410]"
+        >
+          {cancelFeedback}
+        </div>
+      ) : null}
 
       {realtimeBanner ? (
         <div
@@ -615,6 +945,26 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
                     </div>
                     {rma.customerNote ? (
                       <p className="mt-2 text-[#5C4B41]">Ghi chú: “{rma.customerNote}”</p>
+                    ) : null}
+                    {Array.isArray(rma.evidencePhotoUrls) &&
+                    rma.evidencePhotoUrls.length > 0 ? (
+                      <div className="mt-2.5 flex flex-wrap gap-2">
+                        {rma.evidencePhotoUrls.map((photoUrl, photoIdx) => (
+                          <a
+                            key={`${rma.id}-ev-${photoIdx}`}
+                            href={photoUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block h-14 w-14 overflow-hidden rounded-lg border border-[#B08A4A]/35 bg-[#FBF7EF]"
+                          >
+                            <img
+                              src={photoUrl}
+                              alt={`Ảnh minh chứng RMA #${rma.rmaCode} (${photoIdx + 1})`}
+                              className="aspect-square h-full w-full object-cover"
+                            />
+                          </a>
+                        ))}
+                      </div>
                     ) : null}
                     {rma.refundAmountVnd != null && rma.refundAmountVnd > 0 ? (
                       <p className="mt-1.5 font-medium text-emerald-800">
@@ -853,7 +1203,7 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
           }}
         >
           <div
-            className="w-full max-w-xl rounded-[28px] border border-[#B08A4A]/45 bg-[#FBF7EF] p-6 text-[#2B2019] shadow-2xl sm:p-8"
+            className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-[28px] border border-[#B08A4A]/45 bg-[#FBF7EF] p-6 text-[#2B2019] shadow-2xl sm:p-8"
             data-lenis-prevent=""
           >
             <div className="flex items-start justify-between gap-3 border-b border-[#B08A4A]/20 pb-4">
@@ -979,6 +1329,89 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
                 />
               </label>
 
+              {/* Multi-photo RMA Evidence Uploader (max 3 images, JPEG/PNG/WebP <= 5MB) */}
+              <div className="space-y-2.5 rounded-2xl border border-[#B08A4A]/30 bg-white/80 p-4 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-[#1C1410]">
+                      Ảnh minh chứng sản phẩm (tùy chọn)
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-[#7A6A5B]">
+                      Tối đa {MAX_RMA_EVIDENCE_PHOTOS} ảnh · Định dạng JPEG, PNG hoặc WebP
+                      (≤ 5MB/ảnh)
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-[#F4EBDA] px-2.5 py-0.5 font-mono text-[11px] text-[#8A672C]">
+                    {rmaEvidencePhotos.length}/{MAX_RMA_EVIDENCE_PHOTOS}
+                  </span>
+                </div>
+
+                <input
+                  ref={rmaFileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  multiple
+                  onChange={(e) => void handleSelectRmaEvidenceFiles(e)}
+                  data-testid="rma-evidence-file-input"
+                  className="sr-only"
+                />
+
+                <button
+                  type="button"
+                  disabled={
+                    uploadingEvidence ||
+                    rmaEvidencePhotos.length >= MAX_RMA_EVIDENCE_PHOTOS
+                  }
+                  onClick={() => rmaFileInputRef.current?.click()}
+                  data-testid="rma-evidence-upload-btn"
+                  className="w-full rounded-xl border border-dashed border-[#8A672C]/55 bg-[#FBF7EF] px-4 py-3 text-center text-xs font-medium text-[#5C431C] transition-colors hover:bg-[#F4EBDA] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {uploadingEvidence
+                    ? 'Đang tải ảnh minh chứng lên hệ thống...'
+                    : rmaEvidencePhotos.length >= MAX_RMA_EVIDENCE_PHOTOS
+                      ? 'Đã đạt tối đa 3 ảnh minh chứng'
+                      : '+ Chọn ảnh minh chứng từ thiết bị'}
+                </button>
+
+                {rmaUploadError ? (
+                  <p
+                    role="alert"
+                    data-testid="rma-evidence-upload-error"
+                    className="rounded-xl border border-[#8B2E2E]/35 bg-[#FFF5F4] px-3 py-2 text-[11px] text-[#8B2E2E]"
+                  >
+                    {rmaUploadError}
+                  </p>
+                ) : null}
+
+                {rmaEvidencePhotos.length > 0 ? (
+                  <div
+                    data-testid="rma-evidence-thumbnails"
+                    className="grid grid-cols-3 gap-2.5 pt-1"
+                  >
+                    {rmaEvidencePhotos.map((photo, idx) => (
+                      <div
+                        key={`${photo.url}-${idx}`}
+                        className="group relative overflow-hidden rounded-xl border border-[#B08A4A]/35 bg-[#FBF7EF]"
+                      >
+                        <img
+                          src={photo.url}
+                          alt={`Ảnh minh chứng ${idx + 1}: ${photo.fileName}`}
+                          className="aspect-square w-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRmaEvidence(photo.url)}
+                          aria-label={`Xóa ảnh ${photo.fileName}`}
+                          className="absolute top-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-[#1C1410]/85 text-xs text-[#EBCF8F] transition-colors hover:bg-[#8B2E2E] hover:text-white"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
               <div className="flex justify-end gap-2.5 pt-2">
                 <button
                   type="button"
@@ -989,10 +1422,14 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingRma}
+                  disabled={submittingRma || uploadingEvidence}
                   className="btn btn--gold !px-6 !py-2.5 !text-xs disabled:opacity-50"
                 >
-                  {submittingRma ? 'Đang gửi yêu cầu...' : 'Gửi yêu cầu RMA'}
+                  {submittingRma
+                    ? 'Đang gửi yêu cầu...'
+                    : uploadingEvidence
+                      ? 'Đang tải ảnh...'
+                      : 'Gửi yêu cầu RMA'}
                 </button>
               </div>
             </form>

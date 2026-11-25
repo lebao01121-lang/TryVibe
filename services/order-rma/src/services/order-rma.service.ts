@@ -1,13 +1,16 @@
 import * as crypto from 'node:crypto';
 import { HttpStatus, Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import {
+  AdminCancelOrderDtoSchema,
   CheckoutSubmitDtoSchema,
+  CompleteOrderDtoSchema,
   CompleteRmaQcDtoSchema,
   createEventEnvelope,
   ErrorCode,
   EVENT_NAMES,
   OrderStatus,
   PaymentMethod,
+  RejectRmaDtoSchema,
   RmaExchangeMode,
   RmaReasonCode,
   RmaReasonCodeSchema,
@@ -17,6 +20,7 @@ import {
   RmaExchangeModeSchema,
   ShipmentStatus,
   ShippingMethod,
+  ShippingMethodSchema,
   truncateRmaCustomerNote,
   type CompleteRmaQcDTO,
   type OrderDTO,
@@ -29,7 +33,7 @@ import {
   type ShippingAddressSnapshot,
 } from '@atelier/contracts';
 import type { AtelierDbExecutor } from '@atelier/db-client';
-import { createLogger } from '@atelier/observability';
+import { createLogger, type HeaderBag } from '@atelier/observability';
 import { z } from 'zod';
 import {
   UpstreamServicesClient,
@@ -41,6 +45,13 @@ import { ApiDomainException, parseWithZod } from '../common/api-exception';
 import { ORDER_CONFIG_TOKEN, SERVICE_NAME, type OrderRmaConfig } from '../config/env';
 import { OrderDbService } from '../db/order-db.service';
 import { OrderRabbitMqService } from '../infra/rabbitmq.service';
+import type {
+  MappedWebhookOrderStatus,
+  ShippingProviderSlug,
+  ShippingQuoteResult,
+  ShippingTrackingEventRecord,
+} from '../shipping/shipping-provider.interface';
+import { ShippingProviderRegistry } from '../shipping/shipping-provider.registry';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FREE_SHIP_THRESHOLD_VND = 2_000_000;
@@ -64,6 +75,12 @@ const PackOrderBodySchema = z.object({
   scannedSkuCodes: z.array(z.string().trim().min(1)).optional(),
 });
 
+const CancelOrderBodySchema = z
+  .object({
+    reason: z.string().trim().max(300).optional(),
+  })
+  .optional();
+
 const CreateRmaBodySchema = z.object({
   orderItemId: z.string().trim().min(1).optional(),
   skuId: z.string().trim().min(1).optional(),
@@ -85,6 +102,33 @@ const ApproveRmaBodySchema = z
     replacementSkuId: z.string().trim().min(1).optional(),
     targetSkuId: z.string().trim().min(1).optional(),
     exchangeMode: RmaExchangeModeSchema.optional(),
+    returnTrackingCode: z.string().trim().min(1).max(64).optional(),
+    exchangeTrackingCode: z.string().trim().min(1).max(64).optional(),
+  })
+  .optional();
+
+const ShippingQuoteBodySchema = z.object({
+  provinceCode: z.string().trim().max(32).optional(),
+  districtCode: z.string().trim().max(32).optional(),
+  wardCode: z.string().trim().max(32).optional(),
+  provinceName: z.string().trim().max(120).optional(),
+  districtName: z.string().trim().max(120).optional(),
+  wardName: z.string().trim().max(120).optional(),
+  streetLine: z.string().trim().max(255).optional(),
+  shippingMethod: ShippingMethodSchema.optional(),
+  weightGrams: z.coerce.number().int().positive().max(50_000).optional().default(500),
+  orderValueVnd: z.coerce.number().int().nonnegative().optional(),
+  subtotalVnd: z.coerce.number().int().nonnegative().optional(),
+  codAmountVnd: z.coerce.number().int().nonnegative().optional().default(0),
+});
+
+const ShipOrderBodySchema = z
+  .object({
+    trackingCode: z.string().trim().min(1).max(64).optional(),
+    carrier: z.string().trim().min(1).max(32).optional(),
+    shippingMethod: ShippingMethodSchema.optional(),
+    weightGrams: z.coerce.number().int().positive().max(50_000).optional(),
+    note: z.string().trim().max(300).optional(),
   })
   .optional();
 
@@ -112,12 +156,18 @@ const TestExpireOrderSchema = z
 
 export interface OrderActorContext {
   userId: string | null;
+  actorEmail?: string | null;
   guestSessionId: string | null;
   loyaltyTier: string | null;
   actorRoles: string[];
   isInternal: boolean;
   correlationId: string;
   traceparent?: string;
+}
+
+export interface ExtendedOrderItemDTO extends OrderItemDTO {
+  sku: string;
+  quantity: number;
 }
 
 export interface OrderOpsMetricsProductItem {
@@ -139,12 +189,69 @@ export interface OrderOpsMetricsDto {
   rmaByProduct: OrderOpsMetricsProductItem[];
 }
 
+export interface ExtendedShipmentDTO extends ShipmentDTO {
+  actualFeeVnd?: number | null;
+  providerMode?: string | null;
+  expectedDeliveryTime?: string | null;
+}
+
 export interface ExtendedOrderDTO extends OrderDTO {
   customerPhone: string | null;
   packagingFeeVnd: number;
   depositRequiredVnd: number;
   grandTotalVnd: number;
+  totalVnd: number;
   latePaymentRefunded: boolean;
+  completedAt: string | null;
+  completedBy: string | null;
+  cancelledBy: string | null;
+  shippingActualFeeVnd?: number | null;
+  shippingProviderMode?: string | null;
+  shippingTrackingEvents?: ShippingTrackingEventRecord[];
+  shipment: ExtendedShipmentDTO | null;
+  items: ExtendedOrderItemDTO[];
+}
+
+export interface ExtendedRmaRequestDTO extends RmaRequestDTO {
+  returnTrackingCode?: string | null;
+  exchangeTrackingCode?: string | null;
+  shippingTrackingEvents?: ShippingTrackingEventRecord[];
+}
+
+export interface ShippingQuoteResponseDto extends ShippingQuoteResult {
+  freeShippingThresholdVnd: number;
+  freeShippingEligible: boolean;
+  effectiveFeeVnd: number;
+  quotes: ShippingQuoteResult[];
+}
+
+export interface ShippingWebhookProcessResult {
+  deduplicated: boolean;
+  processed: boolean;
+  eventId: string;
+  provider: ShippingProviderSlug;
+  trackingCode: string | null;
+  orderCode: string | null;
+  providerStatus: string;
+  mappedOrderStatus: MappedWebhookOrderStatus;
+  mappedShipmentStatus: ShipmentStatus | null;
+  mappedRmaStatus: RmaStatus | null;
+  orderUpdated: boolean;
+  rmaUpdated: boolean;
+  matchedOrderCode: string | null;
+  matchedRmaCode: string | null;
+  occurredAt: string;
+}
+
+export interface OrderMutationResult extends ExtendedOrderDTO {
+  before: ExtendedOrderDTO;
+  after: ExtendedOrderDTO;
+}
+
+export interface RmaMutationResult extends RmaRequestDTO {
+  before: RmaRequestDTO;
+  after: RmaRequestDTO;
+  customerNotified?: boolean;
 }
 
 export interface CheckoutOrderResult extends ExtendedOrderDTO {
@@ -182,9 +289,15 @@ interface OrderRow {
   late_payment_refunded: boolean;
   paid_at: string | Date | null;
   delivered_at: string | Date | null;
+  completed_at?: string | Date | null;
+  completed_by?: string | null;
   cancelled_at: string | Date | null;
   cancel_reason: string | null;
+  cancelled_by?: string | null;
   payment_intent_jsonb: PaymentIntentResponseDTO | string | null;
+  shipping_actual_fee_vnd?: string | number | null;
+  shipping_provider_mode?: string | null;
+  shipping_tracking_events_jsonb?: ShippingTrackingEventRecord[] | string | null;
   created_at: string | Date;
   updated_at: string | Date;
 }
@@ -218,6 +331,10 @@ interface ShipmentRow {
   status: string;
   pack_photo_url: string | null;
   cod_collect_vnd: string | number;
+  actual_fee_vnd?: string | number | null;
+  provider_mode?: string | null;
+  expected_delivery_time?: string | Date | null;
+  provider_response_jsonb?: Record<string, unknown> | string | null;
   updated_at: string | Date;
 }
 
@@ -238,6 +355,12 @@ interface RmaRow {
   exchange_reservation_id: string | null;
   refund_amount_vnd: string | number;
   refund_transaction_id: string | null;
+  rejection_reason?: string | null;
+  rejected_by?: string | null;
+  rejected_at?: string | Date | null;
+  return_tracking_code?: string | null;
+  exchange_tracking_code?: string | null;
+  shipping_tracking_events_jsonb?: ShippingTrackingEventRecord[] | string | null;
   created_at: string | Date;
   updated_at: string | Date;
 }
@@ -344,7 +467,7 @@ function generateTrackingCode(carrier: string, orderCode: string): string {
   return `${prefix}-${cleanOrder}-${rand}`;
 }
 
-function computeProportionalAllocations(
+export function computeProportionalAllocations(
   lines: Array<{ skuId: string; unitPriceVnd: number; qty: number }>,
   totalDiscountVnd: number,
 ): Array<{ allocatedDiscountVnd: number; netRefundableUnitVnd: number }> {
@@ -411,6 +534,7 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
     private readonly db: OrderDbService,
     private readonly rabbitmq: OrderRabbitMqService,
     private readonly upstream: UpstreamServicesClient,
+    private readonly shippingRegistry: ShippingProviderRegistry,
   ) {}
 
   onModuleInit(): void {
@@ -486,7 +610,8 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
   // DTO Hydration Helpers
   // ==========================================================================
 
-  private mapOrderItemRow(row: OrderItemRow): OrderItemDTO {
+  private mapOrderItemRow(row: OrderItemRow): ExtendedOrderItemDTO {
+    const qty = Number(row.qty);
     return {
       id: row.id,
       orderId: row.order_id,
@@ -494,6 +619,7 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
       variantId: row.variant_id,
       skuId: row.sku_id,
       skuCode: row.sku_code,
+      sku: row.sku_code,
       productName: row.product_name,
       colorName: row.color_name,
       sizeCode: row.size_code,
@@ -501,14 +627,15 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
       unitPriceVnd: Number(row.unit_price_vnd),
       allocatedDiscountVnd: Number(row.allocated_discount_vnd),
       netRefundableUnitVnd: Number(row.net_refundable_unit_vnd),
-      qty: Number(row.qty),
+      qty,
+      quantity: qty,
       bundleGroupId: row.bundle_group_id,
       isReturnable: Boolean(row.is_returnable),
       supplierBatchCode: row.supplier_batch_code,
     };
   }
 
-  private mapShipmentRow(row: ShipmentRow): ShipmentDTO {
+  private mapShipmentRow(row: ShipmentRow): ExtendedShipmentDTO {
     return {
       id: row.id,
       orderId: row.order_id,
@@ -518,14 +645,20 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
       status: row.status as ShipmentStatus,
       packPhotoUrl: row.pack_photo_url,
       codCollectVnd: Number(row.cod_collect_vnd),
+      actualFeeVnd:
+        row.actual_fee_vnd !== null && row.actual_fee_vnd !== undefined
+          ? Number(row.actual_fee_vnd)
+          : null,
+      providerMode: row.provider_mode ?? null,
+      expectedDeliveryTime: toIsoString(row.expected_delivery_time),
       updatedAt: toIsoString(row.updated_at) ?? new Date().toISOString(),
     };
   }
 
   private mapOrderRow(
     row: OrderRow,
-    items: OrderItemDTO[],
-    shipment: ShipmentDTO | null,
+    items: ExtendedOrderItemDTO[],
+    shipment: ExtendedShipmentDTO | null,
   ): ExtendedOrderDTO {
     const shippingAddress = parseJsonValue<ShippingAddressSnapshot>(row.shipping_address_jsonb, {
       recipientName: '',
@@ -542,6 +675,10 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
     const paymentIntent = parseJsonValue<PaymentIntentResponseDTO | null>(
       row.payment_intent_jsonb,
       null,
+    );
+    const shippingTrackingEvents = parseJsonValue<ShippingTrackingEventRecord[]>(
+      row.shipping_tracking_events_jsonb,
+      [],
     );
     const packagingFeeVnd = Number(row.packaging_fee_vnd);
     const grandTotalVnd = Number(row.grand_total_vnd);
@@ -570,8 +707,17 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
       comboDiscountVnd: Number(row.combo_discount_vnd),
       voucherDiscountVnd: Number(row.voucher_discount_vnd),
       shippingFeeVnd: Number(row.shipping_fee_vnd),
+      shippingActualFeeVnd:
+        row.shipping_actual_fee_vnd !== null && row.shipping_actual_fee_vnd !== undefined
+          ? Number(row.shipping_actual_fee_vnd)
+          : null,
+      shippingProviderMode: row.shipping_provider_mode ?? null,
+      shippingTrackingEvents: Array.isArray(shippingTrackingEvents)
+        ? shippingTrackingEvents
+        : [],
       totalAmountVnd: grandTotalVnd,
       grandTotalVnd,
+      totalVnd: grandTotalVnd,
       codDepositRequiredVnd: depositRequiredVnd,
       depositRequiredVnd,
       latePaymentRefunded: Boolean(row.late_payment_refunded),
@@ -579,8 +725,11 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
       reservationExpiresAt: toIsoString(row.reservation_expires_at),
       paidAt: toIsoString(row.paid_at),
       deliveredAt: toIsoString(row.delivered_at),
+      completedAt: toIsoString(row.completed_at),
+      completedBy: row.completed_by ?? null,
       cancelledAt: toIsoString(row.cancelled_at),
       cancelReason: row.cancel_reason,
+      cancelledBy: row.cancelled_by ?? null,
       items,
       shipment,
       paymentIntent,
@@ -606,14 +755,14 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
       ),
     ]);
 
-    const itemsByOrder = new Map<string, OrderItemDTO[]>();
+    const itemsByOrder = new Map<string, ExtendedOrderItemDTO[]>();
     for (const row of itemsRes.rows) {
       const list = itemsByOrder.get(row.order_id) ?? [];
       list.push(this.mapOrderItemRow(row));
       itemsByOrder.set(row.order_id, list);
     }
 
-    const shipmentByOrder = new Map<string, ShipmentDTO>();
+    const shipmentByOrder = new Map<string, ExtendedShipmentDTO>();
     for (const row of shipmentsRes.rows) {
       if (!shipmentByOrder.has(row.order_id)) {
         shipmentByOrder.set(row.order_id, this.mapShipmentRow(row));
@@ -644,7 +793,7 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
     return res.rows[0] ?? null;
   }
 
-  private async hydrateRmas(rmaRows: RmaRow[]): Promise<RmaRequestDTO[]> {
+  private async hydrateRmas(rmaRows: RmaRow[]): Promise<ExtendedRmaRequestDTO[]> {
     if (rmaRows.length === 0) {
       return [];
     }
@@ -678,6 +827,10 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
       const item = itemByRma.get(row.id);
       const evidencePhotoUrls = parseJsonValue<string[]>(row.evidence_photos_jsonb, []);
       const qcResult = parseJsonValue<CompleteRmaQcDTO | null>(row.qc_checklist_jsonb, null);
+      const shippingTrackingEvents = parseJsonValue<ShippingTrackingEventRecord[]>(
+        row.shipping_tracking_events_jsonb,
+        [],
+      );
       const refundAmount = Number(row.refund_amount_vnd ?? 0);
 
       return {
@@ -701,7 +854,15 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
         refundAmountVnd: refundAmount > 0 ? refundAmount : null,
         refundTransactionId: row.refund_transaction_id,
         qcResult,
+        rejectionReason: row.rejection_reason ?? null,
+        rejectedBy: row.rejected_by ?? null,
+        rejectedAt: toIsoString(row.rejected_at),
         supplierBatchCode: item?.supplier_batch_code ?? null,
+        returnTrackingCode: row.return_tracking_code ?? null,
+        exchangeTrackingCode: row.exchange_tracking_code ?? null,
+        shippingTrackingEvents: Array.isArray(shippingTrackingEvents)
+          ? shippingTrackingEvents
+          : [],
         createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
         updatedAt: toIsoString(row.updated_at) ?? new Date().toISOString(),
       };
@@ -1980,6 +2141,482 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
     return hydrated;
   }
 
+  async cancelOrderByCustomer(
+    idOrCode: string,
+    rawBody: unknown,
+    actor: OrderActorContext,
+  ): Promise<ExtendedOrderDTO> {
+    const input = parseWithZod(CancelOrderBodySchema, rawBody ?? undefined);
+    const row = await this.loadOrderRowByCodeOrId(idOrCode);
+    if (!row) {
+      throw new ApiDomainException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy đơn hàng "${idOrCode}".`,
+      );
+    }
+
+    this.assertOrderOwnership(row, actor);
+
+    const previousStatus = row.status as OrderStatus;
+    if (
+      previousStatus !== OrderStatus.AWAITING_PAYMENT &&
+      previousStatus !== OrderStatus.CONFIRMED
+    ) {
+      throw new ApiDomainException(
+        HttpStatus.CONFLICT,
+        ErrorCode.CONFLICT,
+        `Không thể hủy đơn hàng ở trạng thái ${row.status}. Khách hàng chỉ có thể tự hủy đơn đang Chờ thanh toán hoặc Đã xác nhận.`,
+        { currentStatus: row.status },
+      );
+    }
+
+    const cancelReason =
+      input?.reason && input.reason.trim().length > 0
+        ? input.reason.trim()
+        : 'CUSTOMER_SELF_CANCELLED';
+    const cancelledBy = actor.actorEmail ?? actor.userId ?? actor.guestSessionId ?? 'customer';
+
+    const claimed = await this.db.transaction(async (tx) => {
+      const updated = await tx.query<OrderRow>(
+        `UPDATE orders
+         SET status = $2,
+             cancelled_at = COALESCE(cancelled_at, NOW()),
+             cancel_reason = $3,
+             cancelled_by = $4,
+             updated_at = NOW()
+         WHERE id = $1
+           AND status IN ($5, $6)
+         RETURNING *`,
+        [
+          row.id,
+          OrderStatus.CANCELLED,
+          cancelReason,
+          cancelledBy,
+          OrderStatus.AWAITING_PAYMENT,
+          OrderStatus.CONFIRMED,
+        ],
+      );
+
+      if (updated.rowCount === 0 || updated.rows.length === 0) {
+        return null;
+      }
+
+      await this.writeOutbox(tx, {
+        eventName: 'order.cancelled',
+        aggregateType: 'ORDER',
+        aggregateId: row.id,
+        correlationId: actor.correlationId,
+        payload: {
+          orderId: row.id,
+          orderCode: row.order_code,
+          previousStatus,
+          reason: cancelReason,
+          cancelledBy: actor.userId ?? actor.guestSessionId ?? 'customer',
+        },
+      });
+
+      return updated.rows[0];
+    });
+
+    if (!claimed) {
+      throw new ApiDomainException(
+        HttpStatus.CONFLICT,
+        ErrorCode.CONFLICT,
+        'Trạng thái đơn hàng vừa thay đổi và không còn đủ điều kiện hủy.',
+      );
+    }
+
+    const compensationTasks: Promise<unknown>[] = [
+      this.upstream.emitRealtimeOrderEventNonFatal(
+        {
+          event: 'order:updated',
+          orderId: row.id,
+          orderCode: row.order_code,
+          status: OrderStatus.CANCELLED,
+        },
+        actor,
+      ),
+      this.publishDomainEventNonFatal(
+        'order.cancelled',
+        {
+          orderId: row.id,
+          orderCode: row.order_code,
+          previousStatus,
+          reason: cancelReason,
+          cancelledBy: actor.userId ?? actor.guestSessionId ?? 'customer',
+        },
+        actor.correlationId,
+        `order-cancel:${row.id}`,
+      ),
+    ];
+
+    // Release active inventory reservation (AWAITING_PAYMENT) or restock committed lines (CONFIRMED)
+    // without risking double-restocking if a reservation was still ACTIVE.
+    if (previousStatus === OrderStatus.AWAITING_PAYMENT) {
+      compensationTasks.push(
+        this.upstream.releaseReservationNonFatal(
+          row.id,
+          'CANCEL_RELEASE',
+          row.reservation_id,
+          actor,
+        ),
+      );
+    } else if (previousStatus === OrderStatus.CONFIRMED) {
+      const releasedActiveReservation = await this.upstream.releaseReservationNonFatal(
+        row.id,
+        'CANCEL_RELEASE',
+        row.reservation_id,
+        actor,
+      );
+      if (!releasedActiveReservation) {
+        const orderItemsRes = await this.db.query<OrderItemRow>(
+          'SELECT * FROM order_items WHERE order_id = $1 ORDER BY id ASC',
+          [row.id],
+        );
+        for (const item of orderItemsRes.rows) {
+          compensationTasks.push(
+            this.upstream
+              .rmaRestock(
+                {
+                  skuId: item.sku_id,
+                  qty: Number(item.qty),
+                  restockable: true,
+                  referenceId: `CANCEL:${row.order_code}`,
+                },
+                actor,
+              )
+              .catch((err: unknown) => {
+                this.logger.warn(
+                  {
+                    err: err instanceof Error ? err.message : String(err),
+                    orderCode: row.order_code,
+                    skuId: item.sku_id,
+                    correlationId: actor.correlationId,
+                  },
+                  'Non-fatal restock on CONFIRMED order self-cancel failed',
+                );
+              }),
+          );
+        }
+      }
+    }
+
+    // Release voucher lock on payment-promo (:4007)
+    if (row.voucher_code) {
+      compensationTasks.push(
+        this.upstream.releasePromotionNonFatal(
+          {
+            voucherCode: row.voucher_code,
+            orderId: row.id,
+            reason: 'CUSTOMER_SELF_CANCELLED',
+          },
+          actor,
+        ),
+      );
+    }
+
+    await Promise.allSettled(compensationTasks);
+    return this.loadAndHydrateOrderById(row.id);
+  }
+
+  async cancelOrderByAdmin(
+    idOrCode: string,
+    rawBody: unknown,
+    actor: OrderActorContext,
+  ): Promise<OrderMutationResult> {
+    const input = parseWithZod(AdminCancelOrderDtoSchema, rawBody ?? {});
+    const row = await this.loadOrderRowByCodeOrId(idOrCode);
+    if (!row) {
+      throw new ApiDomainException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy đơn hàng "${idOrCode}".`,
+      );
+    }
+
+    const [before] = await this.hydrateOrders([row]);
+    const previousStatus = row.status as OrderStatus;
+    const cancellableStatuses: readonly OrderStatus[] = [
+      OrderStatus.PENDING_RESERVATION,
+      OrderStatus.AWAITING_PAYMENT,
+      OrderStatus.CONFIRMED,
+      OrderStatus.PACKING,
+    ];
+
+    if (!cancellableStatuses.includes(previousStatus)) {
+      throw new ApiDomainException(
+        HttpStatus.CONFLICT,
+        ErrorCode.CONFLICT,
+        `Không thể hủy đơn hàng ở trạng thái ${row.status}. Chỉ có thể hủy đơn ở trạng thái PENDING_RESERVATION, AWAITING_PAYMENT, CONFIRMED hoặc PACKING.`,
+        { currentStatus: row.status },
+      );
+    }
+
+    const cancelReason =
+      input.reason && input.reason.trim().length > 0
+        ? input.reason.trim()
+        : 'ADMIN_CANCELLED';
+    const cancelledBy =
+      input.cancelledBy?.trim() ||
+      actor.actorEmail?.trim() ||
+      actor.userId?.trim() ||
+      'admin';
+
+    const claimed = await this.db.transaction(async (tx) => {
+      const updated = await tx.query<OrderRow>(
+        `UPDATE orders
+         SET status = $2,
+             cancelled_at = COALESCE(cancelled_at, NOW()),
+             cancel_reason = $3,
+             cancelled_by = $4,
+             updated_at = NOW()
+         WHERE id = $1
+           AND status IN ($5, $6, $7, $8)
+         RETURNING *`,
+        [
+          row.id,
+          OrderStatus.CANCELLED,
+          cancelReason,
+          cancelledBy,
+          OrderStatus.PENDING_RESERVATION,
+          OrderStatus.AWAITING_PAYMENT,
+          OrderStatus.CONFIRMED,
+          OrderStatus.PACKING,
+        ],
+      );
+
+      if (updated.rowCount === 0 || updated.rows.length === 0) {
+        return null;
+      }
+
+      await this.writeOutbox(tx, {
+        eventName: 'order.cancelled',
+        aggregateType: 'ORDER',
+        aggregateId: row.id,
+        correlationId: actor.correlationId,
+        payload: {
+          orderId: row.id,
+          orderCode: row.order_code,
+          previousStatus,
+          reason: cancelReason,
+          cancelledBy,
+        },
+      });
+
+      return updated.rows[0];
+    });
+
+    if (!claimed) {
+      throw new ApiDomainException(
+        HttpStatus.CONFLICT,
+        ErrorCode.CONFLICT,
+        'Trạng thái đơn hàng vừa thay đổi và không còn đủ điều kiện hủy.',
+      );
+    }
+
+    const compensationTasks: Promise<unknown>[] = [
+      this.upstream.emitRealtimeOrderEventNonFatal(
+        {
+          event: 'order:updated',
+          orderId: row.id,
+          orderCode: row.order_code,
+          status: OrderStatus.CANCELLED,
+        },
+        actor,
+      ),
+      this.publishDomainEventNonFatal(
+        'order.cancelled',
+        {
+          orderId: row.id,
+          orderCode: row.order_code,
+          previousStatus,
+          reason: cancelReason,
+          cancelledBy,
+        },
+        actor.correlationId,
+        `order-admin-cancel:${row.id}`,
+      ),
+    ];
+
+    if (
+      previousStatus === OrderStatus.AWAITING_PAYMENT ||
+      previousStatus === OrderStatus.PENDING_RESERVATION
+    ) {
+      compensationTasks.push(
+        this.upstream.releaseReservationNonFatal(
+          row.id,
+          'CANCEL_RELEASE',
+          row.reservation_id,
+          actor,
+        ),
+      );
+    } else if (previousStatus === OrderStatus.CONFIRMED || previousStatus === OrderStatus.PACKING) {
+      const releasedActiveReservation = await this.upstream.releaseReservationNonFatal(
+        row.id,
+        'CANCEL_RELEASE',
+        row.reservation_id,
+        actor,
+      );
+      if (!releasedActiveReservation) {
+        const orderItemsRes = await this.db.query<OrderItemRow>(
+          'SELECT * FROM order_items WHERE order_id = $1 ORDER BY id ASC',
+          [row.id],
+        );
+        for (const item of orderItemsRes.rows) {
+          compensationTasks.push(
+            this.upstream
+              .rmaRestock(
+                {
+                  skuId: item.sku_id,
+                  qty: Number(item.qty),
+                  restockable: true,
+                  referenceId: `ADMIN_CANCEL:${row.order_code}`,
+                },
+                actor,
+              )
+              .catch((err: unknown) => {
+                this.logger.warn(
+                  {
+                    err: err instanceof Error ? err.message : String(err),
+                    orderCode: row.order_code,
+                    skuId: item.sku_id,
+                    correlationId: actor.correlationId,
+                  },
+                  'Non-fatal restock on admin order cancel failed',
+                );
+              }),
+          );
+        }
+      }
+    }
+
+    if (row.voucher_code) {
+      compensationTasks.push(
+        this.upstream.releasePromotionNonFatal(
+          {
+            voucherCode: row.voucher_code,
+            orderId: row.id,
+            reason: cancelReason,
+          },
+          actor,
+        ),
+      );
+    }
+
+    await Promise.allSettled(compensationTasks);
+    const after = await this.loadAndHydrateOrderById(row.id);
+    return {
+      ...after,
+      before,
+      after,
+    };
+  }
+
+  async completeOrder(
+    idOrCode: string,
+    rawBody: unknown,
+    actor: OrderActorContext,
+  ): Promise<OrderMutationResult> {
+    const input = parseWithZod(CompleteOrderDtoSchema, rawBody ?? undefined);
+    const row = await this.loadOrderRowByCodeOrId(idOrCode);
+    if (!row) {
+      throw new ApiDomainException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy đơn hàng "${idOrCode}".`,
+      );
+    }
+
+    const [before] = await this.hydrateOrders([row]);
+    if (row.status === OrderStatus.COMPLETED) {
+      return {
+        ...before,
+        before,
+        after: before,
+      };
+    }
+
+    const completableStatuses: readonly OrderStatus[] = [
+      OrderStatus.DELIVERED,
+      OrderStatus.SHIPPED,
+      OrderStatus.PACKING,
+      OrderStatus.CONFIRMED,
+    ];
+
+    if (!completableStatuses.includes(row.status as OrderStatus)) {
+      throw new ApiDomainException(
+        HttpStatus.CONFLICT,
+        ErrorCode.CONFLICT,
+        `Không thể hoàn tất đơn hàng đang ở trạng thái ${row.status}.`,
+        { currentStatus: row.status },
+      );
+    }
+
+    const completedBy =
+      input?.completedBy?.trim() ||
+      actor.actorEmail?.trim() ||
+      actor.userId?.trim() ||
+      'admin';
+
+    let updatedShipment: ShipmentDTO | null = null;
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `UPDATE orders
+         SET status = $2,
+             delivered_at = COALESCE(delivered_at, NOW()),
+             completed_at = COALESCE(completed_at, NOW()),
+             completed_by = $3,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [row.id, OrderStatus.COMPLETED, completedBy],
+      );
+
+      const shipRes = await tx.query<ShipmentRow>(
+        `UPDATE shipments
+         SET status = $2, updated_at = NOW()
+         WHERE order_id = $1
+         RETURNING *`,
+        [row.id, ShipmentStatus.DELIVERED],
+      );
+      if (shipRes.rows[0]) {
+        updatedShipment = this.mapShipmentRow(shipRes.rows[0]);
+      }
+
+      await this.writeOutbox(tx, {
+        eventName: 'order.completed',
+        aggregateType: 'ORDER',
+        aggregateId: row.id,
+        correlationId: actor.correlationId,
+        payload: {
+          orderId: row.id,
+          orderCode: row.order_code,
+          completedBy,
+          note: input?.note ?? null,
+          completedAt: new Date().toISOString(),
+        },
+      });
+    });
+
+    await this.upstream.emitRealtimeOrderEventNonFatal(
+      {
+        event: 'order:updated',
+        orderId: row.id,
+        orderCode: row.order_code,
+        status: OrderStatus.COMPLETED,
+        shipment: updatedShipment,
+      },
+      actor,
+    );
+
+    const after = await this.loadAndHydrateOrderById(row.id);
+    return {
+      ...after,
+      before,
+      after,
+    };
+  }
+
   async getOrderOpsMetrics(): Promise<OrderOpsMetricsDto> {
     const [orderAggRes, rmaAggRes, orderedTotalRes, byProductRes] = await Promise.all([
       this.db.query<{
@@ -2102,12 +2739,14 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
   async listAdminOrders(filters: {
     status?: string;
     q?: string;
+    from?: string;
+    to?: string;
     limit?: number;
   }): Promise<ExtendedOrderDTO[]> {
     const clauses: string[] = [];
     const params: unknown[] = [];
 
-    if (filters.status && filters.status.trim().length > 0) {
+    if (filters.status && filters.status.trim().length > 0 && filters.status.trim().toUpperCase() !== 'ALL') {
       params.push(filters.status.trim().toUpperCase());
       clauses.push(`status = $${params.length}`);
     }
@@ -2119,7 +2758,17 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const limit = Math.min(200, Math.max(1, filters.limit ?? 50));
+    if (filters.from && !Number.isNaN(Date.parse(filters.from))) {
+      params.push(new Date(filters.from).toISOString());
+      clauses.push(`created_at >= $${params.length}::timestamptz`);
+    }
+
+    if (filters.to && !Number.isNaN(Date.parse(filters.to))) {
+      params.push(new Date(filters.to).toISOString());
+      clauses.push(`created_at <= $${params.length}::timestamptz`);
+    }
+
+    const limit = Math.min(1000, Math.max(1, filters.limit ?? 100));
     params.push(limit);
 
     const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
@@ -2221,11 +2870,52 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
     return this.loadAndHydrateOrderById(row.id);
   }
 
+  async quoteShipping(rawBody: unknown): Promise<ShippingQuoteResponseDto> {
+    const input = parseWithZod(ShippingQuoteBodySchema, rawBody ?? {});
+    const orderValueVnd = input.orderValueVnd ?? input.subtotalVnd ?? 0;
+
+    const quoteReq = {
+      provinceCode: input.provinceCode,
+      districtCode: input.districtCode,
+      wardCode: input.wardCode,
+      provinceName: input.provinceName,
+      districtName: input.districtName,
+      wardName: input.wardName,
+      streetLine: input.streetLine,
+      shippingMethod: input.shippingMethod,
+      weightGrams: input.weightGrams,
+      orderValueVnd,
+      codAmountVnd: input.codAmountVnd,
+    };
+
+    const quotes = await this.shippingRegistry.quoteAll(quoteReq);
+    const primary = input.shippingMethod
+      ? (quotes.find((q) => q.shippingMethod === input.shippingMethod) ??
+        (await this.shippingRegistry.quote(quoteReq)))
+      : (quotes.find((q) => q.shippingMethod === ShippingMethod.GHN) ?? quotes[0]);
+
+    const freeShippingEligible = orderValueVnd >= FREE_SHIP_THRESHOLD_VND;
+    const effectiveFeeVnd =
+      primary.shippingMethod === ShippingMethod.PICKUP || freeShippingEligible
+        ? 0
+        : primary.feeVnd;
+
+    return {
+      ...primary,
+      freeShippingThresholdVnd: FREE_SHIP_THRESHOLD_VND,
+      freeShippingEligible,
+      effectiveFeeVnd,
+      quotes,
+    };
+  }
+
   async shipOrder(
     orderCode: string,
     trace: string | TraceContext,
+    rawBody?: unknown,
   ): Promise<ExtendedOrderDTO> {
     const correlationId = typeof trace === 'string' ? trace : trace.correlationId;
+    const input = parseWithZod(ShipOrderBodySchema, rawBody ?? undefined);
     const row = await this.loadOrderRowByCodeOrId(orderCode);
     if (!row) {
       throw new ApiDomainException(
@@ -2247,16 +2937,164 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    let updatedShipment!: ShipmentDTO;
+    const orderItemsRes = await this.db.query<OrderItemRow>(
+      'SELECT * FROM order_items WHERE order_id = $1 ORDER BY id ASC',
+      [row.id],
+    );
+    const address = parseJsonValue<ShippingAddressSnapshot>(row.shipping_address_jsonb, {
+      recipientName: 'Quý khách',
+      phone: row.customer_phone ?? '0900000000',
+      provinceName: 'Thành phố Hà Nội',
+      districtName: 'Quận Ba Đình',
+      wardName: 'Phường Quán Thánh',
+      streetLine: '18 Phan Đình Phùng',
+    });
+
+    const effectiveShippingMethod = (input?.shippingMethod ??
+      (row.shipping_method as ShippingMethod)) as ShippingMethod;
+    const totalQty = orderItemsRes.rows.reduce((sum, item) => sum + Number(item.qty || 1), 0);
+    const weightGrams = input?.weightGrams ?? Math.max(350, totalQty * 350);
+    const codAmountVnd =
+      row.payment_method === PaymentMethod.COD
+        ? Math.max(0, Number(row.grand_total_vnd) - Number(row.deposit_required_vnd))
+        : 0;
+
+    let trackingCode: string;
+    let actualFeeVnd: number;
+    let providerMode: string;
+    let expectedDeliveryTime: string;
+    let providerResponse: Record<string, unknown>;
+    let carrierLabel: string;
+
+    if (input?.trackingCode && input.trackingCode.trim().length > 0) {
+      trackingCode = input.trackingCode.trim();
+      const quoteRes = await this.shippingRegistry.quote({
+        provinceCode: address.provinceCode,
+        districtCode: address.districtCode,
+        wardCode: address.wardCode,
+        provinceName: address.provinceName,
+        districtName: address.districtName,
+        wardName: address.wardName,
+        streetLine: address.streetLine,
+        shippingMethod: effectiveShippingMethod,
+        weightGrams,
+        orderValueVnd: Number(row.grand_total_vnd),
+        codAmountVnd,
+      });
+      actualFeeVnd = quoteRes.feeVnd;
+      providerMode = 'MANUAL_OVERRIDE';
+      expectedDeliveryTime = quoteRes.estimatedDeliveryDate;
+      carrierLabel =
+        input.carrier?.trim().toUpperCase() ||
+        (effectiveShippingMethod === ShippingMethod.PICKUP
+          ? 'SHOWROOM_PICKUP'
+          : effectiveShippingMethod);
+      providerResponse = {
+        manualOverride: true,
+        carrier: carrierLabel,
+        trackingCode,
+        estimatedFeeVnd: actualFeeVnd,
+      };
+    } else {
+      const shipmentResult = await this.shippingRegistry.createShipment({
+        orderId: row.id,
+        orderCode: row.order_code,
+        shippingMethod: effectiveShippingMethod,
+        recipientName: address.recipientName || 'Quý khách',
+        recipientPhone: address.phone || row.customer_phone || '0900000000',
+        provinceCode: address.provinceCode,
+        districtCode: address.districtCode,
+        wardCode: address.wardCode,
+        provinceName: address.provinceName || 'Thành phố Hà Nội',
+        districtName: address.districtName || 'Quận Ba Đình',
+        wardName: address.wardName || 'Phường Quán Thánh',
+        streetLine: address.streetLine || '18 Phan Đình Phùng',
+        weightGrams,
+        orderValueVnd: Number(row.grand_total_vnd),
+        codAmountVnd,
+        items: orderItemsRes.rows.map((item) => ({
+          name: item.product_name,
+          skuCode: item.sku_code,
+          qty: Number(item.qty || 1),
+          priceVnd: Number(item.unit_price_vnd || 0),
+          weightGrams: 350,
+        })),
+        note: input?.note,
+      });
+
+      trackingCode = shipmentResult.trackingCode;
+      actualFeeVnd = shipmentResult.actualFeeVnd;
+      providerMode = shipmentResult.mode;
+      expectedDeliveryTime = shipmentResult.expectedDeliveryTime;
+      carrierLabel =
+        input?.carrier?.trim().toUpperCase() ||
+        (effectiveShippingMethod === ShippingMethod.PICKUP
+          ? 'SHOWROOM_PICKUP'
+          : effectiveShippingMethod);
+      providerResponse = shipmentResult.rawProviderResponse;
+    }
+
+    const existingEvents = parseJsonValue<ShippingTrackingEventRecord[]>(
+      row.shipping_tracking_events_jsonb,
+      [],
+    );
+    const nowIso = new Date().toISOString();
+    const nextEvents: ShippingTrackingEventRecord[] = [
+      ...(Array.isArray(existingEvents) ? existingEvents : []),
+      {
+        eventId: `ship:${row.order_code}:${trackingCode}`,
+        provider: carrierLabel.toLowerCase(),
+        trackingCode,
+        providerStatus: 'SHIPMENT_CREATED',
+        mappedOrderStatus: OrderStatus.SHIPPED,
+        mappedRmaStatus: null,
+        note: input?.note || `Đã bàn giao đơn vị vận chuyển ${carrierLabel} (${providerMode})`,
+        occurredAt: nowIso,
+        recordedAt: nowIso,
+      },
+    ];
+
+    let updatedShipment!: ExtendedShipmentDTO;
     await this.db.transaction(async (tx) => {
       await tx.query(
-        `UPDATE orders SET status = $2, updated_at = NOW() WHERE id = $1`,
-        [row.id, OrderStatus.SHIPPED],
+        `UPDATE orders
+         SET status = $2,
+             shipping_actual_fee_vnd = $3,
+             shipping_provider_mode = $4,
+             shipping_tracking_events_jsonb = $5::jsonb,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [
+          row.id,
+          OrderStatus.SHIPPED,
+          actualFeeVnd,
+          providerMode,
+          JSON.stringify(nextEvents),
+        ],
       );
       const ensured = await this.ensureShipmentForOrder(tx, row);
       const shipRes = await tx.query<ShipmentRow>(
-        `UPDATE shipments SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
-        [ensured.id, ShipmentStatus.IN_TRANSIT],
+        `UPDATE shipments
+         SET carrier = $2,
+             tracking_code = $3,
+             status = $4,
+             actual_fee_vnd = $5,
+             provider_mode = $6,
+             expected_delivery_time = $7::timestamptz,
+             provider_response_jsonb = $8::jsonb,
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [
+          ensured.id,
+          carrierLabel,
+          trackingCode,
+          ShipmentStatus.IN_TRANSIT,
+          actualFeeVnd,
+          providerMode,
+          expectedDeliveryTime,
+          JSON.stringify(providerResponse),
+        ],
       );
       updatedShipment = this.mapShipmentRow(shipRes.rows[0]);
       await this.writeOutbox(tx, {
@@ -2267,7 +3105,11 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
         payload: {
           orderId: row.id,
           orderCode: row.order_code,
+          carrier: carrierLabel,
           trackingCode: updatedShipment.trackingCode,
+          actualFeeVnd,
+          providerMode,
+          expectedDeliveryTime,
         },
       });
     });
@@ -2284,6 +3126,370 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
     );
 
     return this.loadAndHydrateOrderById(row.id);
+  }
+
+  async handleShippingWebhook(
+    providerSlug: string,
+    rawBody: unknown,
+    rawBodyBuffer: Buffer | string,
+    headers: HeaderBag,
+    trace: string | TraceContext,
+  ): Promise<ShippingWebhookProcessResult> {
+    const correlationId = typeof trace === 'string' ? trace : trace.correlationId;
+    const adapter = this.shippingRegistry.getAdapterBySlug(providerSlug);
+    if (!adapter) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        `Đơn vị vận chuyển "${providerSlug}" không được hỗ trợ webhook (chỉ hỗ trợ: ghn, ghtk, ahamove).`,
+      );
+    }
+
+    const verified = adapter.verifyWebhook(headers, rawBodyBuffer);
+    if (!verified) {
+      throw new ApiDomainException(
+        HttpStatus.UNAUTHORIZED,
+        ErrorCode.UNAUTHORIZED,
+        `Chữ ký webhook vận chuyển (${adapter.slug}) không hợp lệ hoặc bị thiếu.`,
+      );
+    }
+
+    const payloadObj: Record<string, unknown> =
+      rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
+        ? (rawBody as Record<string, unknown>)
+        : {};
+
+    const parsed = adapter.parseWebhook(payloadObj, headers);
+
+    const dedup = await this.db.query<{ event_id: string }>(
+      `INSERT INTO processed_shipping_webhooks (
+         event_id, provider, tracking_code, order_code, provider_status, payload_jsonb
+       ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+       ON CONFLICT (event_id) DO NOTHING
+       RETURNING event_id`,
+      [
+        parsed.eventId,
+        parsed.provider,
+        parsed.trackingCode,
+        parsed.orderCode,
+        parsed.providerStatus,
+        JSON.stringify(payloadObj),
+      ],
+    );
+
+    if (dedup.rowCount === 0) {
+      return {
+        deduplicated: true,
+        processed: false,
+        eventId: parsed.eventId,
+        provider: parsed.provider,
+        trackingCode: parsed.trackingCode,
+        orderCode: parsed.orderCode,
+        providerStatus: parsed.providerStatus,
+        mappedOrderStatus: parsed.mappedOrderStatus,
+        mappedShipmentStatus: parsed.mappedShipmentStatus,
+        mappedRmaStatus: parsed.mappedRmaStatus,
+        orderUpdated: false,
+        rmaUpdated: false,
+        matchedOrderCode: null,
+        matchedRmaCode: null,
+        occurredAt: parsed.occurredAt,
+      };
+    }
+
+    const trackingEvent: ShippingTrackingEventRecord = {
+      eventId: parsed.eventId,
+      provider: parsed.provider,
+      trackingCode: parsed.trackingCode,
+      providerStatus: parsed.providerStatus,
+      mappedOrderStatus: parsed.mappedOrderStatus,
+      mappedRmaStatus: parsed.mappedRmaStatus,
+      note: parsed.note,
+      occurredAt: parsed.occurredAt,
+      recordedAt: new Date().toISOString(),
+    };
+
+    // 1. Check if trackingCode or orderCode matches a 2-way RMA shipment first
+    let matchedRma: RmaRow | null = null;
+    let isExchangeLeg = false;
+    if (parsed.trackingCode) {
+      const rmaByTrack = await this.db.query<RmaRow>(
+        `SELECT * FROM rma_requests
+         WHERE return_tracking_code = $1 OR exchange_tracking_code = $1
+         LIMIT 1`,
+        [parsed.trackingCode],
+      );
+      if (rmaByTrack.rows[0]) {
+        matchedRma = rmaByTrack.rows[0];
+        isExchangeLeg = matchedRma.exchange_tracking_code === parsed.trackingCode;
+      }
+    }
+    if (!matchedRma && parsed.orderCode && parsed.orderCode.toUpperCase().startsWith('RMA-')) {
+      matchedRma = await this.loadRmaByIdOrCode(parsed.orderCode);
+    }
+
+    let rmaUpdated = false;
+    let effectiveRmaStatus: RmaStatus | null = parsed.mappedRmaStatus;
+    let rmaParentOrder: OrderRow | null = null;
+
+    if (matchedRma) {
+      if (isExchangeLeg) {
+        if (parsed.mappedOrderStatus === OrderStatus.SHIPPED) {
+          effectiveRmaStatus = RmaStatus.EXCHANGE_SHIPPED;
+        } else if (parsed.mappedOrderStatus === OrderStatus.DELIVERED) {
+          effectiveRmaStatus =
+            matchedRma.status === RmaStatus.EXCHANGE_SHIPPED ||
+            matchedRma.status === RmaStatus.QC_PASSED
+              ? RmaStatus.RMA_COMPLETED
+              : RmaStatus.EXCHANGE_SHIPPED;
+        } else {
+          effectiveRmaStatus = null;
+        }
+      } else {
+        // Customer return leg arriving back to Atelier warehouse
+        if (parsed.mappedOrderStatus === OrderStatus.SHIPPED) {
+          effectiveRmaStatus = RmaStatus.RETURN_IN_TRANSIT;
+        } else if (parsed.mappedOrderStatus === OrderStatus.DELIVERED) {
+          effectiveRmaStatus = RmaStatus.QC_INSPECTING;
+        } else {
+          effectiveRmaStatus = null;
+        }
+      }
+
+      const prevRmaEvents = parseJsonValue<ShippingTrackingEventRecord[]>(
+        matchedRma.shipping_tracking_events_jsonb,
+        [],
+      );
+      const nextRmaEvents = [
+        ...(Array.isArray(prevRmaEvents) ? prevRmaEvents : []),
+        { ...trackingEvent, mappedRmaStatus: effectiveRmaStatus },
+      ];
+
+      await this.db.transaction(async (tx) => {
+        if (
+          effectiveRmaStatus &&
+          matchedRma!.status !== RmaStatus.RMA_COMPLETED &&
+          matchedRma!.status !== RmaStatus.RMA_REJECTED
+        ) {
+          await tx.query(
+            `UPDATE rma_requests
+             SET status = $2,
+                 shipping_tracking_events_jsonb = $3::jsonb,
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [matchedRma!.id, effectiveRmaStatus, JSON.stringify(nextRmaEvents)],
+          );
+          rmaUpdated = true;
+        } else {
+          await tx.query(
+            `UPDATE rma_requests
+             SET shipping_tracking_events_jsonb = $2::jsonb,
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [matchedRma!.id, JSON.stringify(nextRmaEvents)],
+          );
+        }
+
+        await this.writeOutbox(tx, {
+          eventName: 'rma.shipping.updated',
+          aggregateType: 'RMA',
+          aggregateId: matchedRma!.id,
+          correlationId,
+          payload: {
+            rmaId: matchedRma!.id,
+            rmaCode: matchedRma!.rma_code,
+            provider: parsed.provider,
+            trackingCode: parsed.trackingCode,
+            providerStatus: parsed.providerStatus,
+            mappedRmaStatus: effectiveRmaStatus,
+            leg: isExchangeLeg ? 'EXCHANGE' : 'RETURN',
+          },
+        });
+      });
+
+      const parentRes = await this.db.query<OrderRow>(
+        'SELECT * FROM orders WHERE id = $1 LIMIT 1',
+        [matchedRma.order_id],
+      );
+      rmaParentOrder = parentRes.rows[0] ?? null;
+    }
+
+    // 2. Match standard Order shipment (skip mutating order status if webhook was exclusively for an RMA tracking code)
+    let matchedOrder: OrderRow | null = null;
+    let matchedShipment: ShipmentRow | null = null;
+    let orderUpdated = false;
+    let updatedShipmentDto: ExtendedShipmentDTO | null = null;
+
+    if (!matchedRma) {
+      if (parsed.trackingCode) {
+        const shipRes = await this.db.query<ShipmentRow>(
+          'SELECT * FROM shipments WHERE tracking_code = $1 LIMIT 1',
+          [parsed.trackingCode],
+        );
+        if (shipRes.rows[0]) {
+          matchedShipment = shipRes.rows[0];
+          const ordRes = await this.db.query<OrderRow>(
+            'SELECT * FROM orders WHERE id = $1 LIMIT 1',
+            [matchedShipment.order_id],
+          );
+          matchedOrder = ordRes.rows[0] ?? null;
+        }
+      }
+      if (!matchedOrder && parsed.orderCode) {
+        matchedOrder = await this.loadOrderRowByCodeOrId(parsed.orderCode);
+        if (matchedOrder) {
+          const shipRes = await this.db.query<ShipmentRow>(
+            'SELECT * FROM shipments WHERE order_id = $1 ORDER BY updated_at DESC LIMIT 1',
+            [matchedOrder.id],
+          );
+          matchedShipment = shipRes.rows[0] ?? null;
+        }
+      }
+    }
+
+    if (matchedOrder) {
+      const prevOrderEvents = parseJsonValue<ShippingTrackingEventRecord[]>(
+        matchedOrder.shipping_tracking_events_jsonb,
+        [],
+      );
+      const nextOrderEvents = [
+        ...(Array.isArray(prevOrderEvents) ? prevOrderEvents : []),
+        trackingEvent,
+      ];
+
+      await this.db.transaction(async (tx) => {
+        if (
+          parsed.mappedOrderStatus &&
+          matchedOrder!.status !== OrderStatus.COMPLETED &&
+          matchedOrder!.status !== OrderStatus.CANCELLED
+        ) {
+          const isDelivered = parsed.mappedOrderStatus === OrderStatus.DELIVERED;
+          await tx.query(
+            `UPDATE orders
+             SET status = $2,
+                 delivered_at = CASE WHEN $3::boolean THEN COALESCE(delivered_at, $4::timestamptz) ELSE delivered_at END,
+                 shipping_tracking_events_jsonb = $5::jsonb,
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [
+              matchedOrder!.id,
+              parsed.mappedOrderStatus,
+              isDelivered,
+              parsed.occurredAt,
+              JSON.stringify(nextOrderEvents),
+            ],
+          );
+          orderUpdated = true;
+        } else {
+          await tx.query(
+            `UPDATE orders
+             SET shipping_tracking_events_jsonb = $2::jsonb,
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [matchedOrder!.id, JSON.stringify(nextOrderEvents)],
+          );
+        }
+
+        if (matchedShipment && parsed.mappedShipmentStatus) {
+          const shipUpd = await tx.query<ShipmentRow>(
+            `UPDATE shipments
+             SET status = $2, updated_at = NOW()
+             WHERE id = $1
+             RETURNING *`,
+            [matchedShipment.id, parsed.mappedShipmentStatus],
+          );
+          if (shipUpd.rows[0]) {
+            updatedShipmentDto = this.mapShipmentRow(shipUpd.rows[0]);
+          }
+        }
+
+        await this.writeOutbox(tx, {
+          eventName: 'shipping.webhook.processed',
+          aggregateType: 'ORDER',
+          aggregateId: matchedOrder!.id,
+          correlationId,
+          payload: {
+            eventId: parsed.eventId,
+            provider: parsed.provider,
+            orderId: matchedOrder!.id,
+            orderCode: matchedOrder!.order_code,
+            trackingCode: parsed.trackingCode,
+            providerStatus: parsed.providerStatus,
+            mappedOrderStatus: parsed.mappedOrderStatus,
+            mappedShipmentStatus: parsed.mappedShipmentStatus,
+          },
+        });
+      });
+
+      const realtimeEvent: 'order:updated' | 'order:shipped' | 'order:delivered' =
+        parsed.mappedOrderStatus === OrderStatus.DELIVERED
+          ? 'order:delivered'
+          : parsed.mappedOrderStatus === OrderStatus.SHIPPED
+            ? 'order:shipped'
+            : 'order:updated';
+
+      await Promise.allSettled([
+        this.upstream.emitRealtimeOrderEventNonFatal(
+          {
+            event: realtimeEvent,
+            orderId: matchedOrder.id,
+            orderCode: matchedOrder.order_code,
+            status: parsed.mappedOrderStatus ?? matchedOrder.status,
+            shipment: updatedShipmentDto,
+            trackingEvent: trackingEvent as unknown as Record<string, unknown>,
+          },
+          trace,
+        ),
+        ...(realtimeEvent !== 'order:updated'
+          ? [
+              this.upstream.emitRealtimeOrderEventNonFatal(
+                {
+                  event: 'order:updated',
+                  orderId: matchedOrder.id,
+                  orderCode: matchedOrder.order_code,
+                  status: parsed.mappedOrderStatus ?? matchedOrder.status,
+                  shipment: updatedShipmentDto,
+                  trackingEvent: trackingEvent as unknown as Record<string, unknown>,
+                },
+                trace,
+              ),
+            ]
+          : []),
+      ]);
+    } else if (matchedRma && rmaParentOrder) {
+      await this.upstream.emitRealtimeOrderEventNonFatal(
+        {
+          event: 'order:updated',
+          orderId: rmaParentOrder.id,
+          orderCode: rmaParentOrder.order_code,
+          status: rmaParentOrder.status,
+          trackingEvent: {
+            ...trackingEvent,
+            rmaCode: matchedRma.rma_code,
+            rmaStatus: effectiveRmaStatus ?? matchedRma.status,
+          },
+        },
+        trace,
+      );
+    }
+
+    return {
+      deduplicated: false,
+      processed: true,
+      eventId: parsed.eventId,
+      provider: parsed.provider,
+      trackingCode: parsed.trackingCode,
+      orderCode: parsed.orderCode,
+      providerStatus: parsed.providerStatus,
+      mappedOrderStatus: parsed.mappedOrderStatus,
+      mappedShipmentStatus: parsed.mappedShipmentStatus,
+      mappedRmaStatus: effectiveRmaStatus,
+      orderUpdated,
+      rmaUpdated,
+      matchedOrderCode: matchedOrder?.order_code ?? rmaParentOrder?.order_code ?? null,
+      matchedRmaCode: matchedRma?.rma_code ?? null,
+      occurredAt: parsed.occurredAt,
+    };
   }
 
   async deliverOrder(
@@ -2732,14 +3938,21 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
     reasonCode?: string;
     orderCode?: string;
     productId?: string;
+    from?: string;
+    to?: string;
     limit?: number;
   }): Promise<RmaRequestDTO[]> {
     const clauses: string[] = [];
     const params: unknown[] = [];
 
-    if (filters.status?.trim()) {
-      params.push(filters.status.trim().toUpperCase());
-      clauses.push(`r.status = $${params.length}`);
+    if (filters.status?.trim() && filters.status.trim().toUpperCase() !== 'ALL') {
+      const normalizedStatus = filters.status.trim().toUpperCase();
+      if (normalizedStatus === 'REJECTED') {
+        clauses.push(`r.status IN ('RMA_REJECTED', 'REJECTED')`);
+      } else {
+        params.push(normalizedStatus);
+        clauses.push(`r.status = $${params.length}`);
+      }
     }
     if (filters.rmaType?.trim()) {
       params.push(filters.rmaType.trim().toUpperCase());
@@ -2759,8 +3972,16 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
         `EXISTS (SELECT 1 FROM rma_items ri WHERE ri.rma_id = r.id AND ri.product_id = $${params.length}::uuid)`,
       );
     }
+    if (filters.from && !Number.isNaN(Date.parse(filters.from))) {
+      params.push(new Date(filters.from).toISOString());
+      clauses.push(`r.created_at >= $${params.length}::timestamptz`);
+    }
+    if (filters.to && !Number.isNaN(Date.parse(filters.to))) {
+      params.push(new Date(filters.to).toISOString());
+      clauses.push(`r.created_at <= $${params.length}::timestamptz`);
+    }
 
-    const limit = Math.min(200, Math.max(1, filters.limit ?? 50));
+    const limit = Math.min(1000, Math.max(1, filters.limit ?? 100));
     params.push(limit);
 
     const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
@@ -2889,6 +4110,16 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
       nextStatus = RmaStatus.RETURN_IN_TRANSIT;
     }
 
+    const cleanRmaTag = rma.rma_code.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const returnTrackingCode =
+      input?.returnTrackingCode ??
+      rma.return_tracking_code ??
+      `GHNRET-${cleanRmaTag}`;
+    const exchangeTrackingCode =
+      input?.exchangeTrackingCode ??
+      rma.exchange_tracking_code ??
+      (exchangeMode === RmaExchangeMode.INSTANT_2WAY ? `GHNEXC-${cleanRmaTag}` : null);
+
     await this.db.transaction(async (tx) => {
       await tx.query(
         `UPDATE rma_requests
@@ -2896,9 +4127,19 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
              exchange_mode = $3,
              replacement_sku_id = $4,
              exchange_reservation_id = $5,
+             return_tracking_code = COALESCE($6, return_tracking_code),
+             exchange_tracking_code = COALESCE($7, exchange_tracking_code),
              updated_at = NOW()
          WHERE id = $1`,
-        [rma.id, nextStatus, exchangeMode, replacementSkuId, exchangeReservationId],
+        [
+          rma.id,
+          nextStatus,
+          exchangeMode,
+          replacementSkuId,
+          exchangeReservationId,
+          returnTrackingCode,
+          exchangeTrackingCode,
+        ],
       );
       await this.writeOutbox(tx, {
         eventName: 'rma.approved',
@@ -2911,6 +4152,8 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
           status: nextStatus,
           exchangeMode,
           exchangeReservationId,
+          returnTrackingCode,
+          exchangeTrackingCode,
         },
       });
     });
@@ -2918,6 +4161,123 @@ export class OrderRmaService implements OnModuleInit, OnModuleDestroy {
     const updated = await this.loadRmaByIdOrCode(rma.id);
     const [hydrated] = await this.hydrateRmas([updated!]);
     return hydrated;
+  }
+
+  async rejectRma(
+    rmaIdOrCode: string,
+    rawBody: unknown,
+    actor: OrderActorContext,
+  ): Promise<RmaMutationResult> {
+    const input = parseWithZod(RejectRmaDtoSchema, rawBody);
+    const rma = await this.loadRmaByIdOrCode(rmaIdOrCode);
+    if (!rma) {
+      throw new ApiDomainException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy yêu cầu RMA "${rmaIdOrCode}".`,
+      );
+    }
+
+    const [before] = await this.hydrateRmas([rma]);
+    if (rma.status === RmaStatus.RMA_REJECTED) {
+      return {
+        ...before,
+        before,
+        after: before,
+        customerNotified: false,
+      };
+    }
+
+    if (
+      rma.status === RmaStatus.RMA_COMPLETED ||
+      rma.status === RmaStatus.QC_PASSED ||
+      rma.status === RmaStatus.REFUND_PROCESSING
+    ) {
+      throw new ApiDomainException(
+        HttpStatus.CONFLICT,
+        ErrorCode.CONFLICT,
+        `Không thể từ chối yêu cầu RMA đã hoàn tất hoặc đang hoàn tiền (trạng thái hiện tại: ${rma.status}).`,
+        { currentStatus: rma.status },
+      );
+    }
+
+    const rejectedBy =
+      input.rejectedBy?.trim() ||
+      actor.actorEmail?.trim() ||
+      actor.userId?.trim() ||
+      'admin';
+
+    if (rma.exchange_reservation_id) {
+      await this.upstream.releaseReservationNonFatal(
+        rma.id,
+        'CANCEL_RELEASE',
+        rma.exchange_reservation_id,
+        actor,
+      );
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `UPDATE rma_requests
+         SET status = $2,
+             rejection_reason = $3,
+             rejected_by = $4,
+             rejected_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $1`,
+        [rma.id, RmaStatus.RMA_REJECTED, input.reason.trim(), rejectedBy],
+      );
+
+      await this.writeOutbox(tx, {
+        eventName: 'rma.rejected',
+        aggregateType: 'RMA',
+        aggregateId: rma.id,
+        correlationId: actor.correlationId,
+        payload: {
+          rmaId: rma.id,
+          rmaCode: rma.rma_code,
+          orderId: rma.order_id,
+          reason: input.reason.trim(),
+          rejectedBy,
+        },
+      });
+    });
+
+    let customerNotified = false;
+    const orderRes = await this.db.query<OrderRow>(
+      'SELECT * FROM orders WHERE id = $1 LIMIT 1',
+      [rma.order_id],
+    );
+    const parentOrder = orderRes.rows[0];
+    if (parentOrder?.customer_email) {
+      const shippingAddr = parseJsonValue<ShippingAddressSnapshot | null>(
+        parentOrder.shipping_address_jsonb,
+        null,
+      );
+      customerNotified = await this.upstream.notifyRmaRejectedNonFatal(
+        {
+          eventId: `rma-rejected:${rma.rma_code}`,
+          rmaId: rma.id,
+          rmaCode: rma.rma_code,
+          orderCode: parentOrder.order_code,
+          customerEmail: parentOrder.customer_email,
+          customerPhone: parentOrder.customer_phone,
+          customerName: shippingAddr?.recipientName ?? null,
+          reason: input.reason.trim(),
+          rejectedBy,
+        },
+        actor,
+      );
+    }
+
+    const updated = await this.loadRmaByIdOrCode(rma.id);
+    const [after] = await this.hydrateRmas([updated!]);
+    return {
+      ...after,
+      before,
+      after,
+      customerNotified,
+    };
   }
 
   async completeRmaQc(

@@ -6,12 +6,14 @@ import {
   EVENT_NAMES,
   InventoryLedgerReason,
   ReservationStatus,
+  WarehouseType,
   type BatchAvailabilityRequest,
   type BatchAvailabilityResponse,
   type CommitReservationRequest,
   type InsufficientStockDetail,
   type InventoryLedgerEntryDto,
   type InventoryLedgerReason as InventoryLedgerReasonValue,
+  type PagePagination,
   type ReleaseReservationRequest,
   type ReservationStatus as ReservationStatusValue,
   type ReservationType as ReservationTypeValue,
@@ -94,15 +96,22 @@ interface ReservationItemJoinedRow {
 interface LedgerJoinedRow {
   id: string;
   sku_id: string;
+  sku_code: string | null;
   warehouse_id: string;
   warehouse_code: string | null;
   delta_available: number;
   delta_reserved: number;
   delta_committed: number;
+  delta_damaged: number;
   balance_available_after: number;
+  before_qty: number | null;
+  after_qty: number | null;
   reason: InventoryLedgerReasonValue;
+  reason_code: string | null;
   reference_id: string | null;
+  transfer_ref: string | null;
   actor_id: string | null;
+  actor_email: string | null;
   note: string | null;
   created_at: Date | string;
 }
@@ -116,7 +125,93 @@ export interface WarehouseAdminViewDto extends WarehouseDto {
 }
 
 export interface LedgerAdminViewDto extends InventoryLedgerEntryDto {
+  skuCode?: string;
+  movementType: InventoryLedgerReasonValue;
+  deltaQty: number;
+  deltaDamaged: number;
   balanceAvailableAfter: number;
+  beforeQty: number | null;
+  afterQty: number | null;
+  reasonCode: string | null;
+  transferRef: string | null;
+  actorEmail: string | null;
+}
+
+export interface PaginatedLedgerResult {
+  items: LedgerAdminViewDto[];
+  pagination: PagePagination;
+}
+
+export interface InventoryAdjustmentInput {
+  sku: string;
+  warehouseCode: string;
+  deltaAvailable?: number;
+  deltaDamaged?: number;
+  reasonCode: string;
+  note?: string;
+  actorId?: string | null;
+  actorEmail?: string | null;
+}
+
+export interface InventoryAdjustmentResult {
+  before: StockLevelAdminExtendedDto;
+  after: StockLevelAdminExtendedDto;
+  ledgerEntry: LedgerAdminViewDto;
+}
+
+export interface InventoryTransferInput {
+  sku: string;
+  fromWarehouseCode: string;
+  toWarehouseCode: string;
+  quantity: number;
+  note?: string;
+  actorId?: string | null;
+  actorEmail?: string | null;
+}
+
+export interface InventoryTransferResult {
+  transferRef: string;
+  referenceCode: string;
+  fromBefore: StockLevelAdminExtendedDto;
+  fromAfter: StockLevelAdminExtendedDto;
+  toBefore: StockLevelAdminExtendedDto;
+  toAfter: StockLevelAdminExtendedDto;
+  ledgerEntries: [LedgerAdminViewDto, LedgerAdminViewDto];
+}
+
+export interface CreateWarehouseInput {
+  code: string;
+  name: string;
+  city: string;
+  address?: string | null;
+  isActive?: boolean;
+  warehouseType?: WarehouseTypeValue;
+  provinceCode?: string;
+  supports2hDelivery?: boolean;
+  priority?: number;
+}
+
+export interface UpdateWarehouseInput {
+  name?: string;
+  city?: string;
+  address?: string | null;
+  isActive?: boolean;
+  warehouseType?: WarehouseTypeValue;
+  provinceCode?: string;
+  supports2hDelivery?: boolean;
+  priority?: number;
+}
+
+export interface UpdateSafetyThresholdInput {
+  sku: string;
+  safetyThreshold: number;
+  warehouseCode?: string;
+}
+
+export interface UpdateSafetyThresholdResult {
+  before: StockLevelAdminExtendedDto | { skuId: string; skuCode?: string; safetyThreshold: number; warehouses: StockLevelAdminExtendedDto[] };
+  after: StockLevelAdminExtendedDto | { skuId: string; skuCode?: string; safetyThreshold: number; warehouses: StockLevelAdminExtendedDto[] };
+  updatedRows: StockLevelAdminExtendedDto[];
 }
 
 export interface ExpireSweepResult {
@@ -192,6 +287,39 @@ class InsufficientStockAbortError extends Error {
   constructor(readonly insufficientSkus: InsufficientStockDetail[]) {
     super('Insufficient stock during atomic reservation');
   }
+}
+
+const WAREHOUSE_CODE_ALIASES: Record<string, string> = {
+  WH_HN_CENTRAL: 'CENTRAL_WH',
+  HN_CENTRAL: 'CENTRAL_WH',
+  CENTRAL: 'CENTRAL_WH',
+  CENTRAL_WH: 'CENTRAL_WH',
+  WH_HN: 'HN_ATELIER',
+  HN: 'HN_ATELIER',
+  HN_ATELIER: 'HN_ATELIER',
+  WH_HCM: 'HCM_SHOWROOM',
+  HCM: 'HCM_SHOWROOM',
+  HCM_SHOWROOM: 'HCM_SHOWROOM',
+};
+
+function normalizeWarehouseCode(raw: string): string {
+  const upper = raw.trim().toUpperCase();
+  return WAREHOUSE_CODE_ALIASES[upper] ?? upper;
+}
+
+function inferProvinceCode(city: string, code: string): string {
+  const lower = city.toLowerCase();
+  if (lower.includes('hà nội') || lower.includes('ha noi') || lower.includes('hanoi')) return 'HN';
+  if (lower.includes('hồ chí minh') || lower.includes('ho chi minh') || lower.includes('hcm')) return 'HCM';
+  if (lower.includes('đà nẵng') || lower.includes('da nang')) return 'DN';
+  const cleaned = code.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12);
+  return cleaned || 'VN';
+}
+
+function generateInventoryRef(prefix: 'ADJ' | 'TRF'): string {
+  const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
+  return `${prefix}-${ymd}-${suffix}`;
 }
 
 function toIso(value: Date | string): string {
@@ -1279,6 +1407,812 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  async createAdjustment(
+    input: InventoryAdjustmentInput,
+    correlationId: string = crypto.randomUUID(),
+  ): Promise<InventoryAdjustmentResult> {
+    const deltaAvailable = Math.trunc(input.deltaAvailable ?? 0);
+    const deltaDamaged = Math.trunc(input.deltaDamaged ?? 0);
+
+    if (deltaAvailable === 0 && deltaDamaged === 0) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Phải nhập ít nhất một giá trị điều chỉnh khác 0 (deltaAvailable hoặc deltaDamaged).',
+      );
+    }
+
+    const whCode = normalizeWarehouseCode(input.warehouseCode);
+    const reasonCode = input.reasonCode.trim().toUpperCase();
+
+    const txOutcome = await this.db.transaction(async (tx) => {
+      const whRes = await tx.query<WarehouseRow>(
+        'SELECT * FROM warehouses WHERE UPPER(code) = $1 LIMIT 1',
+        [whCode],
+      );
+      if (whRes.rows.length === 0) {
+        throw new ApiDomainException(
+          HttpStatus.NOT_FOUND,
+          ErrorCode.NOT_FOUND,
+          `Không tìm thấy kho "${input.warehouseCode}".`,
+        );
+      }
+      const warehouse = whRes.rows[0];
+
+      const skuMeta = await this.resolveSkuForMutation(tx, input.sku);
+
+      const lockedRes = await tx.query<StockLevelRow>(
+        `SELECT * FROM stock_levels
+         WHERE sku_id = $1 AND warehouse_id = $2
+         FOR UPDATE`,
+        [skuMeta.skuId, warehouse.id],
+      );
+      const existing = lockedRes.rows[0] ?? null;
+
+      if (!existing && (deltaAvailable < 0 || deltaDamaged < 0)) {
+        throw new ApiDomainException(
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+          `SKU "${skuMeta.skuCode ?? skuMeta.skuId}" chưa có bản ghi tồn kho tại kho ${warehouse.code}, không thể điều chỉnh giảm.`,
+        );
+      }
+
+      const prevAvailable = existing ? Number(existing.available_qty) : 0;
+      const prevReserved = existing ? Number(existing.reserved_qty) : 0;
+      const prevCommitted = existing ? Number(existing.committed_qty) : 0;
+      const prevDamaged = existing ? Number(existing.damaged_qty ?? 0) : 0;
+      const prevThreshold = existing ? Number(existing.safety_threshold) : skuMeta.safetyThreshold;
+      const prevUpdatedAt = existing ? toIso(existing.updated_at) : new Date().toISOString();
+
+      const nextAvailable = prevAvailable + deltaAvailable;
+      const nextDamaged = prevDamaged + deltaDamaged;
+
+      if (nextAvailable < 0) {
+        throw new ApiDomainException(
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+          `Điều chỉnh khiến tồn kho khả dụng (availableQty) nhỏ hơn 0 (hiện có ${prevAvailable}, delta ${deltaAvailable}).`,
+        );
+      }
+      if (nextDamaged < 0) {
+        throw new ApiDomainException(
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+          `Điều chỉnh khiến tồn hàng lỗi (damagedQty) nhỏ hơn 0 (hiện có ${prevDamaged}, delta ${deltaDamaged}).`,
+        );
+      }
+
+      const beforeDto = this.buildStockLevelExtendedDto({
+        skuId: skuMeta.skuId,
+        skuCode: existing?.sku_code ?? skuMeta.skuCode,
+        productId: existing?.product_id ?? skuMeta.productId,
+        warehouse,
+        availableQty: prevAvailable,
+        reservedQty: prevReserved,
+        committedQty: prevCommitted,
+        damagedQty: prevDamaged,
+        safetyThreshold: prevThreshold,
+        updatedAt: prevUpdatedAt,
+      });
+
+      const upsertRes = await tx.query<StockLevelRow>(
+        `INSERT INTO stock_levels (
+          sku_id, warehouse_id, product_id, sku_code,
+          available_qty, reserved_qty, committed_qty, damaged_qty,
+          safety_threshold, version, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, 0, 0, $6, $7, 1, NOW())
+        ON CONFLICT (sku_id, warehouse_id) DO UPDATE SET
+          available_qty = EXCLUDED.available_qty,
+          damaged_qty = EXCLUDED.damaged_qty,
+          sku_code = COALESCE(stock_levels.sku_code, EXCLUDED.sku_code),
+          version = stock_levels.version + 1,
+          updated_at = NOW()
+        RETURNING *`,
+        [
+          skuMeta.skuId,
+          warehouse.id,
+          existing?.product_id ?? skuMeta.productId,
+          existing?.sku_code ?? skuMeta.skuCode,
+          nextAvailable,
+          nextDamaged,
+          prevThreshold,
+        ],
+      );
+      const updatedRow = upsertRes.rows[0];
+
+      const afterDto = this.buildStockLevelExtendedDto({
+        skuId: updatedRow.sku_id,
+        skuCode: updatedRow.sku_code ?? skuMeta.skuCode,
+        productId: updatedRow.product_id,
+        warehouse,
+        availableQty: Number(updatedRow.available_qty),
+        reservedQty: Number(updatedRow.reserved_qty),
+        committedQty: Number(updatedRow.committed_qty),
+        damagedQty: Number(updatedRow.damaged_qty ?? 0),
+        safetyThreshold: Number(updatedRow.safety_threshold),
+        updatedAt: toIso(updatedRow.updated_at),
+      });
+
+      const ledgerId = crypto.randomUUID();
+      const adjRef = generateInventoryRef('ADJ');
+      const ledgerNote =
+        input.note?.trim() ||
+        `Kiểm kê / điều chỉnh tồn kho [${reasonCode}] tại ${warehouse.code}: available ${deltaAvailable >= 0 ? `+${deltaAvailable}` : deltaAvailable}, damaged ${deltaDamaged >= 0 ? `+${deltaDamaged}` : deltaDamaged}`;
+
+      const ledgerInsert = await tx.query<{ created_at: Date | string }>(
+        `INSERT INTO inventory_ledger (
+          id, sku_id, warehouse_id,
+          delta_available, delta_reserved, delta_committed, delta_damaged,
+          balance_available_after, before_qty, after_qty,
+          reason, reason_code, reference_id, actor_id, actor_email, note, created_at
+        ) VALUES ($1, $2, $3, $4, 0, 0, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+        RETURNING created_at`,
+        [
+          ledgerId,
+          skuMeta.skuId,
+          warehouse.id,
+          deltaAvailable,
+          deltaDamaged,
+          nextAvailable,
+          prevAvailable,
+          nextAvailable,
+          InventoryLedgerReason.ADJUSTMENT,
+          reasonCode,
+          adjRef,
+          input.actorId ?? null,
+          input.actorEmail ?? null,
+          ledgerNote,
+        ],
+      );
+
+      const ledgerEntry: LedgerAdminViewDto = {
+        id: ledgerId,
+        skuId: skuMeta.skuId,
+        ...(afterDto.skuCode ? { skuCode: afterDto.skuCode } : {}),
+        warehouseId: warehouse.id,
+        warehouseCode: warehouse.code,
+        deltaAvailable,
+        deltaReserved: 0,
+        deltaCommitted: 0,
+        deltaDamaged,
+        deltaQty: deltaAvailable,
+        balanceAvailable: Math.max(0, nextAvailable),
+        balanceAvailableAfter: nextAvailable,
+        beforeQty: prevAvailable,
+        afterQty: nextAvailable,
+        reason: InventoryLedgerReason.ADJUSTMENT,
+        movementType: InventoryLedgerReason.ADJUSTMENT,
+        reasonCode,
+        referenceId: adjRef,
+        transferRef: null,
+        actorId: input.actorId ?? null,
+        actorEmail: input.actorEmail ?? null,
+        note: ledgerNote,
+        createdAt: toIso(ledgerInsert.rows[0]?.created_at ?? new Date()),
+      };
+
+      const totalAvailRes = await tx.query<{ total_avail: number | string }>(
+        'SELECT COALESCE(SUM(available_qty), 0)::int AS total_avail FROM stock_levels WHERE sku_id = $1',
+        [skuMeta.skuId],
+      );
+      const totalAvail = Number(totalAvailRes.rows[0]?.total_avail ?? nextAvailable);
+
+      return {
+        skuId: skuMeta.skuId,
+        totalAvail,
+        safetyThreshold: afterDto.safetyThreshold,
+        result: {
+          before: beforeDto,
+          after: afterDto,
+          ledgerEntry,
+        } satisfies InventoryAdjustmentResult,
+      };
+    });
+
+    await this.resyncRedisCountersFromDb([txOutcome.skuId]);
+    if (deltaAvailable !== 0) {
+      void this.notifyCatalogAvailabilityChanged(
+        [
+          {
+            skuId: txOutcome.skuId,
+            totalAvailable: txOutcome.totalAvail,
+            safetyThreshold: txOutcome.safetyThreshold,
+          },
+        ],
+        correlationId,
+      );
+    }
+
+    return txOutcome.result;
+  }
+
+  async createTransfer(input: InventoryTransferInput): Promise<InventoryTransferResult> {
+    const fromCode = normalizeWarehouseCode(input.fromWarehouseCode);
+    const toCode = normalizeWarehouseCode(input.toWarehouseCode);
+    const quantity = Math.trunc(input.quantity);
+
+    if (fromCode === toCode) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Kho xuất (fromWarehouseCode) và kho nhận (toWarehouseCode) không được trùng nhau.',
+      );
+    }
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Số lượng chuyển kho (quantity) phải lớn hơn 0.',
+      );
+    }
+
+    const txOutcome = await this.db.transaction(async (tx) => {
+      const whRes = await tx.query<WarehouseRow>(
+        `SELECT * FROM warehouses
+         WHERE UPPER(code) = ANY($1::text[])
+         ORDER BY id ASC`,
+        [[fromCode, toCode]],
+      );
+      const fromWh = whRes.rows.find((w) => w.code.toUpperCase() === fromCode);
+      const toWh = whRes.rows.find((w) => w.code.toUpperCase() === toCode);
+
+      if (!fromWh) {
+        throw new ApiDomainException(
+          HttpStatus.NOT_FOUND,
+          ErrorCode.NOT_FOUND,
+          `Không tìm thấy kho xuất "${input.fromWarehouseCode}".`,
+        );
+      }
+      if (!toWh) {
+        throw new ApiDomainException(
+          HttpStatus.NOT_FOUND,
+          ErrorCode.NOT_FOUND,
+          `Không tìm thấy kho nhận "${input.toWarehouseCode}".`,
+        );
+      }
+      if (!fromWh.is_active) {
+        throw new ApiDomainException(
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+          `Kho xuất "${fromWh.code}" hiện đang tạm ngưng hoạt động.`,
+        );
+      }
+      if (!toWh.is_active) {
+        throw new ApiDomainException(
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+          `Kho nhận "${toWh.code}" hiện đang tạm ngưng hoạt động.`,
+        );
+      }
+
+      const skuMeta = await this.resolveSkuForMutation(tx, input.sku);
+
+      // Lock both warehouse rows in deterministic warehouse_id ASC order to guarantee zero deadlocks
+      const lockedRes = await tx.query<StockLevelRow>(
+        `SELECT * FROM stock_levels
+         WHERE sku_id = $1 AND warehouse_id = ANY($2::uuid[])
+         ORDER BY warehouse_id ASC
+         FOR UPDATE`,
+        [skuMeta.skuId, [fromWh.id, toWh.id].sort()],
+      );
+
+      const fromRow = lockedRes.rows.find((r) => r.warehouse_id === fromWh.id) ?? null;
+      const toRow = lockedRes.rows.find((r) => r.warehouse_id === toWh.id) ?? null;
+
+      const fromAvailBefore = fromRow ? Number(fromRow.available_qty) : 0;
+      if (!fromRow || fromAvailBefore < quantity) {
+        throw new ApiDomainException(
+          HttpStatus.CONFLICT,
+          ErrorCode.INSUFFICIENT_STOCK,
+          `Tồn kho khả dụng tại ${fromWh.code} (${fromAvailBefore}) không đủ để chuyển ${quantity} sản phẩm.`,
+          {
+            skuId: skuMeta.skuId,
+            fromWarehouseCode: fromWh.code,
+            requestedQty: quantity,
+            availableQty: fromAvailBefore,
+          },
+        );
+      }
+
+      const toAvailBefore = toRow ? Number(toRow.available_qty) : 0;
+      const fromBefore = this.buildStockLevelExtendedDto({
+        skuId: skuMeta.skuId,
+        skuCode: fromRow.sku_code ?? skuMeta.skuCode,
+        productId: fromRow.product_id,
+        warehouse: fromWh,
+        availableQty: fromAvailBefore,
+        reservedQty: Number(fromRow.reserved_qty),
+        committedQty: Number(fromRow.committed_qty),
+        damagedQty: Number(fromRow.damaged_qty ?? 0),
+        safetyThreshold: Number(fromRow.safety_threshold),
+        updatedAt: toIso(fromRow.updated_at),
+      });
+
+      const toBefore = this.buildStockLevelExtendedDto({
+        skuId: skuMeta.skuId,
+        skuCode: toRow?.sku_code ?? fromRow.sku_code ?? skuMeta.skuCode,
+        productId: toRow?.product_id ?? fromRow.product_id,
+        warehouse: toWh,
+        availableQty: toAvailBefore,
+        reservedQty: toRow ? Number(toRow.reserved_qty) : 0,
+        committedQty: toRow ? Number(toRow.committed_qty) : 0,
+        damagedQty: toRow ? Number(toRow.damaged_qty ?? 0) : 0,
+        safetyThreshold: toRow ? Number(toRow.safety_threshold) : Number(fromRow.safety_threshold),
+        updatedAt: toRow ? toIso(toRow.updated_at) : new Date().toISOString(),
+      });
+
+      // Debit source warehouse
+      const debited = await tx.query<StockLevelRow>(
+        `UPDATE stock_levels
+         SET available_qty = available_qty - $1,
+             version = version + 1,
+             updated_at = NOW()
+         WHERE sku_id = $2 AND warehouse_id = $3 AND available_qty >= $1
+         RETURNING *`,
+        [quantity, skuMeta.skuId, fromWh.id],
+      );
+      if (debited.rows.length === 0) {
+        throw new ApiDomainException(
+          HttpStatus.CONFLICT,
+          ErrorCode.INSUFFICIENT_STOCK,
+          `Không thể trừ tồn kho tại ${fromWh.code} do biến động đồng thời.`,
+        );
+      }
+
+      // Credit destination warehouse (upsert if missing)
+      const credited = await tx.query<StockLevelRow>(
+        `INSERT INTO stock_levels (
+          sku_id, warehouse_id, product_id, sku_code,
+          available_qty, reserved_qty, committed_qty, damaged_qty,
+          safety_threshold, version, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, 0, 0, 0, $6, 1, NOW())
+        ON CONFLICT (sku_id, warehouse_id) DO UPDATE SET
+          available_qty = stock_levels.available_qty + EXCLUDED.available_qty,
+          sku_code = COALESCE(stock_levels.sku_code, EXCLUDED.sku_code),
+          version = stock_levels.version + 1,
+          updated_at = NOW()
+        RETURNING *`,
+        [
+          skuMeta.skuId,
+          toWh.id,
+          fromRow.product_id,
+          fromRow.sku_code ?? skuMeta.skuCode,
+          quantity,
+          Number(fromRow.safety_threshold),
+        ],
+      );
+
+      const fromUpdated = debited.rows[0];
+      const toUpdated = credited.rows[0];
+
+      const fromAfter = this.buildStockLevelExtendedDto({
+        skuId: fromUpdated.sku_id,
+        skuCode: fromUpdated.sku_code ?? skuMeta.skuCode,
+        productId: fromUpdated.product_id,
+        warehouse: fromWh,
+        availableQty: Number(fromUpdated.available_qty),
+        reservedQty: Number(fromUpdated.reserved_qty),
+        committedQty: Number(fromUpdated.committed_qty),
+        damagedQty: Number(fromUpdated.damaged_qty ?? 0),
+        safetyThreshold: Number(fromUpdated.safety_threshold),
+        updatedAt: toIso(fromUpdated.updated_at),
+      });
+
+      const toAfter = this.buildStockLevelExtendedDto({
+        skuId: toUpdated.sku_id,
+        skuCode: toUpdated.sku_code ?? skuMeta.skuCode,
+        productId: toUpdated.product_id,
+        warehouse: toWh,
+        availableQty: Number(toUpdated.available_qty),
+        reservedQty: Number(toUpdated.reserved_qty),
+        committedQty: Number(toUpdated.committed_qty),
+        damagedQty: Number(toUpdated.damaged_qty ?? 0),
+        safetyThreshold: Number(toUpdated.safety_threshold),
+        updatedAt: toIso(toUpdated.updated_at),
+      });
+
+      const transferRef = generateInventoryRef('TRF');
+      const customNote = input.note?.trim();
+      const outNote = customNote
+        ? `Xuất chuyển kho ${fromWh.code} → ${toWh.code} (-${quantity}): ${customNote}`
+        : `Xuất chuyển kho nội bộ ${fromWh.code} → ${toWh.code} (-${quantity})`;
+      const inNote = customNote
+        ? `Nhập chuyển kho ${fromWh.code} → ${toWh.code} (+${quantity}): ${customNote}`
+        : `Nhập chuyển kho nội bộ ${fromWh.code} → ${toWh.code} (+${quantity})`;
+
+      const outId = crypto.randomUUID();
+      const inId = crypto.randomUUID();
+
+      const outInsert = await tx.query<{ created_at: Date | string }>(
+        `INSERT INTO inventory_ledger (
+          id, sku_id, warehouse_id,
+          delta_available, delta_reserved, delta_committed, delta_damaged,
+          balance_available_after, before_qty, after_qty,
+          reason, reason_code, reference_id, transfer_ref, actor_id, actor_email, note, created_at
+        ) VALUES ($1, $2, $3, $4, 0, 0, 0, $5, $6, $7, $8, 'INTERNAL_TRANSFER', $9, $9, $10, $11, $12, NOW())
+        RETURNING created_at`,
+        [
+          outId,
+          skuMeta.skuId,
+          fromWh.id,
+          -quantity,
+          fromAfter.availableQty,
+          fromBefore.availableQty,
+          fromAfter.availableQty,
+          InventoryLedgerReason.TRANSFER_OUT,
+          transferRef,
+          input.actorId ?? null,
+          input.actorEmail ?? null,
+          outNote,
+        ],
+      );
+
+      const inInsert = await tx.query<{ created_at: Date | string }>(
+        `INSERT INTO inventory_ledger (
+          id, sku_id, warehouse_id,
+          delta_available, delta_reserved, delta_committed, delta_damaged,
+          balance_available_after, before_qty, after_qty,
+          reason, reason_code, reference_id, transfer_ref, actor_id, actor_email, note, created_at
+        ) VALUES ($1, $2, $3, $4, 0, 0, 0, $5, $6, $7, $8, 'INTERNAL_TRANSFER', $9, $9, $10, $11, $12, NOW())
+        RETURNING created_at`,
+        [
+          inId,
+          skuMeta.skuId,
+          toWh.id,
+          quantity,
+          toAfter.availableQty,
+          toBefore.availableQty,
+          toAfter.availableQty,
+          InventoryLedgerReason.TRANSFER_IN,
+          transferRef,
+          input.actorId ?? null,
+          input.actorEmail ?? null,
+          inNote,
+        ],
+      );
+
+      const outEntry: LedgerAdminViewDto = {
+        id: outId,
+        skuId: skuMeta.skuId,
+        ...(fromAfter.skuCode ? { skuCode: fromAfter.skuCode } : {}),
+        warehouseId: fromWh.id,
+        warehouseCode: fromWh.code,
+        deltaAvailable: -quantity,
+        deltaReserved: 0,
+        deltaCommitted: 0,
+        deltaDamaged: 0,
+        deltaQty: -quantity,
+        balanceAvailable: fromAfter.availableQty,
+        balanceAvailableAfter: fromAfter.availableQty,
+        beforeQty: fromBefore.availableQty,
+        afterQty: fromAfter.availableQty,
+        reason: InventoryLedgerReason.TRANSFER_OUT,
+        movementType: InventoryLedgerReason.TRANSFER_OUT,
+        reasonCode: 'INTERNAL_TRANSFER',
+        referenceId: transferRef,
+        transferRef,
+        actorId: input.actorId ?? null,
+        actorEmail: input.actorEmail ?? null,
+        note: outNote,
+        createdAt: toIso(outInsert.rows[0]?.created_at ?? new Date()),
+      };
+
+      const inEntry: LedgerAdminViewDto = {
+        id: inId,
+        skuId: skuMeta.skuId,
+        ...(toAfter.skuCode ? { skuCode: toAfter.skuCode } : {}),
+        warehouseId: toWh.id,
+        warehouseCode: toWh.code,
+        deltaAvailable: quantity,
+        deltaReserved: 0,
+        deltaCommitted: 0,
+        deltaDamaged: 0,
+        deltaQty: quantity,
+        balanceAvailable: toAfter.availableQty,
+        balanceAvailableAfter: toAfter.availableQty,
+        beforeQty: toBefore.availableQty,
+        afterQty: toAfter.availableQty,
+        reason: InventoryLedgerReason.TRANSFER_IN,
+        movementType: InventoryLedgerReason.TRANSFER_IN,
+        reasonCode: 'INTERNAL_TRANSFER',
+        referenceId: transferRef,
+        transferRef,
+        actorId: input.actorId ?? null,
+        actorEmail: input.actorEmail ?? null,
+        note: inNote,
+        createdAt: toIso(inInsert.rows[0]?.created_at ?? new Date()),
+      };
+
+      return {
+        skuId: skuMeta.skuId,
+        result: {
+          transferRef,
+          referenceCode: transferRef,
+          fromBefore,
+          fromAfter,
+          toBefore,
+          toAfter,
+          ledgerEntries: [outEntry, inEntry] as [LedgerAdminViewDto, LedgerAdminViewDto],
+        } satisfies InventoryTransferResult,
+      };
+    });
+
+    await this.resyncRedisCountersFromDb([txOutcome.skuId]);
+    return txOutcome.result;
+  }
+
+  async createWarehouse(input: CreateWarehouseInput): Promise<WarehouseAdminViewDto> {
+    const code = input.code.trim().toUpperCase();
+    if (!/^[A-Z0-9_-]{2,32}$/.test(code)) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Mã kho (code) chỉ gồm chữ cái in hoa, chữ số, dấu gạch dưới hoặc gạch ngang (2–32 ký tự).',
+      );
+    }
+
+    const existing = await this.db.query<{ id: string }>(
+      'SELECT id FROM warehouses WHERE UPPER(code) = $1 LIMIT 1',
+      [code],
+    );
+    if (existing.rows.length > 0) {
+      throw new ApiDomainException(
+        HttpStatus.CONFLICT,
+        ErrorCode.CONFLICT,
+        `Mã kho "${code}" đã tồn tại trong hệ thống.`,
+      );
+    }
+
+    const warehouseId = crypto.randomUUID();
+    const warehouseType: WarehouseTypeValue =
+      input.warehouseType ??
+      (code.includes('CENTRAL') ? WarehouseType.CENTRAL : WarehouseType.SHOWROOM);
+    const city = input.city.trim();
+    const provinceCode = (input.provinceCode?.trim() || inferProvinceCode(city, code)).toUpperCase();
+    const isActive = input.isActive ?? true;
+    const priority = input.priority ?? 10;
+    const supports2hDelivery = input.supports2hDelivery ?? warehouseType === WarehouseType.SHOWROOM;
+
+    const inserted = await this.db.query<WarehouseRow>(
+      `INSERT INTO warehouses (
+        id, code, name, type, province_code, city, address,
+        supports_2h_delivery, priority, is_active, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+      RETURNING *`,
+      [
+        warehouseId,
+        code,
+        input.name.trim(),
+        warehouseType,
+        provinceCode,
+        city,
+        input.address?.trim() || null,
+        supports2hDelivery,
+        priority,
+        isActive,
+      ],
+    );
+
+    return this.mapWarehouseRow(inserted.rows[0], 0, 0, 0);
+  }
+
+  async updateWarehouse(
+    codeOrId: string,
+    input: UpdateWarehouseInput,
+  ): Promise<{ before: WarehouseAdminViewDto; after: WarehouseAdminViewDto }> {
+    const trimmed = codeOrId.trim();
+    const isUuid = UUID_REGEX.test(trimmed);
+    const normalized = isUuid ? trimmed : normalizeWarehouseCode(trimmed);
+
+    const existingRes = await this.db.query<
+      WarehouseRow & {
+        total_available: number | string;
+        total_reserved: number | string;
+        total_committed: number | string;
+      }
+    >(
+      `SELECT w.*,
+              COALESCE(SUM(sl.available_qty), 0)::int AS total_available,
+              COALESCE(SUM(sl.reserved_qty), 0)::int AS total_reserved,
+              COALESCE(SUM(sl.committed_qty), 0)::int AS total_committed
+       FROM warehouses w
+       LEFT JOIN stock_levels sl ON sl.warehouse_id = w.id
+       WHERE ${isUuid ? 'w.id = $1' : 'UPPER(w.code) = $1'}
+       GROUP BY w.id
+       LIMIT 1`,
+      [normalized],
+    );
+
+    if (existingRes.rows.length === 0) {
+      throw new ApiDomainException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy kho "${codeOrId}".`,
+      );
+    }
+
+    const row = existingRes.rows[0];
+    const before = this.mapWarehouseRow(
+      row,
+      Number(row.total_available),
+      Number(row.total_reserved),
+      Number(row.total_committed),
+    );
+
+    const nextName = input.name !== undefined ? input.name.trim() : row.name;
+    const nextCity = input.city !== undefined ? input.city.trim() : row.city;
+    const nextAddress =
+      input.address !== undefined ? (input.address === null ? null : input.address.trim() || null) : row.address;
+    const nextType = input.warehouseType ?? row.type;
+    const nextProvinceCode =
+      input.provinceCode !== undefined
+        ? input.provinceCode.trim().toUpperCase()
+        : input.city !== undefined
+          ? inferProvinceCode(nextCity, row.code)
+          : row.province_code;
+    const nextSupports2h =
+      input.supports2hDelivery !== undefined ? input.supports2hDelivery : Boolean(row.supports_2h_delivery);
+    const nextPriority = input.priority !== undefined ? input.priority : Number(row.priority);
+    const nextIsActive = input.isActive !== undefined ? input.isActive : Boolean(row.is_active);
+
+    const updatedRes = await this.db.query<WarehouseRow>(
+      `UPDATE warehouses
+       SET name = $1,
+           type = $2,
+           province_code = $3,
+           city = $4,
+           address = $5,
+           supports_2h_delivery = $6,
+           priority = $7,
+           is_active = $8,
+           updated_at = NOW()
+       WHERE id = $9
+       RETURNING *`,
+      [
+        nextName,
+        nextType,
+        nextProvinceCode,
+        nextCity,
+        nextAddress,
+        nextSupports2h,
+        nextPriority,
+        nextIsActive,
+        row.id,
+      ],
+    );
+
+    const after = this.mapWarehouseRow(
+      updatedRes.rows[0],
+      before.totalAvailableQty,
+      before.totalReservedQty,
+      before.totalCommittedQty,
+    );
+
+    return { before, after };
+  }
+
+  async updateSafetyThreshold(
+    input: UpdateSafetyThresholdInput,
+  ): Promise<UpdateSafetyThresholdResult> {
+    const threshold = Math.trunc(input.safetyThreshold);
+    if (!Number.isInteger(threshold) || threshold < 0) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Ngưỡng cảnh báo tồn kho (safetyThreshold) phải là số nguyên >= 0.',
+      );
+    }
+
+    return this.db.transaction(async (tx) => {
+      const skuMeta = await this.resolveSkuForMutation(tx, input.sku);
+
+      let targetWarehouse: WarehouseRow | null = null;
+      if (input.warehouseCode && input.warehouseCode.trim()) {
+        const whCode = normalizeWarehouseCode(input.warehouseCode);
+        const whRes = await tx.query<WarehouseRow>(
+          'SELECT * FROM warehouses WHERE UPPER(code) = $1 LIMIT 1',
+          [whCode],
+        );
+        if (whRes.rows.length === 0) {
+          throw new ApiDomainException(
+            HttpStatus.NOT_FOUND,
+            ErrorCode.NOT_FOUND,
+            `Không tìm thấy kho "${input.warehouseCode}".`,
+          );
+        }
+        targetWarehouse = whRes.rows[0];
+      }
+
+      const params: unknown[] = [skuMeta.skuId];
+      let whFilter = '';
+      if (targetWarehouse) {
+        params.push(targetWarehouse.id);
+        whFilter = `AND sl.warehouse_id = $${params.length}`;
+      }
+
+      const existingRes = await tx.query<StockLevelJoinedRow>(
+        `SELECT sl.*,
+                w.code AS warehouse_code,
+                w.name AS warehouse_name,
+                w.type AS warehouse_type,
+                w.priority AS warehouse_priority
+         FROM stock_levels sl
+         INNER JOIN warehouses w ON w.id = sl.warehouse_id
+         WHERE sl.sku_id = $1 ${whFilter}
+         ORDER BY w.priority ASC, w.code ASC
+         FOR UPDATE OF sl`,
+        params,
+      );
+
+      if (existingRes.rows.length === 0) {
+        throw new ApiDomainException(
+          HttpStatus.NOT_FOUND,
+          ErrorCode.NOT_FOUND,
+          targetWarehouse
+            ? `Không tìm thấy tồn kho cho SKU "${input.sku}" tại kho ${targetWarehouse.code}.`
+            : `Không tìm thấy tồn kho cho SKU "${input.sku}".`,
+        );
+      }
+
+      const beforeRows = existingRes.rows.map((row) => this.mapJoinedStockRow(row));
+
+      const updateParams: unknown[] = [threshold, skuMeta.skuId];
+      let updateWhClause = '';
+      if (targetWarehouse) {
+        updateParams.push(targetWarehouse.id);
+        updateWhClause = 'AND warehouse_id = $3';
+      }
+
+      await tx.query(
+        `UPDATE stock_levels
+         SET safety_threshold = $1,
+             version = version + 1,
+             updated_at = NOW()
+         WHERE sku_id = $2 ${updateWhClause}`,
+        updateParams,
+      );
+
+      const reloadedRes = await tx.query<StockLevelJoinedRow>(
+        `SELECT sl.*,
+                w.code AS warehouse_code,
+                w.name AS warehouse_name,
+                w.type AS warehouse_type,
+                w.priority AS warehouse_priority
+         FROM stock_levels sl
+         INNER JOIN warehouses w ON w.id = sl.warehouse_id
+         WHERE sl.sku_id = $1 ${whFilter}
+         ORDER BY w.priority ASC, w.code ASC`,
+        params,
+      );
+      const afterRows = reloadedRes.rows.map((row) => this.mapJoinedStockRow(row));
+
+      if (targetWarehouse || afterRows.length === 1) {
+        return {
+          before: beforeRows[0],
+          after: afterRows[0],
+          updatedRows: afterRows,
+        };
+      }
+
+      return {
+        before: {
+          skuId: skuMeta.skuId,
+          ...(beforeRows[0]?.skuCode ? { skuCode: beforeRows[0].skuCode } : {}),
+          safetyThreshold: beforeRows[0]?.safetyThreshold ?? 3,
+          warehouses: beforeRows,
+        },
+        after: {
+          skuId: skuMeta.skuId,
+          ...(afterRows[0]?.skuCode ? { skuCode: afterRows[0].skuCode } : {}),
+          safetyThreshold: threshold,
+          warehouses: afterRows,
+        },
+        updatedRows: afterRows,
+      };
+    });
+  }
+
   async listAdminWarehouses(): Promise<WarehouseAdminViewDto[]> {
     const res = await this.db.query<
       WarehouseRow & {
@@ -1761,65 +2695,278 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
   }
 
   async listAdminLedger(query: {
+    sku?: string;
     skuId?: string;
     warehouseCode?: string;
     reason?: string;
+    movementType?: string;
     referenceId?: string;
+    page?: number;
     limit?: number;
-  }): Promise<LedgerAdminViewDto[]> {
+  }): Promise<PaginatedLedgerResult> {
     const conditions: string[] = [];
     const params: unknown[] = [];
 
-    if (query.skuId && UUID_REGEX.test(query.skuId.trim())) {
-      params.push(query.skuId.trim());
-      conditions.push(`l.sku_id = $${params.length}`);
+    const rawSku = (query.sku ?? query.skuId)?.trim();
+    if (rawSku) {
+      if (UUID_REGEX.test(rawSku)) {
+        params.push(rawSku);
+        conditions.push(`l.sku_id = $${params.length}`);
+      } else {
+        params.push(`%${rawSku}%`);
+        conditions.push(
+          `(l.sku_id::text ILIKE $${params.length} OR COALESCE(sl_meta.sku_code, '') ILIKE $${params.length})`,
+        );
+      }
     }
 
     if (query.warehouseCode && query.warehouseCode.trim()) {
-      params.push(query.warehouseCode.trim().toUpperCase());
+      params.push(normalizeWarehouseCode(query.warehouseCode));
       conditions.push(`UPPER(w.code) = $${params.length}`);
     }
 
-    if (query.reason && query.reason.trim()) {
-      params.push(query.reason.trim().toUpperCase());
+    const rawMovement = (query.movementType ?? query.reason)?.trim();
+    if (rawMovement) {
+      params.push(rawMovement.toUpperCase());
       conditions.push(`l.reason = $${params.length}`);
     }
 
     if (query.referenceId && query.referenceId.trim()) {
       params.push(`%${query.referenceId.trim()}%`);
-      conditions.push(`COALESCE(l.reference_id, '') ILIKE $${params.length}`);
+      conditions.push(
+        `(COALESCE(l.reference_id, '') ILIKE $${params.length} OR COALESCE(l.transfer_ref, '') ILIKE $${params.length})`,
+      );
     }
 
-    const limit = Math.min(Math.max(Number(query.limit ?? 100) || 100, 1), 500);
-    params.push(limit);
+    const page = Math.max(1, Number.isFinite(Number(query.page)) && Number(query.page) > 0 ? Math.trunc(Number(query.page)) : 1);
+    const defaultLimit = query.page !== undefined ? 50 : 100;
+    const limit = Math.min(
+      Math.max(
+        Number.isFinite(Number(query.limit)) && Number(query.limit) > 0
+          ? Math.trunc(Number(query.limit))
+          : defaultLimit,
+        1,
+      ),
+      500,
+    );
+    const offset = (page - 1) * limit;
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const res = await this.db.query<LedgerJoinedRow>(
-      `SELECT l.*, w.code AS warehouse_code
+    const countRes = await this.db.query<{ cnt: string | number }>(
+      `SELECT COUNT(*)::int AS cnt
        FROM inventory_ledger l
        LEFT JOIN warehouses w ON w.id = l.warehouse_id
-       ${whereClause}
-       ORDER BY l.created_at DESC
-       LIMIT $${params.length}`,
+       LEFT JOIN LATERAL (
+         SELECT sl.sku_code
+         FROM stock_levels sl
+         WHERE sl.sku_id = l.sku_id AND sl.sku_code IS NOT NULL
+         LIMIT 1
+       ) sl_meta ON TRUE
+       ${whereClause}`,
       params,
     );
+    const total = Number(countRes.rows[0]?.cnt ?? 0);
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
 
-    return res.rows.map((row) => ({
+    const dataParams = [...params, limit, offset];
+    const limitIdx = dataParams.length - 1;
+    const offsetIdx = dataParams.length;
+
+    const res = await this.db.query<LedgerJoinedRow>(
+      `SELECT l.*, w.code AS warehouse_code, sl_meta.sku_code AS sku_code
+       FROM inventory_ledger l
+       LEFT JOIN warehouses w ON w.id = l.warehouse_id
+       LEFT JOIN LATERAL (
+         SELECT sl.sku_code
+         FROM stock_levels sl
+         WHERE sl.sku_id = l.sku_id AND sl.sku_code IS NOT NULL
+         LIMIT 1
+       ) sl_meta ON TRUE
+       ${whereClause}
+       ORDER BY l.created_at DESC
+       LIMIT $${limitIdx}
+       OFFSET $${offsetIdx}`,
+      dataParams,
+    );
+
+    const items: LedgerAdminViewDto[] = res.rows.map((row) => {
+      const deltaAvail = Number(row.delta_available);
+      const availAfter = Number(row.balance_available_after);
+      const computedBefore =
+        row.before_qty !== null && row.before_qty !== undefined
+          ? Number(row.before_qty)
+          : Math.max(0, availAfter - deltaAvail);
+      const computedAfter =
+        row.after_qty !== null && row.after_qty !== undefined
+          ? Number(row.after_qty)
+          : availAfter;
+
+      return {
+        id: row.id,
+        skuId: row.sku_id,
+        ...(row.sku_code ? { skuCode: row.sku_code } : {}),
+        warehouseId: row.warehouse_id,
+        ...(row.warehouse_code ? { warehouseCode: row.warehouse_code } : {}),
+        deltaAvailable: deltaAvail,
+        deltaReserved: Number(row.delta_reserved),
+        deltaCommitted: Number(row.delta_committed),
+        deltaDamaged: Number(row.delta_damaged ?? 0),
+        deltaQty: deltaAvail,
+        balanceAvailable: Math.max(0, availAfter),
+        balanceAvailableAfter: availAfter,
+        beforeQty: computedBefore,
+        afterQty: computedAfter,
+        reason: row.reason,
+        movementType: row.reason,
+        reasonCode: row.reason_code ?? null,
+        referenceId: row.reference_id,
+        transferRef: row.transfer_ref ?? null,
+        actorId: row.actor_id,
+        actorEmail: row.actor_email ?? null,
+        note: row.note,
+        createdAt: toIso(row.created_at),
+      };
+    });
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    };
+  }
+
+  private async resolveSkuForMutation(
+    tx: AtelierDbExecutor,
+    rawSku: string,
+  ): Promise<{ skuId: string; skuCode: string | null; productId: string; safetyThreshold: number }> {
+    const trimmed = rawSku.trim();
+    if (UUID_REGEX.test(trimmed)) {
+      const existing = await tx.query<{
+        sku_id: string;
+        sku_code: string | null;
+        product_id: string;
+        safety_threshold: number;
+      }>(
+        'SELECT sku_id, sku_code, product_id, safety_threshold FROM stock_levels WHERE sku_id = $1 LIMIT 1',
+        [trimmed],
+      );
+      if (existing.rows.length > 0) {
+        return {
+          skuId: existing.rows[0].sku_id,
+          skuCode: existing.rows[0].sku_code,
+          productId: existing.rows[0].product_id,
+          safetyThreshold: Number(existing.rows[0].safety_threshold ?? 3),
+        };
+      }
+      return {
+        skuId: trimmed,
+        skuCode: null,
+        productId: trimmed,
+        safetyThreshold: 3,
+      };
+    }
+
+    const byCode = await tx.query<{
+      sku_id: string;
+      sku_code: string | null;
+      product_id: string;
+      safety_threshold: number;
+    }>(
+      'SELECT sku_id, sku_code, product_id, safety_threshold FROM stock_levels WHERE UPPER(sku_code) = UPPER($1) LIMIT 1',
+      [trimmed],
+    );
+    if (byCode.rows.length === 0) {
+      throw new ApiDomainException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy SKU "${rawSku}" trong hệ thống tồn kho.`,
+      );
+    }
+    return {
+      skuId: byCode.rows[0].sku_id,
+      skuCode: byCode.rows[0].sku_code ?? trimmed.toUpperCase(),
+      productId: byCode.rows[0].product_id,
+      safetyThreshold: Number(byCode.rows[0].safety_threshold ?? 3),
+    };
+  }
+
+  private mapWarehouseRow(
+    row: WarehouseRow,
+    totalAvailableQty: number,
+    totalReservedQty: number,
+    totalCommittedQty: number,
+  ): WarehouseAdminViewDto {
+    return {
       id: row.id,
-      skuId: row.sku_id,
-      warehouseId: row.warehouse_id,
-      ...(row.warehouse_code ? { warehouseCode: row.warehouse_code } : {}),
-      deltaAvailable: Number(row.delta_available),
-      deltaReserved: Number(row.delta_reserved),
-      deltaCommitted: Number(row.delta_committed),
-      balanceAvailable: Math.max(0, Number(row.balance_available_after)),
-      balanceAvailableAfter: Number(row.balance_available_after),
-      reason: row.reason,
-      referenceId: row.reference_id,
-      actorId: row.actor_id,
-      note: row.note,
+      code: row.code,
+      name: row.name,
+      warehouseType: row.type,
+      provinceCode: row.province_code,
+      city: row.city || row.province_code,
+      address: row.address,
+      supports2hDelivery: Boolean(row.supports_2h_delivery),
+      isActive: Boolean(row.is_active),
+      priority: Number(row.priority),
       createdAt: toIso(row.created_at),
-    }));
+      totalAvailableQty,
+      totalReservedQty,
+      totalCommittedQty,
+    };
+  }
+
+  private mapJoinedStockRow(row: StockLevelJoinedRow): StockLevelAdminExtendedDto {
+    const avail = Number(row.available_qty);
+    const threshold = Number(row.safety_threshold);
+    return {
+      id: `${row.sku_id}:${row.warehouse_id}`,
+      skuId: row.sku_id,
+      ...(row.sku_code ? { skuCode: row.sku_code } : {}),
+      productId: row.product_id,
+      warehouseId: row.warehouse_id,
+      warehouseCode: row.warehouse_code,
+      warehouseName: row.warehouse_name,
+      availableQty: avail,
+      reservedQty: Number(row.reserved_qty),
+      committedQty: Number(row.committed_qty),
+      damagedQty: Number(row.damaged_qty ?? 0),
+      safetyThreshold: threshold,
+      lowStockWarning: avail >= 1 && avail <= threshold,
+      updatedAt: toIso(row.updated_at),
+    };
+  }
+
+  private buildStockLevelExtendedDto(params: {
+    skuId: string;
+    skuCode: string | null;
+    productId: string;
+    warehouse: WarehouseRow;
+    availableQty: number;
+    reservedQty: number;
+    committedQty: number;
+    damagedQty: number;
+    safetyThreshold: number;
+    updatedAt: string;
+  }): StockLevelAdminExtendedDto {
+    return {
+      id: `${params.skuId}:${params.warehouse.id}`,
+      skuId: params.skuId,
+      ...(params.skuCode ? { skuCode: params.skuCode } : {}),
+      productId: params.productId,
+      warehouseId: params.warehouse.id,
+      warehouseCode: params.warehouse.code,
+      warehouseName: params.warehouse.name,
+      availableQty: params.availableQty,
+      reservedQty: params.reservedQty,
+      committedQty: params.committedQty,
+      damagedQty: params.damagedQty,
+      safetyThreshold: params.safetyThreshold,
+      lowStockWarning: params.availableQty >= 1 && params.availableQty <= params.safetyThreshold,
+      updatedAt: params.updatedAt,
+    };
   }
 
   private assertNonProductionTestHelper(): void {
@@ -1962,6 +3109,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
           headers: {
             'Content-Type': 'application/json',
             'X-Correlation-Id': correlationId,
+            'x-internal-secret': this.config.internalServiceSecret,
           },
           body: JSON.stringify({ alerts }),
           signal: controller.signal,

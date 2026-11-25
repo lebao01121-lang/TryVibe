@@ -1,5 +1,12 @@
-import type { AiTelemetryRecorder } from '@atelier/ai-harness';
+import {
+  computeCopilotFeedbackSummary,
+  maskPii,
+  type AiTelemetryRecorder,
+  type CopilotFeedbackRating,
+  type CopilotFeedbackSummary,
+} from '@atelier/ai-harness';
 import type { OllamaAiProvider } from '@atelier/contracts';
+import type { PersistedTelemetryTotals } from './rag-service.js';
 
 export interface CopilotOpsMetricsSnapshot {
   aiProvider: OllamaAiProvider;
@@ -29,6 +36,9 @@ export interface CopilotOpsMetricsSnapshot {
   averageLatencyMs: number;
   totalCompletionTokens: number;
   vtonCostUsd: number;
+  feedbackSummary: CopilotFeedbackSummary;
+  copilotFeedback: CopilotFeedbackSummary;
+  persistenceBackend: string;
   generatedAt: string;
 }
 
@@ -43,6 +53,88 @@ export class CopilotOpsMetricsTracker {
   private liveOllamaTurns = 0;
   private lastModelUsed = '';
   private lastTokensPerSec = 0;
+  private feedbackThumbsUp = 0;
+  private feedbackThumbsDown = 0;
+  private recentFeedbackReasons: string[] = [];
+  private hydratedFromDb = false;
+  private persistedBaselinePromptTokens = 0;
+  private persistedBaselineEvalTokens = 0;
+  private persistedBaselineLatencyMs = 0;
+  private persistedBaselineAvgTps = 0;
+
+  public hydrateFromPersistence(
+    totals: PersistedTelemetryTotals,
+    feedbackSummary: CopilotFeedbackSummary,
+  ): void {
+    if (this.hydratedFromDb) {
+      return;
+    }
+    this.hydratedFromDb = true;
+    this.totalChatTurns += Math.max(0, totals.totalEvents);
+    for (const [toolName, count] of Object.entries(totals.toolCallsByName)) {
+      if (count > 0) {
+        this.toolCallsByName.set(
+          toolName,
+          (this.toolCallsByName.get(toolName) ?? 0) + count,
+        );
+      }
+    }
+    this.semanticCacheHits += Math.max(0, totals.semanticCacheHits);
+    this.semanticCacheLookups += Math.max(
+      totals.semanticCacheHits,
+      totals.semanticCacheLookups,
+    );
+    this.promptInjectionsBlocked += Math.max(0, totals.promptInjectionsBlocked);
+    this.rbacDenials += Math.max(0, totals.rbacDenials);
+    this.feedbackThumbsUp += Math.max(0, feedbackSummary.thumbsUp);
+    this.feedbackThumbsDown += Math.max(0, feedbackSummary.thumbsDown);
+    if (Array.isArray(feedbackSummary.recentReasons)) {
+      for (const reason of feedbackSummary.recentReasons) {
+        const cleaned = maskPii(String(reason)).trim();
+        if (cleaned && !this.recentFeedbackReasons.includes(cleaned)) {
+          this.recentFeedbackReasons.push(cleaned);
+        }
+      }
+      this.recentFeedbackReasons = this.recentFeedbackReasons.slice(0, 10);
+    }
+    if (!this.lastModelUsed && totals.lastModelUsed) {
+      this.lastModelUsed = totals.lastModelUsed;
+    }
+    if (this.lastTokensPerSec === 0 && totals.lastTokensPerSec > 0) {
+      this.lastTokensPerSec = totals.lastTokensPerSec;
+    }
+    this.persistedBaselinePromptTokens = Math.max(0, totals.totalPromptTokens);
+    this.persistedBaselineEvalTokens = Math.max(0, totals.totalEvalTokens);
+    this.persistedBaselineLatencyMs = Math.max(0, totals.averageLatencyMs);
+    this.persistedBaselineAvgTps = Math.max(0, totals.averageTokensPerSec);
+  }
+
+  public recordFeedback(
+    rating: CopilotFeedbackRating,
+    reason?: string | null,
+  ): CopilotFeedbackSummary {
+    if (rating === 'UP') {
+      this.feedbackThumbsUp += 1;
+    } else {
+      this.feedbackThumbsDown += 1;
+    }
+    if (typeof reason === 'string' && reason.trim().length > 0) {
+      const cleaned = maskPii(reason.trim()).slice(0, 240);
+      this.recentFeedbackReasons = [
+        cleaned,
+        ...this.recentFeedbackReasons.filter((r) => r !== cleaned),
+      ].slice(0, 10);
+    }
+    return this.getFeedbackSummary();
+  }
+
+  public getFeedbackSummary(): CopilotFeedbackSummary {
+    return computeCopilotFeedbackSummary(
+      this.feedbackThumbsUp,
+      this.feedbackThumbsDown,
+      this.recentFeedbackReasons,
+    );
+  }
 
   public recordChatTurn(params: {
     toolNames: readonly string[];
@@ -105,6 +197,8 @@ export class CopilotOpsMetricsTracker {
       activeEmbedModel: string;
       embedDim: number;
       ollamaLiveAvailable: boolean;
+      persistenceBackend?: string;
+      feedbackSummaryOverride?: CopilotFeedbackSummary;
     },
   ): CopilotOpsMetricsSnapshot {
     const summary = telemetry.getSummary();
@@ -126,10 +220,25 @@ export class CopilotOpsMetricsTracker {
     const avgTokensPerSec =
       summary.averageTokensPerSec > 0
         ? summary.averageTokensPerSec
-        : this.lastTokensPerSec;
+        : this.lastTokensPerSec || this.persistedBaselineAvgTps;
+    const totalPromptTokens = Math.max(
+      summary.totalPromptEvalCount,
+      this.persistedBaselinePromptTokens,
+    );
+    const totalEvalTokens = Math.max(
+      summary.totalEvalCount,
+      this.persistedBaselineEvalTokens,
+    );
+    const averageLatencyMs =
+      summary.averageLatencyMs > 0
+        ? summary.averageLatencyMs
+        : this.persistedBaselineLatencyMs;
+
     const fallbackModeUsed =
       !meta.ollamaLiveAvailable ||
       (this.fallbackTurns > 0 && this.liveOllamaTurns === 0);
+    const feedbackSummary =
+      meta.feedbackSummaryOverride ?? this.getFeedbackSummary();
 
     return {
       aiProvider: fallbackModeUsed ? 'rule_fallback' : 'ollama',
@@ -147,18 +256,21 @@ export class CopilotOpsMetricsTracker {
       rbacDenials: this.rbacDenials,
       avgTokensPerSec,
       tokensPerSec: avgTokensPerSec,
-      totalPromptTokens: summary.totalPromptEvalCount,
-      totalEvalTokens: summary.totalEvalCount,
-      promptEvalCount: summary.totalPromptEvalCount,
-      evalCount: summary.totalEvalCount,
+      totalPromptTokens,
+      totalEvalTokens,
+      promptEvalCount: totalPromptTokens,
+      evalCount: totalEvalTokens,
       localCostUsd: 0,
       costUsd: 0,
       estimatedGeminiCostUsd: 0,
       fallbackModeUsed,
       totalToolCalls,
-      averageLatencyMs: summary.averageLatencyMs,
-      totalCompletionTokens: summary.totalEvalCount,
+      averageLatencyMs,
+      totalCompletionTokens: totalEvalTokens,
       vtonCostUsd: summary.totalVtonCostUsd,
+      feedbackSummary,
+      copilotFeedback: feedbackSummary,
+      persistenceBackend: meta.persistenceBackend ?? 'in-memory',
       generatedAt: new Date().toISOString(),
     };
   }

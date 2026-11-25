@@ -82,6 +82,29 @@ interface LocalAiFunnelSummary {
   fallbackMode?: boolean;
 }
 
+interface CopilotFeedbackSummary {
+  total?: number;
+  thumbsUp?: number;
+  thumbsDown?: number;
+  upCount?: number;
+  downCount?: number;
+  up?: number;
+  down?: number;
+  satisfactionPct?: number;
+  satisfactionRatePct?: number;
+  recentReasons?: string[];
+}
+
+interface TryOnProviderBreakdown {
+  FAL_CATVTON?: number;
+  HF_GRADIO_VTON?: number;
+  SMART_POSE_WARP?: number;
+  PHOTOMETRIC_INPAINT?: number;
+  MOCK?: number;
+  CACHE_HIT?: number;
+  [key: string]: number | undefined;
+}
+
 interface AiFunnelPayload {
   localAi?: LocalAiFunnelSummary;
   funnel?: {
@@ -90,6 +113,9 @@ interface AiFunnelPayload {
     tryOnCompleted?: number;
     tryOnMockCount?: number;
     tryOnFalCount?: number;
+    tryOnHfGradioCount?: number;
+    tryOnSmartPoseWarpCount?: number;
+    tryOnPhotometricInpaintCount?: number;
     tryOnCacheHitCount?: number;
     addToCartAfterTryOn?: number;
     paidOrders?: number;
@@ -99,12 +125,20 @@ interface AiFunnelPayload {
     completedSessions?: number;
     mockCount?: number;
     falCount?: number;
+    falCatvtonCount?: number;
+    hfGradioCount?: number;
+    hfGradioVtonCount?: number;
+    smartPoseWarpCount?: number;
+    photometricInpaintCount?: number;
     cacheHitCount?: number;
+    providerBreakdown?: TryOnProviderBreakdown;
     openModalSignals?: number;
     addToCartAfterTryOnSignals?: number;
     cacheHitSavingsPct?: number;
     estimatedTotalCostUsd?: number;
   };
+  tryonProviderBreakdown?: TryOnProviderBreakdown;
+  providerBreakdown?: TryOnProviderBreakdown;
   orders?: {
     totalOrders?: number;
     paidOrders?: number;
@@ -127,7 +161,20 @@ interface AiFunnelPayload {
     embedModel?: string;
     tokensPerSec?: number;
     costUsd?: number;
+    feedbackSummary?: CopilotFeedbackSummary;
+    copilotFeedback?: CopilotFeedbackSummary;
+    thumbsUp?: number;
+    thumbsDown?: number;
+    upCount?: number;
+    downCount?: number;
+    satisfactionPct?: number;
+    satisfactionRatePct?: number;
+    recentReasons?: string[];
   };
+  feedbackSummary?: CopilotFeedbackSummary;
+  copilotFeedbackSummary?: CopilotFeedbackSummary;
+  copilotFeedback?: CopilotFeedbackSummary;
+  copilotSatisfaction?: CopilotFeedbackSummary;
   inventory?: {
     lowStockCount?: number;
     outOfStockCount?: number;
@@ -192,17 +239,27 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
     setLoading(true);
     setErrorBanner(null);
 
-    const [healthRes, dlqRes, funnelRes] = await Promise.all([
+    const [healthRes, dlqRes, aiHealthRes] = await Promise.all([
       adminFetch<HealthClusterPayload>('/api/v1/admin/ops/health-cluster', {
         timeoutMs: 15_000,
       }),
       adminFetch<DlqListPayload>('/api/v1/admin/ops/dlq', {
         timeoutMs: 10_000,
       }),
-      adminFetch<AiFunnelPayload>('/api/v1/admin/ops/ai-funnel', {
+      adminFetch<AiFunnelPayload>('/api/v1/admin/ops/ai-health', {
         timeoutMs: 12_000,
       }),
     ]);
+
+    let funnelRes = aiHealthRes;
+    if (!aiHealthRes.ok && aiHealthRes.status === 404) {
+      funnelRes = await adminFetch<AiFunnelPayload>(
+        '/api/v1/admin/ops/ai-funnel',
+        {
+          timeoutMs: 12_000,
+        },
+      );
+    }
 
     if (healthRes.ok && healthRes.data) {
       setCluster(healthRes.data);
@@ -377,18 +434,182 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
     ];
   }, [cluster, localAiStatus.latencyMs, localAiStatus.status]);
 
+  const tryOnProviderBreakdown = useMemo(() => {
+    const f = funnel?.funnel;
+    const t = funnel?.tryon;
+    const pb =
+      t?.providerBreakdown ??
+      funnel?.tryonProviderBreakdown ??
+      funnel?.providerBreakdown ??
+      {};
+
+    const falCatvton = Number(
+      pb.FAL_CATVTON ?? t?.falCatvtonCount ?? t?.falCount ?? f?.tryOnFalCount ?? 0,
+    );
+    const hfGradioVton = Number(
+      pb.HF_GRADIO_VTON ??
+        t?.hfGradioVtonCount ??
+        t?.hfGradioCount ??
+        f?.tryOnHfGradioCount ??
+        0,
+    );
+    const smartPoseWarp = Number(
+      pb.SMART_POSE_WARP ??
+        t?.smartPoseWarpCount ??
+        f?.tryOnSmartPoseWarpCount ??
+        0,
+    );
+    const photometricInpaint = Number(
+      pb.PHOTOMETRIC_INPAINT ??
+        t?.photometricInpaintCount ??
+        f?.tryOnPhotometricInpaintCount ??
+        0,
+    );
+    const mock = Number(pb.MOCK ?? t?.mockCount ?? f?.tryOnMockCount ?? 0);
+    const cacheHit = Number(
+      pb.CACHE_HIT ?? t?.cacheHitCount ?? f?.tryOnCacheHitCount ?? 0,
+    );
+
+    const tiers = [
+      {
+        key: 'FAL_CATVTON',
+        label: 'FAL_CATVTON',
+        subtitle: 'Cloud GPU Diffusion VTON',
+        count: falCatvton,
+        costTag: 'Paid GPU',
+        barCls: 'bg-[#1C1410]',
+        badgeCls: 'border-[#B08A4A]/45 bg-[#F4EBDA] text-[#8A672C]',
+      },
+      {
+        key: 'HF_GRADIO_VTON',
+        label: 'HF_GRADIO_VTON',
+        subtitle: 'HuggingFace Gradio Space VTON',
+        count: hfGradioVton,
+        costTag: 'Community GPU',
+        barCls: 'bg-[#8A672C]',
+        badgeCls: 'border-[#B08A4A]/45 bg-[#FFF8EB] text-[#8A5A12]',
+      },
+      {
+        key: 'SMART_POSE_WARP',
+        label: 'SMART_POSE_WARP',
+        subtitle: 'Local OpenCV / Pose-Guided Warp',
+        count: smartPoseWarp,
+        costTag: '0₫ Local CV',
+        barCls: 'bg-[#2E5A8B]',
+        badgeCls: 'border-[#2E5A8B]/35 bg-[#F2F7FC] text-[#1E4066]',
+      },
+      {
+        key: 'PHOTOMETRIC_INPAINT',
+        label: 'PHOTOMETRIC_INPAINT',
+        subtitle: 'Local Photometric Seamless Inpaint',
+        count: photometricInpaint,
+        costTag: '0₫ Local CV',
+        barCls: 'bg-[#5C736B]',
+        badgeCls: 'border-[#5C736B]/35 bg-[#ECEEEB] text-[#24302C]',
+      },
+      {
+        key: 'MOCK',
+        label: 'MOCK',
+        subtitle: 'Deterministic Studio Preview',
+        count: mock,
+        costTag: '0₫ Preview',
+        barCls: 'bg-[#A89B8C]',
+        badgeCls: 'border-[#B08A4A]/30 bg-[#FBF7EF] text-[#5C4B41]',
+      },
+      {
+        key: 'CACHE_HIT',
+        label: 'CACHE_HIT',
+        subtitle: 'Redis SHA-256 Content-Hash Cache',
+        count: cacheHit,
+        costTag: '0₫ · < 1s',
+        barCls: 'bg-[#2E6B47]',
+        badgeCls: 'border-[#2E6B47]/40 bg-[#EBF9F1] text-[#1E4B32]',
+      },
+    ];
+
+    const total = tiers.reduce((sum, item) => sum + item.count, 0);
+    return {
+      total,
+      tiers: tiers.map((item) => ({
+        ...item,
+        pct: total > 0 ? Math.round((item.count / total) * 100) : 0,
+      })),
+      counts: {
+        falCatvton,
+        hfGradioVton,
+        smartPoseWarp,
+        photometricInpaint,
+        mock,
+        cacheHit,
+      },
+    };
+  }, [funnel]);
+
+  const copilotFeedback = useMemo(() => {
+    const raw =
+      funnel?.copilot?.copilotFeedback ??
+      funnel?.copilot?.feedbackSummary ??
+      funnel?.copilotFeedback ??
+      funnel?.copilotFeedbackSummary ??
+      funnel?.copilotSatisfaction ??
+      funnel?.feedbackSummary;
+    const thumbsUp = Number(
+      raw?.thumbsUp ??
+        raw?.upCount ??
+        raw?.up ??
+        funnel?.copilot?.thumbsUp ??
+        funnel?.copilot?.upCount ??
+        0,
+    );
+    const thumbsDown = Number(
+      raw?.thumbsDown ??
+        raw?.downCount ??
+        raw?.down ??
+        funnel?.copilot?.thumbsDown ??
+        funnel?.copilot?.downCount ??
+        0,
+    );
+    const total = Number(raw?.total ?? thumbsUp + thumbsDown);
+    const rawPct =
+      raw?.satisfactionPct ??
+      raw?.satisfactionRatePct ??
+      funnel?.copilot?.satisfactionPct ??
+      funnel?.copilot?.satisfactionRatePct;
+    const satisfactionPct =
+      typeof rawPct === 'number' && Number.isFinite(rawPct)
+        ? rawPct
+        : total > 0
+          ? Number(((thumbsUp / total) * 100).toFixed(1))
+          : 0;
+    const rawReasons =
+      Array.isArray(raw?.recentReasons)
+        ? raw.recentReasons
+        : Array.isArray(funnel?.copilot?.recentReasons)
+          ? funnel.copilot.recentReasons
+          : [];
+    const recentReasons = rawReasons
+      .filter((r): r is string => typeof r === 'string' && r.trim().length > 0)
+      .slice(0, 3);
+
+    return {
+      total,
+      thumbsUp,
+      thumbsDown,
+      satisfactionPct,
+      recentReasons,
+    };
+  }, [funnel]);
+
   const funnelSteps = useMemo(() => {
     const f = funnel?.funnel;
     const t = funnel?.tryon;
     const o = funnel?.orders;
+    const pc = tryOnProviderBreakdown.counts;
 
     const modalOpens = f?.tryOnModalOpens ?? t?.openModalSignals ?? 0;
     const rackInteractions =
       f?.rackOrOutfitInteractions ?? Math.max(modalOpens, 1);
     const completed = f?.tryOnCompleted ?? t?.completedSessions ?? 0;
-    const mockCount = f?.tryOnMockCount ?? t?.mockCount ?? 0;
-    const falCount = f?.tryOnFalCount ?? t?.falCount ?? 0;
-    const cacheHitCount = f?.tryOnCacheHitCount ?? t?.cacheHitCount ?? 0;
     const addToCart =
       f?.addToCartAfterTryOn ?? t?.addToCartAfterTryOnSignals ?? 0;
     const paidOrders =
@@ -420,7 +641,7 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
         label: '3. Hoàn tất dựng ảnh Try-On',
         value: completed,
         pct: Math.round((completed / maxVal) * 100),
-        detail: `MOCK: ${mockCount} · FAL: ${falCount} · CACHE_HIT: ${cacheHitCount}`,
+        detail: `FAL_CATVTON: ${pc.falCatvton} · HF_GRADIO_VTON: ${pc.hfGradioVton} · SMART_POSE_WARP: ${pc.smartPoseWarp} · PHOTOMETRIC_INPAINT: ${pc.photometricInpaint} · MOCK: ${pc.mock} · CACHE_HIT: ${pc.cacheHit}`,
       },
       {
         label: '4. Thêm vào giỏ sau Try-On',
@@ -435,7 +656,7 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
         detail: 'Chuyển đổi doanh thu thực',
       },
     ];
-  }, [funnel]);
+  }, [funnel, tryOnProviderBreakdown.counts]);
 
   const servicesList = cluster?.services ?? [];
   const upCount = servicesList.filter(
@@ -844,7 +1065,7 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
         </div>
 
         {/* KPI Cards */}
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-2xl border border-[#B08A4A]/30 bg-[#1C1410] p-4 text-[#FBF7EF]">
             <p className="text-[10px] uppercase tracking-[0.14em] text-[#EBCF8F]">
               Estimated AI Cost / Order
@@ -867,6 +1088,38 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
             <p className="mt-1 text-[11px] text-[#1E4B32]">
               Redis SHA-256 Content-Hash Cache (0₫ · &lt; 1s)
             </p>
+          </div>
+
+          <div
+            data-testid="copilot-satisfaction-kpi"
+            className="rounded-2xl border border-[#2E6B47]/35 bg-[#FBF7EF] p-4"
+          >
+            <p className="text-[10px] uppercase tracking-[0.14em] text-[#8A672C]">
+              Copilot Satisfaction (👍 / 👎)
+            </p>
+            <p className="font-editorial mt-1.5 text-4xl text-[#1C1410]">
+              {copilotFeedback.total > 0
+                ? `${copilotFeedback.satisfactionPct.toFixed(1)}%`
+                : '0.0%'}
+            </p>
+            <p className="mt-1 text-[11px] text-[#5C4B41]">
+              👍 {copilotFeedback.thumbsUp} · 👎 {copilotFeedback.thumbsDown} ·{' '}
+              {copilotFeedback.total > 0
+                ? `${copilotFeedback.total} phản hồi (% hài lòng)`
+                : 'Chưa có phản hồi · % hài lòng'}
+            </p>
+            {copilotFeedback.recentReasons.length > 0 ? (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {copilotFeedback.recentReasons.map((reason, idx) => (
+                  <span
+                    key={`${reason}-${idx}`}
+                    className="rounded-full border border-[#B08A4A]/35 bg-white px-2 py-0.5 text-[10px] text-[#7A5B26]"
+                  >
+                    {reason}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-[#B08A4A]/30 bg-[#FBF7EF] p-4">
@@ -894,6 +1147,64 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
               {funnel?.inventory?.activeReservationsCount ?? 0} giữ chỗ 15p ·{' '}
               {funnel?.inventory?.pendingAiDraftPosCount ?? 0} PO NHAP_AI
             </p>
+          </div>
+        </div>
+
+        {/* Try-On Provider Tiers Breakdown (All 6 Real Provider Tiers) */}
+        <div
+          data-testid="tryon-provider-breakdown"
+          className="mt-6 rounded-2xl border border-[#B08A4A]/25 bg-[#FBF7EF]/70 p-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#8A672C]">
+              Phân bổ 6 Tầng Engine Try-On (Real Provider Breakdown)
+            </p>
+            <span className="font-mono text-[11px] text-[#5C4B41]">
+              Tổng phiên đã phân loại:{' '}
+              <strong className="text-[#1C1410]">
+                {tryOnProviderBreakdown.total}
+              </strong>
+            </span>
+          </div>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {tryOnProviderBreakdown.tiers.map((tier) => (
+              <div
+                key={tier.key}
+                data-testid={`tryon-provider-tier-${tier.key}`}
+                className="rounded-xl border border-[#B08A4A]/20 bg-white p-3 text-xs"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[11px] font-bold text-[#1C1410]">
+                    {tier.label}
+                  </span>
+                  <span
+                    className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${tier.badgeCls}`}
+                  >
+                    {tier.costTag}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] text-[#7A6A5B]">
+                  {tier.subtitle}
+                </p>
+                <div className="mt-2 flex items-baseline justify-between font-mono">
+                  <strong className="text-lg text-[#1C1410]">
+                    {tier.count}
+                  </strong>
+                  <span className="text-[11px] text-[#8A672C]">
+                    {tier.pct}%
+                  </span>
+                </div>
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EBDA]">
+                  <div
+                    style={{
+                      width: `${Math.max(tier.pct, tier.count > 0 ? 6 : 0)}%`,
+                    }}
+                    className={`h-full rounded-full transition-all duration-500 ${tier.barCls}`}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 

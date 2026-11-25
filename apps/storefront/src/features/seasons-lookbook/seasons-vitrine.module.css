@@ -748,6 +748,12 @@
     transform 0.25s ease;
 }
 
+.hotspotPin:hover,
+.hotspotPinHovered,
+.hotspotPinActive {
+  z-index: 15;
+}
+
 .hotspotPin:hover .hotspotDot,
 .hotspotPinHovered .hotspotDot,
 .hotspotPinActive .hotspotDot {
@@ -764,11 +770,23 @@
   border-color: #B08A4A;
 }
 
+@media (max-width: 480px) {
+  .hotspotPin {
+    gap: 5px;
+  }
+
+  .hotspotPill {
+    padding: 4px 9px;
+    font-size: 10.5px;
+  }
+}
+
 /* AiContextSwatchPopover */
 .swatchPopover {
   position: absolute;
   z-index: 22;
   width: min(226px, calc(100% - 20px));
+  max-width: calc(100% - 20px);
   padding: 12px 13px 11px;
   border-radius: 13px;
   background: rgba(251, 247, 239, 0.95);

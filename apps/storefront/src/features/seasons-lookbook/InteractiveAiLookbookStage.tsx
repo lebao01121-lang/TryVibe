@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { useMotionState, usePrefersReducedMotion } from '@atelier/motion-kit';
 import { ensureGsapRegistered, gsap } from '@/lib/gsap-setup';
+import { useAdaptivePerformance } from '@/lib/performance/AdaptivePerformanceProvider';
 import {
   renderPhotometricSceneToCanvas,
   type HydratedSeasonScene,
@@ -244,6 +245,162 @@ function resolvePinLabel(slot: SeasonWearableSlotView): string {
   return `${shortNoun} · ${colorCount} màu`;
 }
 
+export interface ResolvedHotspotPinLayout {
+  slotKey: WearableSlotKey;
+  xPercent: number;
+  yPercent: number;
+  reverse: boolean;
+}
+
+const PIN_SAFE_MIN_X = 22;
+const PIN_SAFE_MAX_X = 78;
+const PIN_SAFE_MIN_Y = 26;
+const PIN_SAFE_MAX_Y = 76;
+const PIN_MIN_GAP_Y = 14;
+const PIN_FLIP_RIGHT_X = 44;
+const PIN_FLIP_LEFT_X = 56;
+const MIN_MASK_BBOX_SPAN = 0.005;
+const MIN_MASK_PIXEL_COUNT = 16;
+
+export function hasMaskBboxCoverage(
+  bbox?: { x: number; y: number; w: number; h: number } | null,
+): boolean {
+  if (!bbox) return false;
+  return (
+    Number.isFinite(bbox.w) &&
+    Number.isFinite(bbox.h) &&
+    bbox.w >= MIN_MASK_BBOX_SPAN &&
+    bbox.h >= MIN_MASK_BBOX_SPAN
+  );
+}
+
+export function hasSlotPhotometricCoverage(
+  slot: SeasonWearableSlotView,
+  hydratedScene: HydratedSeasonScene | null,
+  seasonSlug: string,
+): boolean {
+  // Explicit zero-area maskBbox from manifest/API indicates non-worn accessory (empty mask)
+  if (slot.maskBbox && !hasMaskBboxCoverage(slot.maskBbox)) {
+    return false;
+  }
+
+  // Once masks are hydrated for this season, rely on actual non-empty mask pixel coverage
+  if (hydratedScene && hydratedScene.seasonSlug === seasonSlug) {
+    const layer = hydratedScene.masks.get(slot.slotKey);
+    return Boolean(layer && layer.pixelCount >= MIN_MASK_PIXEL_COUNT);
+  }
+
+  // Before hydration completes, avoid assuming a synthetic box for non-worn ACCESSORY slots
+  if (slot.slotKey === 'ACCESSORY') {
+    return hasMaskBboxCoverage(slot.maskBbox);
+  }
+
+  return true;
+}
+
+export function solveNonOverlappingHotspotPins(
+  slots: SeasonWearableSlotView[],
+): Map<WearableSlotKey, ResolvedHotspotPinLayout> {
+  const layoutBySlot = new Map<WearableSlotKey, ResolvedHotspotPinLayout>();
+  if (slots.length === 0) return layoutBySlot;
+
+  const sorted = slots
+    .map((slot, origIndex) => {
+      const rawX = Number.isFinite(slot.pinPosition?.xPercent)
+        ? slot.pinPosition.xPercent
+        : 50;
+      const rawY = Number.isFinite(slot.pinPosition?.yPercent)
+        ? slot.pinPosition.yPercent
+        : 50;
+      return {
+        slotKey: slot.slotKey,
+        origIndex,
+        x: Math.max(PIN_SAFE_MIN_X, Math.min(PIN_SAFE_MAX_X, rawX)),
+        y: Math.max(PIN_SAFE_MIN_Y, Math.min(PIN_SAFE_MAX_Y, rawY)),
+      };
+    })
+    .sort((a, b) => a.y - b.y || a.origIndex - b.origIndex);
+
+  const count = sorted.length;
+  const effectiveGap =
+    count > 1
+      ? Math.min(PIN_MIN_GAP_Y, (PIN_SAFE_MAX_Y - PIN_SAFE_MIN_Y) / (count - 1))
+      : 0;
+
+  if (count > 1) {
+    // 1. Iterative symmetric relaxation preserves proximity to each garment's true Y anchor
+    for (let iter = 0; iter < 10; iter += 1) {
+      let moved = false;
+      for (let k = 1; k < count; k += 1) {
+        const prev = sorted[k - 1]!;
+        const curr = sorted[k]!;
+        const delta = curr.y - prev.y;
+        if (delta < effectiveGap) {
+          const push = (effectiveGap - delta) * 0.5;
+          prev.y = Math.max(PIN_SAFE_MIN_Y, prev.y - push);
+          curr.y = Math.min(PIN_SAFE_MAX_Y, curr.y + push);
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+
+    // 2. Exact forward & backward projection guarantees strict MIN_GAP_Y inside [26, 76]
+    for (let k = 1; k < count; k += 1) {
+      const minAllowed = sorted[k - 1]!.y + effectiveGap;
+      if (sorted[k]!.y < minAllowed) {
+        sorted[k]!.y = minAllowed;
+      }
+    }
+    if (sorted[count - 1]!.y > PIN_SAFE_MAX_Y) {
+      sorted[count - 1]!.y = PIN_SAFE_MAX_Y;
+      for (let k = count - 2; k >= 0; k -= 1) {
+        const maxAllowed = sorted[k + 1]!.y - effectiveGap;
+        if (sorted[k]!.y > maxAllowed) {
+          sorted[k]!.y = maxAllowed;
+        }
+      }
+    }
+    if (sorted[0]!.y < PIN_SAFE_MIN_Y) {
+      sorted[0]!.y = PIN_SAFE_MIN_Y;
+      for (let k = 1; k < count; k += 1) {
+        const minAllowed = sorted[k - 1]!.y + effectiveGap;
+        if (sorted[k]!.y < minAllowed) {
+          sorted[k]!.y = minAllowed;
+        }
+      }
+    }
+  }
+
+  let prevReverse: boolean | null = null;
+  for (let idx = 0; idx < count; idx += 1) {
+    const item = sorted[idx]!;
+    let reverse: boolean;
+    if (item.x > PIN_FLIP_LEFT_X) {
+      reverse = true;
+    } else if (item.x < PIN_FLIP_RIGHT_X) {
+      reverse = false;
+    } else {
+      reverse = prevReverse === null ? idx % 2 === 1 : !prevReverse;
+    }
+
+    // Keep pill extending away from stage borders so text never clips at any viewport width
+    const safeX = reverse
+      ? Math.max(PIN_FLIP_RIGHT_X, Math.min(PIN_SAFE_MAX_X, item.x))
+      : Math.max(PIN_SAFE_MIN_X, Math.min(PIN_FLIP_LEFT_X, item.x));
+
+    prevReverse = reverse;
+    layoutBySlot.set(item.slotKey, {
+      slotKey: item.slotKey,
+      xPercent: Number(safeX.toFixed(2)),
+      yPercent: Number(item.y.toFixed(2)),
+      reverse,
+    });
+  }
+
+  return layoutBySlot;
+}
+
 function resolveDefaultMaskBbox(
   slotKey: WearableSlotKey,
   pin: { xPercent: number; yPercent: number },
@@ -291,6 +448,20 @@ export function InteractiveAiLookbookStage({
 
   const { cameraActive } = useMotionState();
   const reducedMotion = usePrefersReducedMotion();
+  const { isLowPower, tier: perfTier } = useAdaptivePerformance();
+  const [isPageHidden, setIsPageHidden] = useState(false);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const handleVisibility = () => {
+      setIsPageHidden(document.hidden);
+    };
+    handleVisibility();
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
 
   const localBaseFallbackUrl = getSeasonLookbookFallbackUrl(season.slug);
   const resolvedBaseUrl = resolveSeasonsVitrineUrl(
@@ -384,7 +555,13 @@ export function InteractiveAiLookbookStage({
     };
   }, [cache, localBaseFallbackUrl, resolvedBaseUrl, season.slug, season.wearableSlots]);
 
-  // Build cumulative photometric slot recolor requests (TOP + BOTTOM + ACCESSORY simultaneously)
+  // Compute mathematically separated, non-overlapping hotspot pin positions across the 4:5 stage
+  const resolvedPinLayouts = useMemo(
+    () => solveNonOverlappingHotspotPins(season.wearableSlots),
+    [season.wearableSlots],
+  );
+
+  // Build cumulative photometric slot recolor requests (skipping non-worn empty-mask slots)
   const slotRequests = useMemo<PhotometricRecolorSlotRequest[]>(() => {
     return season.wearableSlots.map((slot) => {
       const defaultVariant = slot.variants[0];
@@ -392,7 +569,13 @@ export function InteractiveAiLookbookStage({
         selectedColorBySlot[slot.slotKey] ?? defaultVariant?.colorKey ?? '';
       const activeVariant =
         slot.variants.find((v) => v.colorKey === activeKey) ?? defaultVariant;
+      const hasMask = hasSlotPhotometricCoverage(
+        slot,
+        hydratedScene,
+        season.slug,
+      );
       const isDefaultColor =
+        !hasMask ||
         !activeVariant ||
         (defaultVariant != null && activeVariant.colorKey === defaultVariant.colorKey);
 
@@ -403,7 +586,7 @@ export function InteractiveAiLookbookStage({
         materialOpticalProfile: slot.materialOpticalProfile,
       };
     });
-  }, [season.wearableSlots, selectedColorBySlot]);
+  }, [hydratedScene, season.slug, season.wearableSlots, selectedColorBySlot]);
 
   const hasAnyCustomColor = useMemo(
     () => slotRequests.some((r) => !r.isDefaultColor),
@@ -413,18 +596,30 @@ export function InteractiveAiLookbookStage({
   // Render HiDPI photometric scene immediately (0ms lag) whenever scene, colors, or hover changes
   const paintCanvas = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !hydratedScene || hydratedScene.seasonSlug !== season.slug) {
+    if (
+      !canvas ||
+      !hydratedScene ||
+      hydratedScene.seasonSlug !== season.slug ||
+      (typeof document !== 'undefined' && document.hidden)
+    ) {
       return;
     }
+    const dpr = isLowPower
+      ? 1
+      : Math.min(
+          typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+          2,
+        );
     renderPhotometricSceneToCanvas(canvas, hydratedScene, slotRequests, {
       hoveredSlotKey,
-      maxDpr: 2,
+      maxDpr: dpr,
     });
-  }, [hydratedScene, hoveredSlotKey, season.slug, slotRequests]);
+  }, [hydratedScene, hoveredSlotKey, isLowPower, season.slug, slotRequests]);
 
   useEffect(() => {
+    if (isPageHidden) return;
     paintCanvas();
-  }, [paintCanvas]);
+  }, [isPageHidden, paintCanvas]);
 
   // Keep canvas crisp on container resize
   useEffect(() => {
@@ -480,18 +675,46 @@ export function InteractiveAiLookbookStage({
     };
   }, [hasAnyCustomColor, localBaseFallbackUrl, resolvedBaseUrl, serverSceneUrl]);
 
-  // Trigger 0.48s AiOpticalScanBeam on color selection (auto-paused when cameraActive === true)
+  // Trigger 0.48s AiOpticalScanBeam on masked garment color selection (auto-skipped for empty accessory masks)
   useEffect(() => {
-    if (!scanTrigger || cameraActive || reducedMotion) {
+    if (
+      !scanTrigger ||
+      cameraActive ||
+      reducedMotion ||
+      isLowPower ||
+      isPageHidden
+    ) {
       setScanActiveKey(0);
       return;
     }
+    const matchedSlot = season.wearableSlots.find(
+      (s) => s.slotKey === scanTrigger.slotKey,
+    );
+    const hasCoverage =
+      matchedSlot != null &&
+      hasSlotPhotometricCoverage(matchedSlot, hydratedScene, season.slug) &&
+      (scanTrigger.maskBbox == null || hasMaskBboxCoverage(scanTrigger.maskBbox));
+
+    if (!hasCoverage) {
+      setScanActiveKey(0);
+      return;
+    }
+
     setScanActiveKey(scanTrigger.seq);
     const timer = window.setTimeout(() => {
       setScanActiveKey((prev) => (prev === scanTrigger.seq ? 0 : prev));
     }, 520);
     return () => window.clearTimeout(timer);
-  }, [scanTrigger, cameraActive, reducedMotion]);
+  }, [
+    cameraActive,
+    hydratedScene,
+    isLowPower,
+    isPageHidden,
+    reducedMotion,
+    scanTrigger,
+    season.slug,
+    season.wearableSlots,
+  ]);
 
   // Vertical silk curtain reveal on season chapter switch (`0.65s power3.out`)
   useGSAP(
@@ -503,7 +726,14 @@ export function InteractiveAiLookbookStage({
       const prevSlug = prevSeasonSlugRef.current;
       prevSeasonSlugRef.current = season.slug;
 
-      if (!prevSlug || prevSlug === season.slug || reducedMotion) {
+      if (
+        !prevSlug ||
+        prevSlug === season.slug ||
+        reducedMotion ||
+        cameraActive ||
+        isLowPower ||
+        isPageHidden
+      ) {
         gsap.set(curtainEl, { clipPath: 'inset(0% 0% 0% 0% round 12px)' });
         return;
       }
@@ -526,7 +756,14 @@ export function InteractiveAiLookbookStage({
     },
     {
       scope: stageContainerRef,
-      dependencies: [season.slug, transitionDirection, reducedMotion],
+      dependencies: [
+        season.slug,
+        transitionDirection,
+        reducedMotion,
+        cameraActive,
+        isLowPower,
+        isPageHidden,
+      ],
     },
   );
 
@@ -568,18 +805,62 @@ export function InteractiveAiLookbookStage({
     [openPopoverSlotKey, season.wearableSlots],
   );
 
+  const activePopoverHasMask = useMemo(
+    () =>
+      activePopoverSlot
+        ? hasSlotPhotometricCoverage(
+            activePopoverSlot,
+            hydratedScene,
+            season.slug,
+          )
+        : false,
+    [activePopoverSlot, hydratedScene, season.slug],
+  );
+
   const activeScanStyle = useMemo<CSSProperties | null>(() => {
     if (!scanTrigger || scanActiveKey === 0) return null;
     const matchedSlot = season.wearableSlots.find(
       (s) => s.slotKey === scanTrigger.slotKey,
     );
-    const bbox =
-      scanTrigger.maskBbox ??
-      matchedSlot?.maskBbox ??
-      resolveDefaultMaskBbox(
+    if (
+      !matchedSlot ||
+      !hasSlotPhotometricCoverage(matchedSlot, hydratedScene, season.slug)
+    ) {
+      return null;
+    }
+
+    let bbox: { x: number; y: number; w: number; h: number } | null = null;
+    const hydratedLayer =
+      hydratedScene && hydratedScene.seasonSlug === season.slug
+        ? hydratedScene.masks.get(scanTrigger.slotKey)
+        : undefined;
+
+    if (
+      hydratedLayer &&
+      hydratedLayer.pixelCount >= MIN_MASK_PIXEL_COUNT &&
+      hydratedScene &&
+      hydratedScene.width > 0 &&
+      hydratedScene.height > 0
+    ) {
+      const { minX, minY, maxX, maxY } = hydratedLayer.bounds;
+      bbox = {
+        x: minX / hydratedScene.width,
+        y: minY / hydratedScene.height,
+        w: (maxX - minX + 1) / hydratedScene.width,
+        h: (maxY - minY + 1) / hydratedScene.height,
+      };
+    } else if (hasMaskBboxCoverage(scanTrigger.maskBbox)) {
+      bbox = scanTrigger.maskBbox!;
+    } else if (hasMaskBboxCoverage(matchedSlot.maskBbox)) {
+      bbox = matchedSlot.maskBbox!;
+    } else if (scanTrigger.slotKey !== 'ACCESSORY') {
+      bbox = resolveDefaultMaskBbox(
         scanTrigger.slotKey,
-        matchedSlot?.pinPosition ?? { xPercent: 50, yPercent: 45 },
+        matchedSlot.pinPosition ?? { xPercent: 50, yPercent: 45 },
       );
+    }
+
+    if (!bbox || !hasMaskBboxCoverage(bbox)) return null;
 
     return {
       left: `${(Math.max(0, Math.min(0.92, bbox.x)) * 100).toFixed(2)}%`,
@@ -587,25 +868,26 @@ export function InteractiveAiLookbookStage({
       width: `${(Math.max(0.12, Math.min(1 - bbox.x, bbox.w)) * 100).toFixed(2)}%`,
       height: `${(Math.max(0.12, Math.min(1 - bbox.y, bbox.h)) * 100).toFixed(2)}%`,
     };
-  }, [scanActiveKey, scanTrigger, season.wearableSlots]);
+  }, [hydratedScene, scanActiveKey, scanTrigger, season.slug, season.wearableSlots]);
 
   const popoverAnchorStyle = useMemo<CSSProperties>(() => {
     if (!activePopoverSlot) return {};
-    const { xPercent, yPercent } = activePopoverSlot.pinPosition;
-    // Keep popover cleanly inside the 4:5 editorial frame
-    const placeLeft = xPercent > 54;
-    const clampedTop = Math.max(10, Math.min(62, yPercent - 12));
-    if (placeLeft) {
-      return {
-        right: `${Math.max(4, Math.min(48, 100 - xPercent + 5)).toFixed(1)}%`,
-        top: `${clampedTop.toFixed(1)}%`,
-      };
-    }
+    const solvedPin = resolvedPinLayouts.get(activePopoverSlot.slotKey);
+    const xPercent = solvedPin?.xPercent ?? activePopoverSlot.pinPosition.xPercent;
+    const yPercent = solvedPin?.yPercent ?? activePopoverSlot.pinPosition.yPercent;
+    const placeLeft = solvedPin ? solvedPin.reverse : xPercent > PIN_FLIP_LEFT_X;
+
+    // Pixel-aware clamp guarantees zero clipping outside left/right/top/bottom stage bounds
+    // and keeps clear vertical headroom above the bottom-right Try-On AI CTA pill.
+    const desiredLeft = placeLeft
+      ? `calc(${xPercent.toFixed(2)}% - 244px)`
+      : `calc(${xPercent.toFixed(2)}% + 18px)`;
+
     return {
-      left: `${Math.max(4, Math.min(46, xPercent + 5)).toFixed(1)}%`,
-      top: `${clampedTop.toFixed(1)}%`,
+      left: `max(10px, min(${desiredLeft}, calc(100% - 236px)))`,
+      top: `max(12px, min(calc(${yPercent.toFixed(2)}% - 64px), calc(100% - 224px)))`,
     };
-  }, [activePopoverSlot]);
+  }, [activePopoverSlot, resolvedPinLayouts]);
 
   const sceneReady =
     hydratedScene !== null && hydratedScene.seasonSlug === season.slug;
@@ -638,6 +920,8 @@ export function InteractiveAiLookbookStage({
         <canvas
           ref={canvasRef}
           data-testid="season-ai-canvas"
+          data-perf-tier={perfTier}
+          data-canvas-dpr={isLowPower ? '1' : 'auto'}
           className={styles.aiCanvas}
           aria-label={`Lookbook AI tương tác mùa ${season.name}`}
         />
@@ -656,7 +940,7 @@ export function InteractiveAiLookbookStage({
         <div className={styles.aiStageBottomGradient} aria-hidden="true" />
 
         {/* AiOpticalScanBeam: 0.48s golden vertical light beam strictly over garment maskBbox */}
-        {activeScanStyle && !cameraActive ? (
+        {activeScanStyle && !cameraActive && !isLowPower && !isPageHidden ? (
           <div
             key={`scan-${scanActiveKey}`}
             className={styles.scanBeamRegion}
@@ -669,13 +953,22 @@ export function InteractiveAiLookbookStage({
           </div>
         ) : null}
 
-        {/* Interactive WearableHotspotPins on ALL wearable slots */}
+        {/* Interactive WearableHotspotPins on ALL wearable slots (anti-collision solved) */}
         {season.wearableSlots.map((slot) => {
           const isOpen = openPopoverSlotKey === slot.slotKey;
           const isHovered = hoveredSlotKey === slot.slotKey;
-          const clampedX = Math.max(10, Math.min(84, slot.pinPosition.xPercent));
-          const clampedY = Math.max(14, Math.min(82, slot.pinPosition.yPercent));
-          const labelToLeft = clampedX > 66;
+          const pinLayout = resolvedPinLayouts.get(slot.slotKey) ?? {
+            slotKey: slot.slotKey,
+            xPercent: Math.max(
+              PIN_SAFE_MIN_X,
+              Math.min(PIN_SAFE_MAX_X, slot.pinPosition.xPercent),
+            ),
+            yPercent: Math.max(
+              PIN_SAFE_MIN_Y,
+              Math.min(PIN_SAFE_MAX_Y, slot.pinPosition.yPercent),
+            ),
+            reverse: slot.pinPosition.xPercent > PIN_FLIP_LEFT_X,
+          };
           const pinLabel = resolvePinLabel(slot);
           const activeColorKey =
             selectedColorBySlot[slot.slotKey] ?? slot.variants[0]?.colorKey;
@@ -690,14 +983,17 @@ export function InteractiveAiLookbookStage({
               data-hotspot-pin="true"
               data-testid={`season-hotspot-${slot.slotKey.toLowerCase()}`}
               data-slot-key={slot.slotKey}
+              data-pin-x={pinLayout.xPercent}
+              data-pin-y={pinLayout.yPercent}
+              data-pin-reverse={pinLayout.reverse ? 'true' : 'false'}
               aria-expanded={isOpen}
               aria-label={`Tùy chỉnh màu ${slot.productName} (${activeVariant?.colorName ?? ''})`}
               className={`${styles.hotspotPin} ${isOpen ? styles.hotspotPinActive : ''} ${
                 isHovered ? styles.hotspotPinHovered : ''
-              } ${labelToLeft ? styles.hotspotPinReverse : ''}`}
+              } ${pinLayout.reverse ? styles.hotspotPinReverse : ''}`}
               style={{
-                left: `${clampedX}%`,
-                top: `${clampedY}%`,
+                left: `${pinLayout.xPercent}%`,
+                top: `${pinLayout.yPercent}%`,
               }}
               onMouseEnter={() => onHoverSlot(slot.slotKey)}
               onMouseLeave={() => onHoverSlot(null)}
@@ -729,9 +1025,11 @@ export function InteractiveAiLookbookStage({
                   {activePopoverSlot.productName}
                 </p>
                 <p className={styles.swatchPopoverSub}>
-                  {scanActiveKey > 0 || isRestylingServer
-                    ? 'Đang đổi ngữ cảnh AI'
-                    : 'Đang đổi ngữ cảnh AI · Chọn sắc độ vải'}
+                  {!activePopoverHasMask
+                    ? 'Phối phụ kiện đồng bộ · Chọn sắc độ'
+                    : scanActiveKey > 0 || isRestylingServer
+                      ? 'Đang đổi ngữ cảnh AI'
+                      : 'Đang đổi ngữ cảnh AI · Chọn sắc độ vải'}
                 </p>
               </div>
               <button

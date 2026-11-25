@@ -34,12 +34,31 @@ export interface RecordAuditLogParams {
 
 export interface ListAuditLogsQuery {
   action?: string;
+  actor?: string;
   actorType?: string;
   resourceType?: string;
   correlationId?: string;
   search?: string;
+  q?: string;
+  from?: string;
+  to?: string;
+  page?: number;
   limit?: number;
   offset?: number;
+}
+
+export interface PaginatedAuditLogsView {
+  items: AuditLogViewDto[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 interface AuditLogRow {
@@ -160,22 +179,33 @@ export class AuditService {
   }
 
   async list(query: ListAuditLogsQuery = {}): Promise<AuditLogViewDto[]> {
+    const result = await this.listPaginated(query);
+    return result.items;
+  }
+
+  async listPaginated(query: ListAuditLogsQuery = {}): Promise<PaginatedAuditLogsView> {
     const conditions: string[] = [];
     const params: unknown[] = [];
 
     if (query.action && query.action.trim()) {
-      params.push(query.action.trim());
-      conditions.push(`action = $${params.length}`);
+      params.push(`%${query.action.trim()}%`);
+      conditions.push(`action ILIKE $${params.length}`);
+    }
+
+    if (query.actor && query.actor.trim()) {
+      params.push(`%${query.actor.trim()}%`);
+      const p = `$${params.length}`;
+      conditions.push(`(COALESCE(actor_email, '') ILIKE ${p} OR COALESCE(actor_id::text, '') ILIKE ${p})`);
     }
 
     if (query.actorType && query.actorType.trim()) {
       params.push(query.actorType.trim());
-      conditions.push(`actor_type = $${params.length}`);
+      conditions.push(`UPPER(actor_type) = UPPER($${params.length})`);
     }
 
     if (query.resourceType && query.resourceType.trim()) {
-      params.push(query.resourceType.trim());
-      conditions.push(`resource_type = $${params.length}`);
+      params.push(`%${query.resourceType.trim()}%`);
+      conditions.push(`resource_type ILIKE $${params.length}`);
     }
 
     if (query.correlationId && query.correlationId.trim()) {
@@ -183,23 +213,56 @@ export class AuditService {
       conditions.push(`correlation_id = $${params.length}`);
     }
 
-    if (query.search && query.search.trim()) {
-      params.push(`%${query.search.trim()}%`);
+    const searchText = (query.search ?? query.q ?? '').trim();
+    if (searchText) {
+      params.push(`%${searchText}%`);
       const p = `$${params.length}`;
       conditions.push(
-        `(action ILIKE ${p} OR resource_type ILIKE ${p} OR COALESCE(resource_id, '') ILIKE ${p} OR COALESCE(actor_email, '') ILIKE ${p} OR COALESCE(correlation_id, '') ILIKE ${p})`,
+        `(action ILIKE ${p} OR resource_type ILIKE ${p} OR COALESCE(resource_id, '') ILIKE ${p} OR COALESCE(actor_email, '') ILIKE ${p} OR COALESCE(actor_id::text, '') ILIKE ${p} OR COALESCE(correlation_id, '') ILIKE ${p})`,
       );
     }
 
-    const limit = Math.min(Math.max(Number(query.limit ?? 50) || 50, 1), 200);
-    const offset = Math.max(Number(query.offset ?? 0) || 0, 0);
+    if (query.from && query.from.trim()) {
+      const fromDate = new Date(query.from.trim());
+      if (!Number.isNaN(fromDate.getTime())) {
+        params.push(fromDate.toISOString());
+        conditions.push(`created_at >= $${params.length}::timestamptz`);
+      }
+    }
 
-    params.push(limit);
-    const limitParam = `$${params.length}`;
-    params.push(offset);
-    const offsetParam = `$${params.length}`;
+    if (query.to && query.to.trim()) {
+      const rawTo = query.to.trim();
+      const normalizedTo = /^\d{4}-\d{2}-\d{2}$/.test(rawTo)
+        ? `${rawTo}T23:59:59.999Z`
+        : rawTo;
+      const toDate = new Date(normalizedTo);
+      if (!Number.isNaN(toDate.getTime())) {
+        params.push(toDate.toISOString());
+        conditions.push(`created_at <= $${params.length}::timestamptz`);
+      }
+    }
+
+    const limit = Math.min(Math.max(Number(query.limit ?? 25) || 25, 1), 200);
+    const hasExplicitPage = query.page !== undefined && Number.isFinite(Number(query.page));
+    const page = hasExplicitPage
+      ? Math.max(1, Math.trunc(Number(query.page)))
+      : Math.max(1, Math.floor((Number(query.offset ?? 0) || 0) / limit) + 1);
+    const offset = hasExplicitPage
+      ? (page - 1) * limit
+      : Math.max(Number(query.offset ?? 0) || 0, 0);
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const countRes = await this.db.query<{ total: string | number }>(
+      `SELECT COUNT(*)::int AS total FROM audit_logs ${whereClause}`,
+      params,
+    );
+    const total = Number(countRes.rows[0]?.total ?? 0);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    const dataParams = [...params, limit, offset];
+    const limitParam = `$${dataParams.length - 1}`;
+    const offsetParam = `$${dataParams.length}`;
+
     const sql = `
       SELECT *
       FROM audit_logs
@@ -209,7 +272,21 @@ export class AuditService {
       OFFSET ${offsetParam}
     `;
 
-    const res = await this.db.query<AuditLogRow>(sql, params);
-    return res.rows.map(mapAuditRow);
+    const res = await this.db.query<AuditLogRow>(sql, dataParams);
+    const items = res.rows.map(mapAuditRow);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    };
   }
 }

@@ -1,0 +1,109 @@
+{
+  "runTag": "5A4463",
+  "startedAt": "2026-11-25T03:10:26.453Z",
+  "checks": {
+    "CHECK 1": {
+      "title": "Promotions CRUD & HITL Draft Activation -> Storefront Sync",
+      "status": "PASS",
+      "elapsedMs": 149.5,
+      "details": {
+        "activeCode": "P21ACTIVE5A4463",
+        "draftCode": "P21DRAFT5A4463",
+        "storefrontSyncImmediate": true,
+        "archivedCleaned": true
+      }
+    },
+    "CHECK 2": {
+      "title": "Inventory Ops, 3-SKU PO, Partner Reject (+403 lock), Payable Mark Paid & Audit Logs",
+      "status": "PASS",
+      "elapsedMs": 463.7,
+      "details": {
+        "transferRef": "TRF-20261125-D0D5F4",
+        "po3Id": "7b45f5f8-ade4-43f8-917a-6f0be879193f",
+        "po3Lines": 3,
+        "crossSupplierRejectStatus": 403,
+        "supplierRejectStatus": "SUPPLIER_REJECTED",
+        "payableId": "18ccb3f4-e6a8-418d-b7c6-624aa29aa1db",
+        "payableStatus": "PAID",
+        "auditDiffEntries": 17,
+        "orderStaffReadStatus": 200,
+        "orderStaffWriteStatus": 403
+      }
+    },
+    "CHECK 3": {
+      "title": "Layer 5 Redaction (0% Leak Test on BI & Products)",
+      "status": "PASS",
+      "elapsedMs": 169.5,
+      "details": {
+        "CATALOG_AI_OPERATOR": {
+          "biLeaks": 0,
+          "prodLeaks": 0,
+          "costDataRedacted": true
+        },
+        "ORDER_STAFF": {
+          "biLeaks": 0,
+          "prodLeaks": 0,
+          "costDataRedacted": true
+        },
+        "superAdminBi": {
+          "costDataRedacted": false,
+          "netRevenueVnd": 5157000,
+          "totalCogsVnd": 3010000,
+          "grossMarginVnd": 2147000,
+          "grossMarginPct": 41.63
+        }
+      }
+    },
+    "CHECK 4": {
+      "title": "Payment Ledger, Editorial CMS, Categories/SizeCharts, Media BBox/Delete, Orders/RMA, IAM & CRM/Moderation",
+      "status": "PASS",
+      "elapsedMs": 1678.6,
+      "details": {
+        "ordersRma": {
+          "cancelledOrder": "TX-2026A0BEB6",
+          "completedOrder": "TX-2026EB8DF1",
+          "rejectedRmaId": "bc637e0d-4190-497c-9720-782d8db6955a"
+        },
+        "paymentLedger": {
+          "txCount": 14,
+          "webhookCount": 10,
+          "overBalanceRefundStatus": 400,
+          "overBalanceCode": "REFUND_EXCEEDS_BALANCE"
+        },
+        "editorialCms": {
+          "occasionCrud": "PASS",
+          "seasonCrud": "PASS"
+        },
+        "catalogAdvanced": {
+          "categoryCrud": "PASS",
+          "sizeChartCrud": "PASS"
+        },
+        "media": {
+          "assetId": "16c328b4-218d-4ab2-8c4b-18d025d66584",
+          "computedFromPixels": true,
+          "bboxWidth": 240,
+          "bboxHeight": 480,
+          "deleted": true
+        },
+        "iam": {
+          "rolesCount": 6,
+          "tempUserId": "ab6033e8-6ff1-4b9e-a1f4-3735b9586daf",
+          "reset2faOk": true,
+          "softDeleteRevokedStatus": 403,
+          "softDeleteRevokedCode": "PERMISSION_REVOKED",
+          "softDeleteLoginBlockedStatus": 403
+        },
+        "crmModeration": {
+          "customersCount": 2,
+          "moderatedReviewId": "e3a9f2fb-1563-4dcc-869d-0b6e2b2b8f83",
+          "hiddenExcludedFromStorefront": true,
+          "restoredOnStorefront": true,
+          "notificationLogsCount": 20
+        }
+      }
+    }
+  },
+  "passed": 4,
+  "failed": 0,
+  "finishedAt": "2026-11-25T03:10:29.785Z"
+}

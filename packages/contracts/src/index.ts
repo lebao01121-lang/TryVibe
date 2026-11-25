@@ -9,6 +9,7 @@ export * from './tryon';
 export * from './payment-promo';
 export * from './order-rma';
 export * from './procurement-lookbook';
+export * from './analytics';
 export * from './http';
 export * from './events';
 export * from './mcp-tools';

@@ -55,6 +55,9 @@ export class AuditLoggerService {
         body: payload,
         correlationId: entry.correlationId,
         timeoutMs: 3000,
+        extraHeaders: {
+          'x-internal-secret': this.config.internalServiceSecret,
+        },
       });
 
       if (!res.ok) {

@@ -3,6 +3,9 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import {
   AuditActorType,
   ErrorCode,
+  Role,
+  UserStatus,
+  type AdminCustomerSummaryDto,
   type CreateCustomerAddressRequest,
   type CustomerAddressDto,
   type CustomerBodyProfileDto,
@@ -11,6 +14,7 @@ import {
   type TryOnQuotaDto,
   type UpdateBodyProfileRequest,
   type UpdateCustomerAddressRequest,
+  type UserStatus as UserStatusValue,
 } from '@atelier/contracts';
 import { ApiDomainException } from '../common/api-exception';
 import { getDailyTryOnLimitForTier } from '../db/seed';
@@ -102,6 +106,38 @@ export interface UserCheckoutProfileDto {
   loyaltyTier: LoyaltyTier;
   codTrustScore: number;
   status: string;
+}
+
+export interface ListCustomersAdminQuery {
+  q?: string;
+  search?: string;
+  vipTier?: string;
+  loyaltyTier?: string;
+  isActive?: boolean;
+  status?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface AdminCustomerCrmView extends AdminCustomerSummaryDto {
+  tryOnUsedToday: number;
+  tryOnResetAt: string | null;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface PaginatedAdminCustomersResult {
+  items: AdminCustomerCrmView[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 @Injectable()
@@ -507,6 +543,139 @@ export class CustomerService {
       loyaltyTier: row.loyalty_tier,
       codTrustScore: Number(row.cod_trust_score),
       status: row.status,
+    };
+  }
+
+  async listCustomersAdmin(
+    query: ListCustomersAdminQuery = {},
+  ): Promise<PaginatedAdminCustomersResult> {
+    const conditions: string[] = [
+      `EXISTS (
+         SELECT 1 FROM user_roles ur
+         INNER JOIN roles r ON r.id = ur.role_id
+         WHERE ur.user_id = u.id AND r.code = $1
+       )`,
+    ];
+    const params: unknown[] = [Role.CUSTOMER];
+
+    const searchText = (query.q ?? query.search ?? '').trim();
+    if (searchText) {
+      params.push(`%${searchText}%`);
+      const p = `$${params.length}`;
+      conditions.push(
+        `(u.email ILIKE ${p} OR u.full_name ILIKE ${p} OR COALESCE(u.phone, '') ILIKE ${p})`,
+      );
+    }
+
+    const tierFilter = (query.vipTier ?? query.loyaltyTier ?? '').trim().toUpperCase();
+    if (tierFilter) {
+      params.push(tierFilter);
+      conditions.push(`UPPER(u.loyalty_tier) = $${params.length}`);
+    }
+
+    if (query.status && query.status.trim()) {
+      params.push(query.status.trim().toUpperCase());
+      conditions.push(`UPPER(u.status) = $${params.length}`);
+    }
+
+    if (query.isActive !== undefined) {
+      if (query.isActive) {
+        conditions.push(`COALESCE(u.is_active, TRUE) = TRUE AND u.status = 'ACTIVE' AND u.deleted_at IS NULL`);
+      } else {
+        conditions.push(`(COALESCE(u.is_active, TRUE) = FALSE OR u.status <> 'ACTIVE' OR u.deleted_at IS NOT NULL)`);
+      }
+    }
+
+    const page = Math.max(1, Number.isFinite(Number(query.page)) ? Math.trunc(Number(query.page)) : 1);
+    const limit = Math.min(
+      100,
+      Math.max(1, Number.isFinite(Number(query.limit)) ? Math.trunc(Number(query.limit)) : 20),
+    );
+    const offset = (page - 1) * limit;
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
+    const countRes = await this.db.query<{ total: number | string }>(
+      `SELECT COUNT(*)::int AS total FROM users u ${whereClause}`,
+      params,
+    );
+    const total = Number(countRes.rows[0]?.total ?? 0);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    const dataParams = [...params, limit, offset];
+    const limitParam = `$${dataParams.length - 1}`;
+    const offsetParam = `$${dataParams.length}`;
+
+    const rowsRes = await this.db.query<{
+      id: string;
+      email: string;
+      full_name: string;
+      phone: string | null;
+      status: UserStatusValue;
+      is_active: boolean | null;
+      deleted_at: Date | string | null;
+      loyalty_tier: LoyaltyTier;
+      cod_trust_score: number;
+      created_at: Date | string;
+      updated_at: Date | string;
+      daily_limit: number | null;
+      used_today: number | null;
+      reset_at: Date | string | null;
+    }>(
+      `SELECT u.id, u.email, u.full_name, u.phone, u.status, u.is_active, u.deleted_at,
+              u.loyalty_tier, u.cod_trust_score, u.created_at, u.updated_at,
+              q.daily_limit, q.used_today, q.reset_at
+       FROM users u
+       LEFT JOIN tryon_quotas q ON q.user_id = u.id
+       ${whereClause}
+       ORDER BY u.created_at DESC
+       LIMIT ${limitParam}
+       OFFSET ${offsetParam}`,
+      dataParams,
+    );
+
+    const nowMs = Date.now();
+    const items: AdminCustomerCrmView[] = rowsRes.rows.map((row) => {
+      const tierLimit = getDailyTryOnLimitForTier(row.loyalty_tier);
+      const dailyLimit = Math.max(Number(row.daily_limit ?? tierLimit), tierLimit);
+      const expired = row.reset_at ? new Date(row.reset_at).getTime() <= nowMs : true;
+      const usedToday = expired ? 0 : Math.max(0, Number(row.used_today ?? 0));
+      const remaining = Math.max(0, dailyLimit - usedToday);
+      const isActive =
+        row.is_active !== false && row.status === UserStatus.ACTIVE && !row.deleted_at;
+
+      return {
+        id: row.id,
+        email: row.email,
+        fullName: row.full_name,
+        phone: row.phone,
+        vipTier: row.loyalty_tier,
+        loyaltyTier: row.loyalty_tier,
+        tryOnDailyLimit: dailyLimit,
+        tryOnUsedToday: usedToday,
+        tryOnQuotaRemaining: remaining,
+        tryOnResetAt: row.reset_at ? toIso(row.reset_at) : null,
+        codTrustScore: Number(row.cod_trust_score ?? 100),
+        isActive,
+        status: row.status,
+        createdAt: toIso(row.created_at),
+        updatedAt: toIso(row.updated_at),
+        deletedAt: row.deleted_at ? toIso(row.deleted_at) : null,
+      };
+    });
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
     };
   }
 }

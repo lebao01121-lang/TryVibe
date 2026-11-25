@@ -21,6 +21,7 @@ export default async function OpenGraphImage({ params }: OpenGraphImageProps) {
   let fabricLine = 'Lụa tơ tằm Bảo Lộc · Linen hữu cơ cao cấp';
   let priceText = 'Tầm Xuân Atelier';
   let categoryText = 'BỘ SƯU TẬP ATELIER';
+  let ratingSummary = '';
 
   try {
     const composite = await fetchPdpCompositeBySlug(slug);
@@ -30,6 +31,9 @@ export default async function OpenGraphImage({ params }: OpenGraphImageProps) {
         composite.product.subtitle || composite.product.fabricComposition;
       priceText = FORMAT_VND(composite.product.minPriceVnd);
       categoryText = composite.product.categoryName.toUpperCase();
+    }
+    if (composite?.fitStats && composite.fitStats.totalReviews > 0) {
+      ratingSummary = `★ ${composite.fitStats.averageRating.toFixed(1)} · ${composite.fitStats.totalReviews} ĐÁNH GIÁ ĐỘ VỪA`;
     }
   } catch {
     // Keep clean editorial fallback text if BFF is unreachable
@@ -111,6 +115,24 @@ export default async function OpenGraphImage({ params }: OpenGraphImageProps) {
           >
             {fabricLine}
           </div>
+          {ratingSummary ? (
+            <div
+              style={{
+                display: 'flex',
+                alignSelf: 'flex-start',
+                backgroundColor: '#F4EBDA',
+                border: '1px solid #B08A4A',
+                color: '#8A672C',
+                padding: '8px 20px',
+                borderRadius: '999px',
+                fontSize: '18px',
+                letterSpacing: '2px',
+                fontFamily: 'sans-serif',
+              }}
+            >
+              {ratingSummary}
+            </div>
+          ) : null}
         </div>
 
         <div

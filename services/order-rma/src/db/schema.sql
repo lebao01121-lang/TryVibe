@@ -31,19 +31,28 @@ CREATE TABLE IF NOT EXISTS orders (
   late_payment_refunded BOOLEAN NOT NULL DEFAULT FALSE,
   paid_at TIMESTAMPTZ NULL,
   delivered_at TIMESTAMPTZ NULL,
+  completed_at TIMESTAMPTZ NULL,
+  completed_by VARCHAR(180) NULL,
   cancelled_at TIMESTAMPTZ NULL,
   cancel_reason TEXT NULL,
+  cancelled_by VARCHAR(180) NULL,
   payment_intent_jsonb JSONB NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS completed_by VARCHAR(180) NULL;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ NULL;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_by VARCHAR(180) NULL;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_intent_jsonb JSONB NULL;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS late_payment_refunded BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS deposit_required_vnd BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_actual_fee_vnd BIGINT NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_provider_mode VARCHAR(32) NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_tracking_events_jsonb JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY,
@@ -77,6 +86,11 @@ CREATE TABLE IF NOT EXISTS shipments (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS actual_fee_vnd BIGINT NULL;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS provider_mode VARCHAR(32) NULL;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS expected_delivery_time TIMESTAMPTZ NULL;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS provider_response_jsonb JSONB NULL;
+
 CREATE TABLE IF NOT EXISTS rma_requests (
   id UUID PRIMARY KEY,
   rma_code VARCHAR(32) NOT NULL UNIQUE,
@@ -93,11 +107,20 @@ CREATE TABLE IF NOT EXISTS rma_requests (
   exchange_reservation_id VARCHAR(64) NULL,
   refund_amount_vnd BIGINT NOT NULL DEFAULT 0,
   refund_transaction_id VARCHAR(128) NULL,
+  rejection_reason TEXT NULL,
+  rejected_by VARCHAR(180) NULL,
+  rejected_at TIMESTAMPTZ NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE rma_requests ADD COLUMN IF NOT EXISTS refund_transaction_id VARCHAR(128) NULL;
+ALTER TABLE rma_requests ADD COLUMN IF NOT EXISTS rejection_reason TEXT NULL;
+ALTER TABLE rma_requests ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(180) NULL;
+ALTER TABLE rma_requests ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ NULL;
+ALTER TABLE rma_requests ADD COLUMN IF NOT EXISTS return_tracking_code VARCHAR(64) NULL;
+ALTER TABLE rma_requests ADD COLUMN IF NOT EXISTS exchange_tracking_code VARCHAR(64) NULL;
+ALTER TABLE rma_requests ADD COLUMN IF NOT EXISTS shipping_tracking_events_jsonb JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS rma_items (
   id UUID PRIMARY KEY,
@@ -126,6 +149,25 @@ CREATE TABLE IF NOT EXISTS processed_events (
   event_name VARCHAR(128) NOT NULL DEFAULT 'unknown',
   processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS processed_shipping_webhooks (
+  event_id TEXT PRIMARY KEY,
+  provider VARCHAR(32) NOT NULL,
+  tracking_code VARCHAR(64) NULL,
+  order_code VARCHAR(64) NULL,
+  provider_status VARCHAR(64) NOT NULL,
+  payload_jsonb JSONB NOT NULL,
+  processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_processed_shipping_webhooks_tracking
+  ON processed_shipping_webhooks(tracking_code, processed_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_rma_return_tracking
+  ON rma_requests(return_tracking_code);
+
+CREATE INDEX IF NOT EXISTS idx_rma_exchange_tracking
+  ON rma_requests(exchange_tracking_code);
 
 CREATE INDEX IF NOT EXISTS idx_orders_user_created
   ON orders(user_id, created_at DESC);

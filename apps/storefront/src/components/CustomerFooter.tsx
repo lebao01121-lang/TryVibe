@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { PerformanceTierToggle } from '@/lib/performance/AdaptivePerformanceProvider';
 
 export function CustomerFooter() {
   return (
@@ -58,8 +59,13 @@ export function CustomerFooter() {
         </div>
       </div>
 
-      <div className="border-t border-[#B08A4A]/15 px-6 py-5 text-center text-xs tracking-widest text-[#FBF7EF]/55">
-        © 2026 Tầm Xuân Fashion Atelier · Bản quyền trải nghiệm khách hàng
+      <div className="border-t border-[#B08A4A]/15 px-6 py-5">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-center text-xs tracking-widest text-[#FBF7EF]/55 sm:flex-row sm:text-left lg:px-4">
+          <span>
+            © 2026 Tầm Xuân Fashion Atelier · Bản quyền trải nghiệm khách hàng
+          </span>
+          <PerformanceTierToggle />
+        </div>
       </div>
     </footer>
   );

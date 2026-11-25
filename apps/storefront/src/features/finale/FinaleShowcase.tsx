@@ -8,6 +8,10 @@ import {
   useMotionState,
 } from '@atelier/motion-kit';
 import { MagneticButton } from '@/components/motion/MagneticButton';
+import {
+  PerformanceTierToggle,
+  useAdaptivePerformance,
+} from '@/lib/performance/AdaptivePerformanceProvider';
 
 export interface FinaleShowcaseProps {
   finale: CampaignFinale;
@@ -32,13 +36,14 @@ export function FinaleShowcase({ finale }: FinaleShowcaseProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const wordRef = useRef<HTMLHeadingElement | null>(null);
   const { cameraActive, reducedMotion } = useMotionState();
+  const { isLowPower } = useAdaptivePerformance();
 
   useEffect(() => {
     const section = sectionRef.current;
     const wordEl = wordRef.current;
     if (!section || !wordEl) return;
 
-    if (cameraActive || reducedMotion) {
+    if (cameraActive || reducedMotion || isLowPower) {
       setParticleRainActive(false);
       return;
     }
@@ -91,7 +96,7 @@ export function FinaleShowcase({ finale }: FinaleShowcaseProps) {
       if (rafId) window.cancelAnimationFrame(rafId);
       setParticleRainActive(false);
     };
-  }, [cameraActive, reducedMotion]);
+  }, [cameraActive, reducedMotion, isLowPower]);
 
   return (
     <section
@@ -165,7 +170,7 @@ export function FinaleShowcase({ finale }: FinaleShowcaseProps) {
           <span>
             © 2026 {finale.wordmark.normalize('NFC')} Fashion Atelier · May đo thủ công tại Hà Nội
           </span>
-          <div className="flex flex-wrap gap-5">
+          <div className="flex flex-wrap items-center gap-5">
             <Link href="/bo-suu-tap" className="hover:text-[#EBCF8F]">
               Bộ sưu tập
             </Link>
@@ -181,6 +186,7 @@ export function FinaleShowcase({ finale }: FinaleShowcaseProps) {
             <Link href="/thanh-toan" className="hover:text-[#EBCF8F]">
               Thanh toán
             </Link>
+            <PerformanceTierToggle />
           </div>
         </footer>
       </div>

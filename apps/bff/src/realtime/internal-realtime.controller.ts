@@ -22,6 +22,7 @@ import {
   type Logger,
 } from '@atelier/observability';
 import type { Request } from 'express';
+import { BffRedisService } from '../common/redis.service';
 import { BFF_CONFIG_TOKEN, BFF_SERVICE_NAME, type BffConfig } from '../config/env';
 import {
   RealtimeGateway,
@@ -81,16 +82,17 @@ export class InternalRealtimeController {
 
   constructor(
     @Inject(BFF_CONFIG_TOKEN) private readonly config: BffConfig,
+    @Inject(BffRedisService) private readonly redis: BffRedisService,
     @Inject(RealtimeGateway) private readonly realtimeGateway: RealtimeGateway,
     @Inject(RootRealtimeGateway) private readonly rootRealtimeGateway: RootRealtimeGateway,
   ) {}
 
   @Post('tryon-event')
   @HttpCode(HttpStatus.OK)
-  broadcastTryOnEvent(
+  async broadcastTryOnEvent(
     @Body() body: InternalTryOnEventBody | undefined,
     @Req() req: Request,
-  ): ApiResponse<{ broadcasted: boolean; room: string; event: TryOnRealtimeEventName }> {
+  ): Promise<ApiResponse<{ broadcasted: boolean; room: string; event: TryOnRealtimeEventName }>> {
     const correlationId = getOrCreateCorrelationId(req.headers as HeaderBag);
     this.assertInternalSecret(req, correlationId);
 
@@ -137,7 +139,12 @@ export class InternalRealtimeController {
       mergedPayload.providerDisplayBadge = mergedPayload.provider_display_badge;
     }
 
-    const eventData = recordTryOnEventForReplay(sessionId, typedEvent, mergedPayload);
+    const eventData = await recordTryOnEventForReplay(
+      sessionId,
+      typedEvent,
+      mergedPayload,
+      this.redis,
+    );
     this.realtimeGateway.emitTryOnEvent(sessionId, typedEvent, eventData);
     this.rootRealtimeGateway.emitTryOnEvent(sessionId, typedEvent, eventData);
 
@@ -162,10 +169,10 @@ export class InternalRealtimeController {
 
   @Post('order-event')
   @HttpCode(HttpStatus.OK)
-  broadcastOrderEvent(
+  async broadcastOrderEvent(
     @Body() body: InternalOrderEventBody | undefined,
     @Req() req: Request,
-  ): ApiResponse<{ broadcasted: boolean; rooms: string[]; event: OrderRealtimeEventName }> {
+  ): Promise<ApiResponse<{ broadcasted: boolean; rooms: string[]; event: OrderRealtimeEventName }>> {
     const correlationId = getOrCreateCorrelationId(req.headers as HeaderBag);
     this.assertInternalSecret(req, correlationId);
 
@@ -210,7 +217,7 @@ export class InternalRealtimeController {
       timestamp: new Date().toISOString(),
     };
 
-    const eventData = recordOrderEventForReplay(keys, typedEvent, mergedPayload);
+    const eventData = await recordOrderEventForReplay(keys, typedEvent, mergedPayload, this.redis);
     this.realtimeGateway.emitOrderEvent(keys, typedEvent, eventData);
     this.rootRealtimeGateway.emitOrderEvent(keys, typedEvent, eventData);
 

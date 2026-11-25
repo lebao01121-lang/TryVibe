@@ -193,12 +193,60 @@ ALTER SCHEMA public OWNER TO svc_tryon;
 GRANT ALL ON SCHEMA public TO svc_tryon;
 ALTER DEFAULT PRIVILEGES FOR ROLE svc_tryon IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC;
 
--- 4.10 rag_vector_db (+ pgvector)
+-- 4.10 rag_vector_db (+ pgvector + HNSW & Versioning Schema)
 \connect rag_vector_db
 CREATE EXTENSION IF NOT EXISTS vector;
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
 ALTER SCHEMA public OWNER TO svc_rag;
 GRANT ALL ON SCHEMA public TO svc_rag;
 ALTER DEFAULT PRIVILEGES FOR ROLE svc_rag IN SCHEMA public REVOKE ALL ON TABLES FROM PUBLIC;
+
+SET ROLE svc_rag;
+
+CREATE TABLE IF NOT EXISTS rag_documents (
+  id TEXT PRIMARY KEY,
+  domain TEXT NOT NULL DEFAULT 'general',
+  category TEXT NOT NULL DEFAULT 'general',
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  source_uri TEXT NOT NULL DEFAULT '',
+  metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
+  embedding vector(768) NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_by TEXT NOT NULL DEFAULT 'system',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  parent_doc_id TEXT,
+  chunk_index INTEGER NOT NULL DEFAULT 0,
+  embedding_status TEXT NOT NULL DEFAULT 'EMBEDDED',
+  embedding_model TEXT NOT NULL DEFAULT 'nomic-embed-text'
+);
+
+ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'general';
+ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
+ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS updated_by TEXT DEFAULT 'system';
+ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS parent_doc_id TEXT;
+ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS chunk_index INTEGER DEFAULT 0;
+ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS embedding_status TEXT DEFAULT 'EMBEDDED';
+ALTER TABLE rag_documents ADD COLUMN IF NOT EXISTS embedding_model TEXT DEFAULT 'nomic-embed-text';
+
+CREATE INDEX IF NOT EXISTS idx_rag_documents_active_category
+  ON rag_documents (is_active, category, domain);
+
+CREATE INDEX IF NOT EXISTS idx_rag_documents_parent_chunk
+  ON rag_documents (parent_doc_id, chunk_index);
+
+CREATE INDEX IF NOT EXISTS idx_rag_documents_embedding_hnsw
+  ON rag_documents
+  USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64);
+
+CREATE INDEX IF NOT EXISTS idx_rag_documents_fts_simple
+  ON rag_documents
+  USING gin (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content, '')));
+
+RESET ROLE;
 
 \connect postgres

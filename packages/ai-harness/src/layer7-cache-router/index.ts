@@ -15,6 +15,8 @@ export {
   TIER0_DETERMINISTIC_TOOLS,
   ThreeTierAiRouter,
   analyzeVietnameseSentimentWithOllama,
+  getDefaultSentimentTelemetryRecorder,
+  type AnalyzeVietnameseSentimentOptions,
   type KnownMcpToolName,
   type RouterDecision,
   type RouterRequest,

@@ -105,8 +105,12 @@ export function clearAdminSession(): void {
 }
 
 function getEffectiveCsrfToken(): string | null {
+  const cookieToken = readCookie('atelier_csrf_token');
+  if (cookieToken) {
+    return cookieToken;
+  }
   const session = getAdminSession();
-  return session?.csrfToken || readCookie('atelier_csrf_token');
+  return session?.csrfToken || null;
 }
 
 async function performSilentRefresh(): Promise<string | null> {
@@ -275,4 +279,127 @@ export async function adminFetch<T>(
       headers: null,
     };
   }
+}
+
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  pagination: PaginationMeta;
+}
+
+export function buildQueryString(
+  params: Record<string, string | number | boolean | null | undefined>,
+): string {
+  const search = new URLSearchParams();
+  for (const [key, raw] of Object.entries(params)) {
+    if (raw === undefined || raw === null) continue;
+    const str = typeof raw === 'string' ? raw.trim() : String(raw);
+    if (str.length === 0) continue;
+    search.set(key, str);
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : '';
+}
+
+const DEFAULT_LIST_KEYS = [
+  'items',
+  'list',
+  'rows',
+  'records',
+  'logs',
+  'data',
+] as const;
+
+export function extractList<T>(
+  data: unknown,
+  fallbackKeys: readonly string[] = DEFAULT_LIST_KEYS,
+): T[] {
+  if (Array.isArray(data)) return data as T[];
+  if (data && typeof data === 'object') {
+    const rec = data as Record<string, unknown>;
+    for (const key of [...fallbackKeys, ...DEFAULT_LIST_KEYS]) {
+      if (Array.isArray(rec[key])) {
+        return rec[key] as T[];
+      }
+    }
+  }
+  return [];
+}
+
+export function extractPaginatedList<T>(
+  data: unknown,
+  fallbackKeys: readonly string[] = DEFAULT_LIST_KEYS,
+  defaultLimit = 20,
+): PaginatedResult<T> {
+  const items = extractList<T>(data, fallbackKeys);
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const rec = data as Record<string, unknown>;
+    const rawPag =
+      rec.pagination && typeof rec.pagination === 'object' && !Array.isArray(rec.pagination)
+        ? (rec.pagination as Record<string, unknown>)
+        : rec;
+
+    const page = Math.max(1, Number(rawPag.page ?? 1) || 1);
+    const limit = Math.max(1, Number(rawPag.limit ?? rawPag.pageSize ?? defaultLimit) || defaultLimit);
+    const total = Math.max(
+      items.length,
+      Number(rawPag.total ?? rawPag.totalCount ?? items.length) || items.length,
+    );
+    const totalPages = Math.max(
+      1,
+      Number(rawPag.totalPages ?? Math.ceil(total / limit)) || 1,
+    );
+    return {
+      items,
+      pagination: { page, limit, total, totalPages },
+    };
+  }
+  return {
+    items,
+    pagination: {
+      page: 1,
+      limit: defaultLimit,
+      total: items.length,
+      totalPages: Math.max(1, Math.ceil(items.length / defaultLimit)),
+    },
+  };
+}
+
+function escapeCsvCell(value: string | number | boolean | null | undefined): string {
+  if (value === null || value === undefined) return '';
+  let str = String(value);
+  if (typeof value === 'string' && /^[=@+\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
+  if (/[",\r\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+export function downloadUtf8BomCsv(
+  filename: string,
+  headers: readonly string[],
+  rows: ReadonlyArray<ReadonlyArray<string | number | boolean | null | undefined>>,
+): void {
+  const csvLines = [
+    headers.map((h) => escapeCsvCell(h)).join(','),
+    ...rows.map((row) => row.map((cell) => escapeCsvCell(cell)).join(',')),
+  ];
+  const bomCsv = `\uFEFF${csvLines.join('\r\n')}`;
+  const blob = new Blob([bomCsv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

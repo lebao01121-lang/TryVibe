@@ -2,7 +2,10 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { Portal, Role, type LoginResponse } from '@atelier/contracts';
-import type { PartnerOverviewStatus } from '@/lib/partner-overview';
+import type {
+  PartnerLiveOverviewData,
+  PartnerOverviewStatus,
+} from '@/lib/partner-overview';
 import {
   clearPartnerSession,
   getPartnerSession,
@@ -17,7 +20,10 @@ import {
 } from './PartnerProcurementPanels';
 import { PartnerSubmissionPanel } from './PartnerSubmissionPanel';
 import { PortalToastBanner, emitPortalToast } from './PortalToastBanner';
-import { SupplierRoleGuard } from './SupplierRoleGuard';
+import {
+  SupplierRoleGuard,
+  isStrictSupplierRoles,
+} from './SupplierRoleGuard';
 import { SupplierTenantBar } from './SupplierTenantBar';
 
 export interface PartnerWorkspaceProps {
@@ -26,20 +32,30 @@ export interface PartnerWorkspaceProps {
 
 type PartnerTabKey = 'po' | 'grn' | 'payables' | 'submissions';
 
+const ENABLE_DEV_LOGIN = process.env.NEXT_PUBLIC_ENABLE_DEV_LOGIN === 'true';
+
 const QUICK_SUPPLIER_ACCOUNTS = [
   { label: 'Supplier A (SUPPLIER)', email: 'supplier-a@atelier.local' },
   { label: 'Supplier B (SUPPLIER)', email: 'supplier-b@atelier.local' },
   { label: 'Supplier C (SUPPLIER)', email: 'supplier-c@atelier.local' },
-  { label: 'SUPER_ADMIN (403)', email: 'admin@atelier.local' },
+  { label: 'SUPER_ADMIN (403)', email: 'lebao01121@gmail.com' },
   { label: 'CUSTOMER (403)', email: 'customer@atelier.local' },
 ] as const;
 
 export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
   const [session, setSession] = useState<PartnerStoredSession | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [liveOverview, setLiveOverview] =
+    useState<PartnerLiveOverviewData | null>(null);
+  const [effectiveOverviewStatus, setEffectiveOverviewStatus] =
+    useState<PartnerOverviewStatus>(overviewStatus);
 
-  const [email, setEmail] = useState('supplier-a@atelier.local');
-  const [password, setPassword] = useState('Atelier@2026!');
+  const [email, setEmail] = useState(
+    ENABLE_DEV_LOGIN ? 'supplier-a@atelier.local' : '',
+  );
+  const [password, setPassword] = useState(
+    ENABLE_DEV_LOGIN ? 'Atelier@2026!' : '',
+  );
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -103,10 +119,42 @@ export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
     });
     clearPartnerSession();
     setSession(null);
+    setLiveOverview(null);
   };
 
   const lockedSupplierId = session?.user.supplierId ?? null;
   const roles = session?.user.roles ?? [];
+  const isStrictSupplier = isStrictSupplierRoles(roles);
+
+  // Hydrate authenticated live Partner B2B overview metrics once Bearer JWT & 2FA are verified
+  useEffect(() => {
+    if (!session?.accessToken || !isStrictSupplier || !session.mfaVerified) {
+      setLiveOverview(null);
+      return;
+    }
+
+    let cancelled = false;
+    void partnerFetch<PartnerLiveOverviewData>('/api/v1/partner/overview').then(
+      (res) => {
+        if (cancelled) return;
+        if (res.ok && res.data) {
+          const data = res.data;
+          setLiveOverview(data);
+          setEffectiveOverviewStatus((prev) => ({
+            ...prev,
+            source: 'live-bff',
+            bffOnline: true,
+            supplierId: data.supplierId || prev.supplierId,
+            message: 'Kết nối trực tiếp Partner BFF (/api/v1/partner/overview)',
+          }));
+        }
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.accessToken, isStrictSupplier, session?.mfaVerified]);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -144,7 +192,7 @@ export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
         supplierId={lockedSupplierId}
         supplierEmail={session?.user.email}
         twoFactorVerified={Boolean(session?.mfaVerified)}
-        overviewStatus={overviewStatus}
+        overviewStatus={effectiveOverviewStatus}
       />
 
       {/* Main Content */}
@@ -165,21 +213,23 @@ export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
               <code>supplier_id</code>.
             </p>
 
-            <div className="mt-4 flex flex-wrap gap-1.5">
-              {QUICK_SUPPLIER_ACCOUNTS.map((acc) => (
-                <button
-                  key={acc.email}
-                  type="button"
-                  onClick={() => {
-                    setEmail(acc.email);
-                    setPassword('Atelier@2026!');
-                  }}
-                  className="rounded-full border border-[#B08A4A]/35 bg-[#FBF7EF] px-2.5 py-1 font-mono text-[10px] text-[#5C4B41]"
-                >
-                  {acc.label}
-                </button>
-              ))}
-            </div>
+            {ENABLE_DEV_LOGIN ? (
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {QUICK_SUPPLIER_ACCOUNTS.map((acc) => (
+                  <button
+                    key={acc.email}
+                    type="button"
+                    onClick={() => {
+                      setEmail(acc.email);
+                      setPassword('Atelier@2026!');
+                    }}
+                    className="rounded-full border border-[#B08A4A]/35 bg-[#FBF7EF] px-2.5 py-1 font-mono text-[10px] text-[#5C4B41]"
+                  >
+                    {acc.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
             <form onSubmit={handleLogin} className="mt-5 space-y-4">
               <label className="block text-xs">
@@ -189,6 +239,7 @@ export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
                 <input
                   type="email"
                   required
+                  placeholder="supplier@atelier.local"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="mt-1.5 w-full rounded-2xl border border-[#B08A4A]/35 bg-[#FBF7EF] px-4 py-2.5 text-sm"
@@ -202,6 +253,7 @@ export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
                 <input
                   type="password"
                   required
+                  placeholder="Nhập mật khẩu nhà cung cấp"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="mt-1.5 w-full rounded-2xl border border-[#B08A4A]/35 bg-[#FBF7EF] px-4 py-2.5 text-sm"
@@ -232,6 +284,40 @@ export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
             onSignOut={() => void handleLogout()}
             onMfaSuccess={handleMfaSuccess}
           >
+            {liveOverview ? (
+              <div
+                data-testid="partner-live-overview-bar"
+                className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#B08A4A]/30 bg-white px-4 py-2.5 text-[11px] text-[#5C4B41]"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#2E6B47]/15 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-[#1E4B32]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#2E6B47]" />
+                    B2B OVERVIEW LIVE
+                  </span>
+                  <span className="font-mono text-[10px] text-[#1C1410]">
+                    Mẫu đề xuất: {liveOverview.b2bSummary.submissionsTotal}
+                  </span>
+                  <span className="font-mono text-[10px] text-[#8A672C]">
+                    PO chờ xác nhận:{' '}
+                    {liveOverview.b2bSummary.purchaseOrdersAwaitingConfirmation}
+                  </span>
+                  <span className="font-mono text-[10px] text-[#5C4B41]">
+                    Lịch giao GRN:{' '}
+                    {liveOverview.b2bSummary.scheduledGrnDeliveries}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 font-mono text-[10px]">
+                  <span className="rounded-full bg-[#F4EBDA] px-2.5 py-0.5 text-[#8A672C]">
+                    SLA đúng hạn:{' '}
+                    {liveOverview.b2bSummary.onTimeFulfillmentSlaPct}%
+                  </span>
+                  <span className="rounded-full bg-[#FBF7EF] px-2.5 py-0.5 text-[#5C4B41]">
+                    Scope: {liveOverview.tenantIsolation.boundSupplierId}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
             {/* Partner B2B Navigation Tabs */}
             <nav
               aria-label="Phân hệ Đối tác B2B"
@@ -264,7 +350,9 @@ export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
               <PartnerPurchaseOrdersTab supplierId={lockedSupplierId} />
             ) : null}
             {activeTab === 'grn' ? <PartnerGoodsReceiptsTab /> : null}
-            {activeTab === 'payables' ? <PartnerPayablesTab /> : null}
+            {activeTab === 'payables' ? (
+              <PartnerPayablesTab supplierId={lockedSupplierId ?? undefined} />
+            ) : null}
             {activeTab === 'submissions' && lockedSupplierId ? (
               <PartnerSubmissionPanel supplierId={lockedSupplierId} />
             ) : null}

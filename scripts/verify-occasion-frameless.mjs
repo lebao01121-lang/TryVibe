@@ -942,6 +942,7 @@ async function main() {
     console.log(`  [SEED] POST ${CATALOG_BASE}/v1/catalog/internal/reseed ...`);
     const reseedRes = await httpRequest(`${CATALOG_BASE}/v1/catalog/internal/reseed`, {
       method: 'POST',
+      headers: { 'x-internal-secret': internalSecret },
       timeoutMs: 120_000,
     });
     console.log(`  [SEED] Reseed HTTP ${reseedRes.status}`);

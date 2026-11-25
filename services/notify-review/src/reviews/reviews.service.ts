@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
 import {
@@ -15,6 +16,7 @@ import {
   NotificationChannel,
   ReviewModerationStatus,
   type FitFeedback as FitFeedbackType,
+  type ModerateReviewDto,
   type NotificationChannel as NotificationChannelType,
   type ProductFitStatsDto,
   type ProductReviewsResponseDto,
@@ -35,6 +37,7 @@ import { NotifyDbService } from '../db/notify-db.service';
 import { runNotifyReviewSeed, type NotifySeedSummary } from '../db/seed';
 import { ReviewEventPublisherService } from '../messaging/review-event-publisher.service';
 import {
+  computeFallbackVietnameseSentiment,
   deriveSentimentLabelFromScore,
   SentimentService,
   type ReviewSentimentResult,
@@ -62,6 +65,10 @@ interface ProductReviewRow {
   sentiment_score: number | string | null;
   sentiment_label: string | null;
   moderation_status: string;
+  is_hidden?: boolean | null;
+  moderation_note?: string | null;
+  moderated_by?: string | null;
+  moderated_at?: Date | string | null;
   created_at: Date | string;
 }
 
@@ -84,6 +91,10 @@ interface NotificationLogRow {
   payload_jsonb: unknown;
   status: string;
   retry_count: number | string;
+  provider_message_id: string | null;
+  provider_error_code: string | null;
+  provider_error_message: string | null;
+  delivery_mode: string | null;
   sent_at: Date | string;
   created_at: Date | string;
 }
@@ -98,20 +109,99 @@ export interface NotificationLogDto {
   payload: Record<string, unknown> | null;
   status: string;
   retryCount: number;
+  providerMessageId: string | null;
+  providerErrorCode: string | null;
+  providerErrorMessage: string | null;
+  deliveryMode: string;
   sentAt: string;
   createdAt: string;
 }
 
 export interface NotificationLogsQueryFilters {
   limit?: number;
+  page?: number;
   channel?: string;
+  status?: string;
   eventId?: string;
+  q?: string;
+  search?: string;
+}
+
+export interface PaginatedNotificationLogsResponse {
+  items: NotificationLogDto[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface AdminReviewsQueryFilters {
+  productId?: string;
+  rating?: number;
+  sentiment?: string;
+  sentimentLabel?: string;
+  isHidden?: boolean;
+  moderationStatus?: string;
+  q?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface AdminReviewsListResponse {
+  items: VerifiedReviewWithSentimentDto[];
+  reviews: VerifiedReviewWithSentimentDto[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  sentimentSummary: ProductSentimentSummaryDto;
+  summary: {
+    totalAll: number;
+    hiddenCount: number;
+    visibleCount: number;
+    averageRating: number;
+  };
+}
+
+export interface ModerateReviewResult {
+  review: VerifiedReviewWithSentimentDto;
+  before: VerifiedReviewWithSentimentDto;
+  after: VerifiedReviewWithSentimentDto;
+  isHidden: boolean;
+  visibilityStatus: 'VISIBLE' | 'HIDDEN';
+  moderationStatus: ReviewModerationStatusType;
+  fitStats: ProductFitStatsDto;
+  sentimentSummary: ProductSentimentSummaryDto;
+}
+
+export interface DeleteReviewResult {
+  deleted: true;
+  id: string;
+  productId: string;
+  deletedReview: VerifiedReviewWithSentimentDto;
+  fitStats: ProductFitStatsDto;
+  sentimentSummary: ProductSentimentSummaryDto;
 }
 
 export interface ProductReviewsQueryFilters {
   size?: string;
   heightCm?: number;
   weightKg?: number;
+  toleranceCm?: number;
+  toleranceKg?: number;
 }
 
 export interface ReviewActorContext {
@@ -120,19 +210,48 @@ export interface ReviewActorContext {
   adminSeedOverride?: boolean;
 }
 
+export type VietnameseFitFeedbackCode = 'CHAT' | 'VUA' | 'RONG';
+
 export interface VerifiedReviewWithSentimentDto extends VerifiedReviewDto {
-  diemCamXucNlp: number | null;
+  sentimentScore: number;
+  diemCamXucNlp: number;
   sentimentLabel: SentimentLabel;
+  fitFeedbackVi: VietnameseFitFeedbackCode;
+  fitFeedbackLabelVi: 'Hơi chật' | 'Chuẩn size' | 'Hơi rộng';
+  isHidden: boolean;
+  visibilityStatus: 'VISIBLE' | 'HIDDEN';
+  moderationNote: string | null;
+  moderatedBy: string | null;
+  moderatedAt: string | null;
+}
+
+export interface ProductSentimentSummaryDto {
+  positivePct: number;
+  neutralPct: number;
+  negativePct: number;
+  positiveCount: number;
+  neutralCount: number;
+  negativeCount: number;
+  averageSentimentScore: number;
+  totalScored: number;
 }
 
 export interface ProductReviewsWithSentimentResponseDto
   extends Omit<ProductReviewsResponseDto, 'reviews'> {
   reviews: VerifiedReviewWithSentimentDto[];
+  sentimentSummary: ProductSentimentSummaryDto;
+  appliedBodyFilter?: {
+    heightCm: number | null;
+    weightKg: number | null;
+    toleranceCm: number;
+    toleranceKg: number;
+  } | null;
 }
 
 export interface CreateReviewResult {
   review: VerifiedReviewWithSentimentDto;
   fitStats: ProductFitStatsDto;
+  sentimentSummary: ProductSentimentSummaryDto;
   sentiment: ReviewSentimentResult;
 }
 
@@ -150,6 +269,8 @@ export interface ProductFitSummaryItem {
   runsSmallPct: number;
   trueToSizePct: number;
   runsLargePct: number;
+  positiveSentimentPct: number;
+  sentimentSummary: ProductSentimentSummaryDto;
   aggregatedAt: string;
 }
 
@@ -159,6 +280,7 @@ export interface ReviewOpsSummaryResponse {
   notificationsSentCount: number;
   totalNotificationLogs: number;
   productsCovered: number;
+  sentimentSummary: ProductSentimentSummaryDto;
   generatedAt: string;
 }
 
@@ -176,6 +298,8 @@ export interface FitSummaryResponse {
   runsSmallPct: number;
   trueToSizePct: number;
   runsLargePct: number;
+  positiveSentimentPct: number;
+  sentimentSummary: ProductSentimentSummaryDto;
   aggregatedAt: string;
   items: ProductFitSummaryItem[];
   byProductId?: Record<string, ProductFitSummaryItem>;
@@ -258,10 +382,162 @@ function normalizeSentimentLabel(
   return deriveSentimentLabelFromScore(score ?? 0.75);
 }
 
+function normalizeFitFeedbackInput(raw: unknown): FitFeedbackType | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const normalized = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+
+  if (
+    normalized === FitFeedback.RUNS_SMALL ||
+    normalized === 'CHAT' ||
+    normalized === 'HOI_CHAT' ||
+    normalized === 'SMALL'
+  ) {
+    return FitFeedback.RUNS_SMALL;
+  }
+  if (
+    normalized === FitFeedback.TRUE_TO_SIZE ||
+    normalized === 'VUA' ||
+    normalized === 'CHUAN_SIZE' ||
+    normalized === 'CHUAN_PHOM' ||
+    normalized === 'TRUE'
+  ) {
+    return FitFeedback.TRUE_TO_SIZE;
+  }
+  if (
+    normalized === FitFeedback.RUNS_LARGE ||
+    normalized === 'RONG' ||
+    normalized === 'HOI_RONG' ||
+    normalized === 'LARGE'
+  ) {
+    return FitFeedback.RUNS_LARGE;
+  }
+  return null;
+}
+
+function toVietnameseFitFeedback(feedback: FitFeedbackType): {
+  code: VietnameseFitFeedbackCode;
+  label: 'Hơi chật' | 'Chuẩn size' | 'Hơi rộng';
+} {
+  if (feedback === FitFeedback.RUNS_SMALL) {
+    return { code: 'CHAT', label: 'Hơi chật' };
+  }
+  if (feedback === FitFeedback.RUNS_LARGE) {
+    return { code: 'RONG', label: 'Hơi rộng' };
+  }
+  return { code: 'VUA', label: 'Chuẩn size' };
+}
+
+function resolveRowSentiment(row: {
+  rating: number | string;
+  comment: string;
+  sentiment_score: number | string | null;
+  sentiment_label: string | null;
+}): { sentimentScore: number; sentimentLabel: SentimentLabel } {
+  const numericRaw =
+    row.sentiment_score === null || row.sentiment_score === undefined
+      ? Number.NaN
+      : Number(row.sentiment_score);
+
+  if (Number.isFinite(numericRaw)) {
+    const clamped = Math.round(Math.min(1, Math.max(-1, numericRaw)) * 1000) / 1000;
+    return {
+      sentimentScore: clamped,
+      sentimentLabel: normalizeSentimentLabel(row.sentiment_label, clamped),
+    };
+  }
+
+  const fallback = computeFallbackVietnameseSentiment(
+    row.comment ?? '',
+    Number.isFinite(Number(row.rating)) ? Number(row.rating) : undefined,
+  );
+  return {
+    sentimentScore: fallback.sentimentScore,
+    sentimentLabel: normalizeSentimentLabel(row.sentiment_label, fallback.sentimentScore),
+  };
+}
+
+function buildEmptySentimentSummary(): ProductSentimentSummaryDto {
+  return {
+    positivePct: 0,
+    neutralPct: 0,
+    negativePct: 0,
+    positiveCount: 0,
+    neutralCount: 0,
+    negativeCount: 0,
+    averageSentimentScore: 0,
+    totalScored: 0,
+  };
+}
+
+function computeSentimentSummaryFromItems(
+  items: ReadonlyArray<{ sentimentScore: number; sentimentLabel: SentimentLabel }>,
+): ProductSentimentSummaryDto {
+  const totalScored = items.length;
+  if (totalScored <= 0) {
+    return buildEmptySentimentSummary();
+  }
+
+  let positiveCount = 0;
+  let neutralCount = 0;
+  let negativeCount = 0;
+  let scoreSum = 0;
+
+  for (const item of items) {
+    scoreSum += item.sentimentScore;
+    if (item.sentimentLabel === 'POSITIVE') {
+      positiveCount += 1;
+    } else if (item.sentimentLabel === 'NEGATIVE') {
+      negativeCount += 1;
+    } else {
+      neutralCount += 1;
+    }
+  }
+
+  const buckets = [
+    { key: 'POSITIVE' as const, raw: (positiveCount / totalScored) * 100 },
+    { key: 'NEUTRAL' as const, raw: (neutralCount / totalScored) * 100 },
+    { key: 'NEGATIVE' as const, raw: (negativeCount / totalScored) * 100 },
+  ].map((b) => ({
+    ...b,
+    floored: Math.floor(b.raw),
+    remainder: b.raw - Math.floor(b.raw),
+  }));
+
+  let remainderPoints = 100 - buckets.reduce((acc, b) => acc + b.floored, 0);
+  const ranked = [...buckets].sort((a, b) => b.remainder - a.remainder);
+  for (let i = 0; i < ranked.length && remainderPoints > 0; i += 1) {
+    ranked[i].floored += 1;
+    remainderPoints -= 1;
+  }
+
+  const pctByKey = new Map(ranked.map((b) => [b.key, b.floored]));
+  const averageSentimentScore = Math.round((scoreSum / totalScored) * 1000) / 1000;
+
+  return {
+    positivePct: pctByKey.get('POSITIVE') ?? 0,
+    neutralPct: pctByKey.get('NEUTRAL') ?? 0,
+    negativePct: pctByKey.get('NEGATIVE') ?? 0,
+    positiveCount,
+    neutralCount,
+    negativeCount,
+    averageSentimentScore,
+    totalScored,
+  };
+}
+
 function mapReviewRowToDto(row: ProductReviewRow): VerifiedReviewWithSentimentDto {
-  const fitFeedback = (Object.values(FitFeedback) as string[]).includes(row.fit_feedback)
-    ? (row.fit_feedback as FitFeedbackType)
-    : FitFeedback.TRUE_TO_SIZE;
+  const fitFeedback =
+    normalizeFitFeedbackInput(row.fit_feedback) ?? FitFeedback.TRUE_TO_SIZE;
+  const fitVi = toVietnameseFitFeedback(fitFeedback);
 
   const moderationStatus = (Object.values(ReviewModerationStatus) as string[]).includes(
     row.moderation_status,
@@ -269,11 +545,9 @@ function mapReviewRowToDto(row: ProductReviewRow): VerifiedReviewWithSentimentDt
     ? (row.moderation_status as ReviewModerationStatusType)
     : ReviewModerationStatus.APPROVED;
 
-  const sentimentScore =
-    row.sentiment_score === null || row.sentiment_score === undefined
-      ? null
-      : Number(row.sentiment_score);
-  const sentimentLabel = normalizeSentimentLabel(row.sentiment_label, sentimentScore);
+  const { sentimentScore, sentimentLabel } = resolveRowSentiment(row);
+  const isHidden =
+    Boolean(row.is_hidden) || moderationStatus === ReviewModerationStatus.REJECTED;
 
   return {
     id: row.id,
@@ -285,6 +559,8 @@ function mapReviewRowToDto(row: ProductReviewRow): VerifiedReviewWithSentimentDt
     reviewerName: row.reviewer_name,
     rating: Number(row.rating),
     fitFeedback,
+    fitFeedbackVi: fitVi.code,
+    fitFeedbackLabelVi: fitVi.label,
     reviewerHeightCm:
       row.reviewer_height_cm === null || row.reviewer_height_cm === undefined
         ? null
@@ -300,6 +576,11 @@ function mapReviewRowToDto(row: ProductReviewRow): VerifiedReviewWithSentimentDt
     diemCamXucNlp: sentimentScore,
     sentimentLabel,
     moderationStatus,
+    isHidden,
+    visibilityStatus: isHidden ? 'HIDDEN' : 'VISIBLE',
+    moderationNote: row.moderation_note ?? null,
+    moderatedBy: row.moderated_by ?? null,
+    moderatedAt: row.moderated_at ? toIsoString(row.moderated_at) : null,
     createdAt: toIsoString(row.created_at),
   };
 }
@@ -319,6 +600,7 @@ function buildEmptyFitStats(productId: string): ProductFitStatsDto {
 function toFitSummaryItem(
   stats: ProductFitStatsDto,
   aggregatedAt: string,
+  sentimentSummary: ProductSentimentSummaryDto = buildEmptySentimentSummary(),
 ): ProductFitSummaryItem {
   return {
     productId: stats.productId,
@@ -334,6 +616,8 @@ function toFitSummaryItem(
     runsSmallPct: stats.runsSmallPct,
     trueToSizePct: stats.trueToSizePct,
     runsLargePct: stats.runsLargePct,
+    positiveSentimentPct: sentimentSummary.positivePct,
+    sentimentSummary,
     aggregatedAt,
   };
 }
@@ -433,19 +717,40 @@ export class ReviewsService implements OnModuleInit {
       `SELECT
          product_id,
          COUNT(*)::int AS total_reviews,
-         COUNT(*) FILTER (WHERE fit_feedback = 'RUNS_SMALL')::int AS runs_small_count,
-         COUNT(*) FILTER (WHERE fit_feedback = 'TRUE_TO_SIZE')::int AS true_to_size_count,
-         COUNT(*) FILTER (WHERE fit_feedback = 'RUNS_LARGE')::int AS runs_large_count,
+         COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('RUNS_SMALL', 'CHAT', 'HOI_CHAT'))::int AS runs_small_count,
+         COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('TRUE_TO_SIZE', 'VUA', 'CHUAN_SIZE'))::int AS true_to_size_count,
+         COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('RUNS_LARGE', 'RONG', 'HOI_RONG'))::int AS runs_large_count,
          ROUND(AVG(rating)::numeric, 2)::double precision AS avg_rating
        FROM product_reviews
        WHERE product_id = $1
          AND moderation_status = 'APPROVED'
+         AND COALESCE(is_hidden, FALSE) = FALSE
        GROUP BY product_id`,
       [productId],
     );
 
     const row = res.rows[0];
     return row ? computeFitStatsFromRow(row) : buildEmptyFitStats(productId);
+  }
+
+  public async computeSentimentSummaryForProduct(
+    productId: string,
+  ): Promise<ProductSentimentSummaryDto> {
+    const res = await this.db.query<{
+      rating: number | string;
+      comment: string;
+      sentiment_score: number | string | null;
+      sentiment_label: string | null;
+    }>(
+      `SELECT rating, comment, sentiment_score, sentiment_label
+       FROM product_reviews
+       WHERE product_id = $1
+         AND moderation_status = 'APPROVED'
+         AND COALESCE(is_hidden, FALSE) = FALSE`,
+      [productId],
+    );
+
+    return computeSentimentSummaryFromItems(res.rows.map(resolveRowSentiment));
   }
 
   public async getProductReviews(
@@ -461,12 +766,25 @@ export class ReviewsService implements OnModuleInit {
       });
     }
 
-    // ALWAYS compute overall fitStats across ALL APPROVED reviews for this product
-    const fitStats = await this.computeFitStatsForProduct(trimmedProductId);
+    // ALWAYS compute overall fitStats & sentimentSummary across ALL APPROVED visible reviews for this product
+    const [fitStats, sentimentSummary] = await Promise.all([
+      this.computeFitStatsForProduct(trimmedProductId),
+      this.computeSentimentSummaryForProduct(trimmedProductId),
+    ]);
+
+    const toleranceCm =
+      typeof filters.toleranceCm === 'number' && Number.isFinite(filters.toleranceCm)
+        ? Math.min(20, Math.max(1, filters.toleranceCm))
+        : 4;
+    const toleranceKg =
+      typeof filters.toleranceKg === 'number' && Number.isFinite(filters.toleranceKg)
+        ? Math.min(20, Math.max(1, filters.toleranceKg))
+        : 4;
 
     const conditions: string[] = [
       'product_id = $1',
       `moderation_status = '${ReviewModerationStatus.APPROVED}'`,
+      'COALESCE(is_hidden, FALSE) = FALSE',
     ];
     const params: unknown[] = [trimmedProductId];
 
@@ -475,14 +793,25 @@ export class ReviewsService implements OnModuleInit {
       conditions.push(`UPPER(size_purchased) = $${params.length}`);
     }
 
-    if (typeof filters.heightCm === 'number' && Number.isFinite(filters.heightCm)) {
+    const hasHeightFilter =
+      typeof filters.heightCm === 'number' && Number.isFinite(filters.heightCm);
+    const hasWeightFilter =
+      typeof filters.weightKg === 'number' && Number.isFinite(filters.weightKg);
+
+    if (hasHeightFilter) {
       params.push(filters.heightCm);
-      conditions.push(`ABS(reviewer_height_cm - $${params.length}) <= 4`);
+      const heightIdx = params.length;
+      params.push(toleranceCm);
+      const tolIdx = params.length;
+      conditions.push(`ABS(reviewer_height_cm - $${heightIdx}) <= $${tolIdx}`);
     }
 
-    if (typeof filters.weightKg === 'number' && Number.isFinite(filters.weightKg)) {
+    if (hasWeightFilter) {
       params.push(filters.weightKg);
-      conditions.push(`ABS(reviewer_weight_kg - $${params.length}) <= 4`);
+      const weightIdx = params.length;
+      params.push(toleranceKg);
+      const tolIdx = params.length;
+      conditions.push(`ABS(reviewer_weight_kg - $${weightIdx}) <= $${tolIdx}`);
     }
 
     const reviewsRes = await this.db.query<ProductReviewRow>(
@@ -490,7 +819,8 @@ export class ReviewsService implements OnModuleInit {
          id, order_id, order_item_id, product_id, sku_id, user_id,
          reviewer_name, rating, fit_feedback, reviewer_height_cm,
          reviewer_weight_kg, size_purchased, comment, photo_urls_jsonb,
-         sentiment_score, sentiment_label, moderation_status, created_at
+         sentiment_score, sentiment_label, moderation_status,
+         is_hidden, moderation_note, moderated_by, moderated_at, created_at
        FROM product_reviews
        WHERE ${conditions.join(' AND ')}
        ORDER BY created_at DESC`,
@@ -502,8 +832,18 @@ export class ReviewsService implements OnModuleInit {
     return {
       productId: trimmedProductId,
       fitStats,
+      sentimentSummary,
       reviews,
       total: reviews.length,
+      appliedBodyFilter:
+        hasHeightFilter || hasWeightFilter
+          ? {
+              heightCm: hasHeightFilter ? (filters.heightCm ?? null) : null,
+              weightKg: hasWeightFilter ? (filters.weightKg ?? null) : null,
+              toleranceCm,
+              toleranceKg,
+            }
+          : null,
     };
   }
 
@@ -530,12 +870,13 @@ export class ReviewsService implements OnModuleInit {
         `SELECT
            product_id,
            COUNT(*)::int AS total_reviews,
-           COUNT(*) FILTER (WHERE fit_feedback = 'RUNS_SMALL')::int AS runs_small_count,
-           COUNT(*) FILTER (WHERE fit_feedback = 'TRUE_TO_SIZE')::int AS true_to_size_count,
-           COUNT(*) FILTER (WHERE fit_feedback = 'RUNS_LARGE')::int AS runs_large_count,
+           COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('RUNS_SMALL', 'CHAT', 'HOI_CHAT'))::int AS runs_small_count,
+           COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('TRUE_TO_SIZE', 'VUA', 'CHUAN_SIZE'))::int AS true_to_size_count,
+           COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('RUNS_LARGE', 'RONG', 'HOI_RONG'))::int AS runs_large_count,
            ROUND(AVG(rating)::numeric, 2)::double precision AS avg_rating
          FROM product_reviews
          WHERE moderation_status = 'APPROVED'
+           AND COALESCE(is_hidden, FALSE) = FALSE
            AND product_id IN (${placeholders})
          GROUP BY product_id`,
         uniqueIds,
@@ -555,12 +896,13 @@ export class ReviewsService implements OnModuleInit {
       `SELECT
          product_id,
          COUNT(*)::int AS total_reviews,
-         COUNT(*) FILTER (WHERE fit_feedback = 'RUNS_SMALL')::int AS runs_small_count,
-         COUNT(*) FILTER (WHERE fit_feedback = 'TRUE_TO_SIZE')::int AS true_to_size_count,
-         COUNT(*) FILTER (WHERE fit_feedback = 'RUNS_LARGE')::int AS runs_large_count,
+         COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('RUNS_SMALL', 'CHAT', 'HOI_CHAT'))::int AS runs_small_count,
+         COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('TRUE_TO_SIZE', 'VUA', 'CHUAN_SIZE'))::int AS true_to_size_count,
+         COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('RUNS_LARGE', 'RONG', 'HOI_RONG'))::int AS runs_large_count,
          ROUND(AVG(rating)::numeric, 2)::double precision AS avg_rating
        FROM product_reviews
        WHERE moderation_status = 'APPROVED'
+         AND COALESCE(is_hidden, FALSE) = FALSE
        GROUP BY product_id`,
     );
 
@@ -587,8 +929,11 @@ export class ReviewsService implements OnModuleInit {
           details: { productId },
         });
       }
-      const stats = await this.computeFitStatsForProduct(trimmed);
-      const item = toFitSummaryItem(stats, aggregatedAt);
+      const [stats, productSentiment] = await Promise.all([
+        this.computeFitStatsForProduct(trimmed),
+        this.computeSentimentSummaryForProduct(trimmed),
+      ]);
+      const item = toFitSummaryItem(stats, aggregatedAt, productSentiment);
       return {
         ...item,
         items: [item],
@@ -596,9 +941,58 @@ export class ReviewsService implements OnModuleInit {
       };
     }
 
-    const allStatsMap = await this.getBatchFitStats();
+    const [allStatsMap, overallRes, sentimentRowsRes] = await Promise.all([
+      this.getBatchFitStats(),
+      this.db.query<AggregateFitStatsRow>(
+        `SELECT
+           '00000000-0000-0000-0000-000000000000'::text AS product_id,
+           COUNT(*)::int AS total_reviews,
+           COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('RUNS_SMALL', 'CHAT', 'HOI_CHAT'))::int AS runs_small_count,
+           COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('TRUE_TO_SIZE', 'VUA', 'CHUAN_SIZE'))::int AS true_to_size_count,
+           COUNT(*) FILTER (WHERE UPPER(fit_feedback) IN ('RUNS_LARGE', 'RONG', 'HOI_RONG'))::int AS runs_large_count,
+           ROUND(AVG(rating)::numeric, 2)::double precision AS avg_rating
+         FROM product_reviews
+         WHERE moderation_status = 'APPROVED'
+           AND COALESCE(is_hidden, FALSE) = FALSE`,
+      ),
+      this.db.query<{
+        product_id: string;
+        rating: number | string;
+        comment: string;
+        sentiment_score: number | string | null;
+        sentiment_label: string | null;
+      }>(
+        `SELECT product_id, rating, comment, sentiment_score, sentiment_label
+         FROM product_reviews
+         WHERE moderation_status = 'APPROVED'
+           AND COALESCE(is_hidden, FALSE) = FALSE`,
+      ),
+    ]);
+
+    const sentimentRowsByProduct = new Map<
+      string,
+      Array<{ sentimentScore: number; sentimentLabel: SentimentLabel }>
+    >();
+    const allResolvedSentiments: Array<{
+      sentimentScore: number;
+      sentimentLabel: SentimentLabel;
+    }> = [];
+
+    for (const row of sentimentRowsRes.rows) {
+      const resolved = resolveRowSentiment(row);
+      allResolvedSentiments.push(resolved);
+      const list = sentimentRowsByProduct.get(row.product_id) ?? [];
+      list.push(resolved);
+      sentimentRowsByProduct.set(row.product_id, list);
+    }
+
     const items = Object.values(allStatsMap)
-      .map((stats) => toFitSummaryItem(stats, aggregatedAt))
+      .map((stats) => {
+        const prodSent = computeSentimentSummaryFromItems(
+          sentimentRowsByProduct.get(stats.productId) ?? [],
+        );
+        return toFitSummaryItem(stats, aggregatedAt, prodSent);
+      })
       .sort(
         (a, b) =>
           b.fitDistribution.runsSmallPct - a.fitDistribution.runsSmallPct ||
@@ -610,21 +1004,10 @@ export class ReviewsService implements OnModuleInit {
       byProductId[item.productId] = item;
     }
 
-    const overallRes = await this.db.query<AggregateFitStatsRow>(
-      `SELECT
-         '00000000-0000-0000-0000-000000000000'::text AS product_id,
-         COUNT(*)::int AS total_reviews,
-         COUNT(*) FILTER (WHERE fit_feedback = 'RUNS_SMALL')::int AS runs_small_count,
-         COUNT(*) FILTER (WHERE fit_feedback = 'TRUE_TO_SIZE')::int AS true_to_size_count,
-         COUNT(*) FILTER (WHERE fit_feedback = 'RUNS_LARGE')::int AS runs_large_count,
-         ROUND(AVG(rating)::numeric, 2)::double precision AS avg_rating
-       FROM product_reviews
-       WHERE moderation_status = 'APPROVED'`,
-    );
-
     const overallStats = overallRes.rows[0]
       ? computeFitStatsFromRow(overallRes.rows[0])
       : buildEmptyFitStats('all');
+    const overallSentimentSummary = computeSentimentSummaryFromItems(allResolvedSentiments);
 
     return {
       productId: null,
@@ -640,6 +1023,8 @@ export class ReviewsService implements OnModuleInit {
       runsSmallPct: overallStats.runsSmallPct,
       trueToSizePct: overallStats.trueToSizePct,
       runsLargePct: overallStats.runsLargePct,
+      positiveSentimentPct: overallSentimentSummary.positivePct,
+      sentimentSummary: overallSentimentSummary,
       aggregatedAt,
       items,
       byProductId,
@@ -651,7 +1036,7 @@ export class ReviewsService implements OnModuleInit {
    * `GET /v1/reviews/ops/summary`.
    */
   public async getOpsSummary(): Promise<ReviewOpsSummaryResponse> {
-    const [reviewsRes, notifRes] = await Promise.all([
+    const [reviewsRes, notifRes, sentimentRowsRes] = await Promise.all([
       this.db.query<{
         total_reviews: number | string;
         avg_rating: number | string | null;
@@ -662,7 +1047,8 @@ export class ReviewsService implements OnModuleInit {
            ROUND(AVG(rating)::numeric, 2)::double precision AS avg_rating,
            COUNT(DISTINCT product_id)::int AS products_covered
          FROM product_reviews
-         WHERE moderation_status = 'APPROVED'`,
+         WHERE moderation_status = 'APPROVED'
+           AND COALESCE(is_hidden, FALSE) = FALSE`,
       ),
       this.db.query<{
         sent_count: number | string;
@@ -673,10 +1059,24 @@ export class ReviewsService implements OnModuleInit {
            COUNT(*)::int AS total_count
          FROM notification_logs`,
       ),
+      this.db.query<{
+        rating: number | string;
+        comment: string;
+        sentiment_score: number | string | null;
+        sentiment_label: string | null;
+      }>(
+        `SELECT rating, comment, sentiment_score, sentiment_label
+         FROM product_reviews
+         WHERE moderation_status = 'APPROVED'
+           AND COALESCE(is_hidden, FALSE) = FALSE`,
+      ),
     ]);
 
     const rawAvg = Number(reviewsRes.rows[0]?.avg_rating ?? 0);
     const averageRating = Math.min(5, Math.max(0, Math.round(rawAvg * 100) / 100));
+    const sentimentSummary = computeSentimentSummaryFromItems(
+      sentimentRowsRes.rows.map(resolveRowSentiment),
+    );
 
     return {
       totalVerifiedReviews: Number(reviewsRes.rows[0]?.total_reviews ?? 0),
@@ -684,6 +1084,7 @@ export class ReviewsService implements OnModuleInit {
       notificationsSentCount: Number(notifRes.rows[0]?.sent_count ?? 0),
       totalNotificationLogs: Number(notifRes.rows[0]?.total_count ?? 0),
       productsCovered: Number(reviewsRes.rows[0]?.products_covered ?? 0),
+      sentimentSummary,
       generatedAt: new Date().toISOString(),
     };
   }
@@ -762,7 +1163,19 @@ export class ReviewsService implements OnModuleInit {
     correlationId: string,
     traceparent?: string,
   ): Promise<CreateReviewResult> {
-    const parsedResult = CreateReviewRequestSchema.safeParse(rawBody);
+    const normalizedBody =
+      rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
+        ? (() => {
+            const rec = { ...(rawBody as Record<string, unknown>) };
+            const mappedFit = normalizeFitFeedbackInput(rec.fitFeedback);
+            if (mappedFit) {
+              rec.fitFeedback = mappedFit;
+            }
+            return rec;
+          })()
+        : rawBody;
+
+    const parsedResult = CreateReviewRequestSchema.safeParse(normalizedBody);
     if (!parsedResult.success) {
       throw new BadRequestException({
         code: ErrorCode.VALIDATION_ERROR,
@@ -845,6 +1258,7 @@ export class ReviewsService implements OnModuleInit {
     const sentiment = await this.sentimentService.analyzeVietnameseSentiment(
       payload.comment,
       payload.rating,
+      { correlationId, userId },
     );
     const photoUrls = payload.photoUrls ?? [];
     const normalizedSize = payload.sizePurchased.trim().toUpperCase();
@@ -906,29 +1320,354 @@ export class ReviewsService implements OnModuleInit {
     }
 
     const review = mapReviewRowToDto(insertedRow);
-    const fitStats = await this.computeFitStatsForProduct(payload.productId);
+    const [fitStats, sentimentSummary] = await Promise.all([
+      this.computeFitStatsForProduct(payload.productId),
+      this.computeSentimentSummaryForProduct(payload.productId),
+    ]);
 
     this.eventPublisher.dispatchFitStatsUpdated(fitStats, correlationId, traceparent);
 
-    return { review, fitStats, sentiment };
+    return { review, fitStats, sentimentSummary, sentiment };
   }
 
   public async analyzeTextSentiment(
     text: string,
     rating?: number,
+    correlationId?: string,
   ): Promise<ReviewSentimentResult> {
-    return this.sentimentService.analyzeVietnameseSentiment(text, rating);
+    return this.sentimentService.analyzeVietnameseSentiment(text, rating, {
+      correlationId,
+    });
+  }
+
+  public async listAdminReviews(
+    filters: AdminReviewsQueryFilters = {},
+  ): Promise<AdminReviewsListResponse> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters.productId && filters.productId.trim()) {
+      const trimmed = filters.productId.trim();
+      if (!isValidUuid(trimmed)) {
+        throw new BadRequestException({
+          code: ErrorCode.VALIDATION_ERROR,
+          message: 'Invalid productId UUID filter.',
+          details: { productId: filters.productId },
+        });
+      }
+      params.push(trimmed);
+      conditions.push(`product_id = $${params.length}`);
+    }
+
+    if (typeof filters.rating === 'number' && Number.isFinite(filters.rating)) {
+      params.push(Math.trunc(filters.rating));
+      conditions.push(`rating = $${params.length}`);
+    }
+
+    const sentimentFilter = (filters.sentiment ?? filters.sentimentLabel ?? '')
+      .trim()
+      .toUpperCase();
+    if (
+      sentimentFilter === 'POSITIVE' ||
+      sentimentFilter === 'NEUTRAL' ||
+      sentimentFilter === 'NEGATIVE'
+    ) {
+      params.push(sentimentFilter);
+      conditions.push(`UPPER(COALESCE(sentiment_label, 'POSITIVE')) = $${params.length}`);
+    }
+
+    if (filters.isHidden !== undefined) {
+      if (filters.isHidden) {
+        conditions.push(`(COALESCE(is_hidden, FALSE) = TRUE OR moderation_status = 'REJECTED')`);
+      } else {
+        conditions.push(`(COALESCE(is_hidden, FALSE) = FALSE AND moderation_status <> 'REJECTED')`);
+      }
+    }
+
+    if (filters.moderationStatus && filters.moderationStatus.trim()) {
+      const modUpper = filters.moderationStatus.trim().toUpperCase();
+      if (modUpper === 'HIDDEN') {
+        conditions.push(`(COALESCE(is_hidden, FALSE) = TRUE OR moderation_status = 'REJECTED')`);
+      } else if (modUpper === 'VISIBLE') {
+        conditions.push(`(COALESCE(is_hidden, FALSE) = FALSE AND moderation_status = 'APPROVED')`);
+      } else if (
+        modUpper === 'APPROVED' ||
+        modUpper === 'PENDING' ||
+        modUpper === 'REJECTED'
+      ) {
+        params.push(modUpper);
+        conditions.push(`moderation_status = $${params.length}`);
+      }
+    }
+
+    const qText = (filters.q ?? filters.search ?? '').trim();
+    if (qText) {
+      params.push(`%${qText}%`);
+      const p = `$${params.length}`;
+      conditions.push(
+        `(comment ILIKE ${p} OR reviewer_name ILIKE ${p} OR size_purchased ILIKE ${p} OR COALESCE(moderation_note, '') ILIKE ${p} OR product_id::text ILIKE ${p})`,
+      );
+    }
+
+    const page = Math.max(
+      1,
+      Number.isFinite(Number(filters.page)) ? Math.trunc(Number(filters.page)) : 1,
+    );
+    const limit = Math.min(
+      200,
+      Math.max(
+        1,
+        Number.isFinite(Number(filters.limit)) ? Math.trunc(Number(filters.limit)) : 20,
+      ),
+    );
+    const offset = (page - 1) * limit;
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const [countRes, summaryRes, rowsRes] = await Promise.all([
+      this.db.query<{ total: number | string }>(
+        `SELECT COUNT(*)::int AS total FROM product_reviews ${whereClause}`,
+        params,
+      ),
+      this.db.query<{
+        total_all: number | string;
+        hidden_count: number | string;
+        avg_rating: number | string | null;
+      }>(
+        `SELECT
+           COUNT(*)::int AS total_all,
+           COUNT(*) FILTER (WHERE COALESCE(is_hidden, FALSE) = TRUE OR moderation_status = 'REJECTED')::int AS hidden_count,
+           ROUND(AVG(rating)::numeric, 2)::double precision AS avg_rating
+         FROM product_reviews`,
+      ),
+      this.db.query<ProductReviewRow>(
+        `SELECT
+           id, order_id, order_item_id, product_id, sku_id, user_id,
+           reviewer_name, rating, fit_feedback, reviewer_height_cm,
+           reviewer_weight_kg, size_purchased, comment, photo_urls_jsonb,
+           sentiment_score, sentiment_label, moderation_status,
+           is_hidden, moderation_note, moderated_by, moderated_at, created_at
+         FROM product_reviews
+         ${whereClause}
+         ORDER BY created_at DESC
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit, offset],
+      ),
+    ]);
+
+    const total = Number(countRes.rows[0]?.total ?? 0);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const items = rowsRes.rows.map(mapReviewRowToDto);
+    const sentimentSummary = computeSentimentSummaryFromItems(
+      items.map((r) => ({
+        sentimentScore: r.sentimentScore,
+        sentimentLabel: r.sentimentLabel,
+      })),
+    );
+
+    const totalAll = Number(summaryRes.rows[0]?.total_all ?? 0);
+    const hiddenCount = Number(summaryRes.rows[0]?.hidden_count ?? 0);
+    const rawAvg = Number(summaryRes.rows[0]?.avg_rating ?? 0);
+
+    return {
+      items,
+      reviews: items,
+      total,
+      page,
+      limit,
+      totalPages,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+      sentimentSummary,
+      summary: {
+        totalAll,
+        hiddenCount,
+        visibleCount: Math.max(0, totalAll - hiddenCount),
+        averageRating: Math.min(5, Math.max(0, Math.round(rawAvg * 100) / 100)),
+      },
+    };
+  }
+
+  public async moderateReview(
+    reviewId: string,
+    input: ModerateReviewDto,
+    actorIdentifier: string | undefined,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<ModerateReviewResult> {
+    const trimmedId = reviewId.trim();
+    if (!isValidUuid(trimmedId)) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Review "${reviewId}" not found.`,
+      });
+    }
+
+    const existingRes = await this.db.query<ProductReviewRow>(
+      `SELECT
+         id, order_id, order_item_id, product_id, sku_id, user_id,
+         reviewer_name, rating, fit_feedback, reviewer_height_cm,
+         reviewer_weight_kg, size_purchased, comment, photo_urls_jsonb,
+         sentiment_score, sentiment_label, moderation_status,
+         is_hidden, moderation_note, moderated_by, moderated_at, created_at
+       FROM product_reviews
+       WHERE id = $1`,
+      [trimmedId],
+    );
+    const existingRow = existingRes.rows[0];
+    if (!existingRow) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Review "${reviewId}" not found.`,
+      });
+    }
+
+    const before = mapReviewRowToDto(existingRow);
+
+    let nextHidden: boolean;
+    if (typeof input.isHidden === 'boolean') {
+      nextHidden = input.isHidden;
+    } else if (
+      input.moderationStatus === 'HIDDEN' ||
+      input.moderationStatus === 'REJECTED'
+    ) {
+      nextHidden = true;
+    } else if (
+      input.moderationStatus === 'VISIBLE' ||
+      input.moderationStatus === 'APPROVED'
+    ) {
+      nextHidden = false;
+    } else {
+      nextHidden = !before.isHidden;
+    }
+
+    const nextModStatus: ReviewModerationStatusType = nextHidden
+      ? ReviewModerationStatus.REJECTED
+      : input.moderationStatus === 'PENDING'
+        ? ReviewModerationStatus.PENDING
+        : ReviewModerationStatus.APPROVED;
+
+    const nextModerationNote =
+      input.moderationNote !== undefined
+        ? input.moderationNote
+        : (existingRow.moderation_note ?? null);
+    const nextModeratedBy =
+      (input.moderatedBy?.trim() || actorIdentifier?.trim() || existingRow.moderated_by) ??
+      null;
+
+    const updatedRes = await this.db.query<ProductReviewRow>(
+      `UPDATE product_reviews
+       SET is_hidden = $2,
+           moderation_status = $3,
+           moderation_note = $4,
+           moderated_by = $5,
+           moderated_at = NOW()
+       WHERE id = $1
+       RETURNING
+         id, order_id, order_item_id, product_id, sku_id, user_id,
+         reviewer_name, rating, fit_feedback, reviewer_height_cm,
+         reviewer_weight_kg, size_purchased, comment, photo_urls_jsonb,
+         sentiment_score, sentiment_label, moderation_status,
+         is_hidden, moderation_note, moderated_by, moderated_at, created_at`,
+      [trimmedId, nextHidden, nextModStatus, nextModerationNote, nextModeratedBy],
+    );
+
+    const after = mapReviewRowToDto(updatedRes.rows[0]);
+    const [fitStats, sentimentSummary] = await Promise.all([
+      this.computeFitStatsForProduct(after.productId),
+      this.computeSentimentSummaryForProduct(after.productId),
+    ]);
+
+    this.eventPublisher.dispatchFitStatsUpdated(fitStats, correlationId, traceparent);
+
+    return {
+      review: after,
+      before,
+      after,
+      isHidden: after.isHidden,
+      visibilityStatus: after.isHidden ? 'HIDDEN' : 'VISIBLE',
+      moderationStatus: after.moderationStatus,
+      fitStats,
+      sentimentSummary,
+    };
+  }
+
+  public async deleteReview(
+    reviewId: string,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<DeleteReviewResult> {
+    const trimmedId = reviewId.trim();
+    if (!isValidUuid(trimmedId)) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Review "${reviewId}" not found.`,
+      });
+    }
+
+    const existingRes = await this.db.query<ProductReviewRow>(
+      `SELECT
+         id, order_id, order_item_id, product_id, sku_id, user_id,
+         reviewer_name, rating, fit_feedback, reviewer_height_cm,
+         reviewer_weight_kg, size_purchased, comment, photo_urls_jsonb,
+         sentiment_score, sentiment_label, moderation_status,
+         is_hidden, moderation_note, moderated_by, moderated_at, created_at
+       FROM product_reviews
+       WHERE id = $1`,
+      [trimmedId],
+    );
+    const existingRow = existingRes.rows[0];
+    if (!existingRow) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Review "${reviewId}" not found.`,
+      });
+    }
+
+    const deletedReview = mapReviewRowToDto(existingRow);
+    await this.db.query('DELETE FROM product_reviews WHERE id = $1', [trimmedId]);
+
+    const [fitStats, sentimentSummary] = await Promise.all([
+      this.computeFitStatsForProduct(deletedReview.productId),
+      this.computeSentimentSummaryForProduct(deletedReview.productId),
+    ]);
+
+    this.eventPublisher.dispatchFitStatsUpdated(fitStats, correlationId, traceparent);
+
+    return {
+      deleted: true,
+      id: trimmedId,
+      productId: deletedReview.productId,
+      deletedReview,
+      fitStats,
+      sentimentSummary,
+    };
   }
 
   public async listNotificationLogs(
     filters: NotificationLogsQueryFilters = {},
   ): Promise<NotificationLogDto[]> {
+    const paginated = await this.listNotificationLogsPaginated(filters);
+    return paginated.items;
+  }
+
+  public async listNotificationLogsPaginated(
+    filters: NotificationLogsQueryFilters = {},
+  ): Promise<PaginatedNotificationLogsResponse> {
     const safeLimit = Math.min(200, Math.max(1, Math.floor(filters.limit ?? 50)));
+    const page = Math.max(1, Math.floor(filters.page ?? 1));
+    const offset = (page - 1) * safeLimit;
     const conditions: string[] = [];
     const params: unknown[] = [];
 
     if (filters.channel && filters.channel.trim() !== '') {
-      const normalized = filters.channel.trim().toUpperCase();
+      let normalized = filters.channel.trim().toUpperCase();
+      if (normalized === 'ZNS') {
+        normalized = NotificationChannel.ZALO_ZNS;
+      }
       if (!(Object.values(NotificationChannel) as string[]).includes(normalized)) {
         throw new BadRequestException({
           code: ErrorCode.VALIDATION_ERROR,
@@ -940,26 +1679,49 @@ export class ReviewsService implements OnModuleInit {
       conditions.push(`channel = $${params.length}`);
     }
 
+    if (filters.status && filters.status.trim() !== '') {
+      params.push(filters.status.trim().toUpperCase());
+      conditions.push(`UPPER(status) = $${params.length}`);
+    }
+
     if (filters.eventId && filters.eventId.trim() !== '') {
       params.push(filters.eventId.trim());
       conditions.push(`event_id = $${params.length}`);
     }
 
-    params.push(safeLimit);
+    const qText = (filters.q ?? filters.search ?? '').trim();
+    if (qText) {
+      params.push(`%${qText}%`);
+      const p = `$${params.length}`;
+      conditions.push(
+        `(recipient ILIKE ${p} OR COALESCE(subject, '') ILIKE ${p} OR template_code ILIKE ${p} OR event_id ILIKE ${p} OR status ILIKE ${p})`,
+      );
+    }
+
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const res = await this.db.query<NotificationLogRow>(
-      `SELECT
-         id, event_id, channel, recipient, template_code, subject,
-         payload_jsonb, status, retry_count, sent_at, created_at
-       FROM notification_logs
-       ${whereClause}
-       ORDER BY COALESCE(created_at, sent_at) DESC, sent_at DESC
-       LIMIT $${params.length}`,
-      params,
-    );
+    const [countRes, res] = await Promise.all([
+      this.db.query<{ total: number | string }>(
+        `SELECT COUNT(*)::int AS total FROM notification_logs ${whereClause}`,
+        params,
+      ),
+      this.db.query<NotificationLogRow>(
+        `SELECT
+           id, event_id, channel, recipient, template_code, subject,
+           payload_jsonb, status, retry_count,
+           provider_message_id, provider_error_code, provider_error_message, delivery_mode,
+           sent_at, created_at
+         FROM notification_logs
+         ${whereClause}
+         ORDER BY COALESCE(created_at, sent_at) DESC, sent_at DESC
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, safeLimit, offset],
+      ),
+    ]);
 
-    return res.rows.map((row) => ({
+    const total = Number(countRes.rows[0]?.total ?? 0);
+    const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+    const items: NotificationLogDto[] = res.rows.map((row) => ({
       id: row.id,
       eventId: row.event_id,
       channel: row.channel as NotificationChannelType,
@@ -969,8 +1731,26 @@ export class ReviewsService implements OnModuleInit {
       payload: parseJsonObject(row.payload_jsonb),
       status: row.status,
       retryCount: Number(row.retry_count ?? 0),
+      providerMessageId: row.provider_message_id ?? null,
+      providerErrorCode: row.provider_error_code ?? null,
+      providerErrorMessage: row.provider_error_message ?? null,
+      deliveryMode: row.delivery_mode ?? 'LIVE',
       sentAt: toIsoString(row.sent_at),
       createdAt: toIsoString(row.created_at ?? row.sent_at),
     }));
+
+    return {
+      items,
+      total,
+      page,
+      limit: safeLimit,
+      totalPages,
+      pagination: {
+        page,
+        limit: safeLimit,
+        total,
+        totalPages,
+      },
+    };
   }
 }

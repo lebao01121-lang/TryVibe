@@ -8,6 +8,7 @@ import {
   PurchaseOrderCreatedSource,
   PurchaseOrderStatus,
   SupplierPayableStatus,
+  SupplierStatus,
   type ConfirmPurchaseOrderBySupplierDTO,
   type CreateGoodsReceiptDTO,
   type CreatePurchaseOrderDTO,
@@ -47,10 +48,17 @@ interface SupplierRow {
   id: string;
   code: string;
   name: string;
+  contact_name: string | null;
   contact_email: string;
+  contact_phone: string | null;
+  address: string | null;
   lead_time_days: number;
+  payment_terms_days: number;
   defect_rate_pct: string | number;
   status: SupplierStatusValue;
+  is_active: boolean;
+  created_at: Date | string;
+  updated_at: Date | string;
 }
 
 interface WarehouseRow {
@@ -81,6 +89,13 @@ interface PurchaseOrderJoinedRow {
   approved_at: Date | string | null;
   confirmed_by: string | null;
   confirmed_at: Date | string | null;
+  cancel_reason: string | null;
+  cancelled_by: string | null;
+  cancelled_at: Date | string | null;
+  supplier_rejection_reason: string | null;
+  proposed_delivery_date: string | null;
+  rejected_by: string | null;
+  rejected_at: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -126,17 +141,75 @@ interface GoodsReceiptItemRow {
 interface SupplierPayableRow {
   id: string;
   supplier_id: string;
+  supplier_code?: string | null;
+  supplier_name?: string | null;
   grn_id: string;
+  grn_number?: string | null;
   po_id: string;
+  po_number?: string | null;
   amount_payable_vnd: string | number;
   status: SupplierPayableStatusValue;
   due_date: string;
+  bank_reference: string | null;
+  paid_at: Date | string | null;
+  paid_by: string | null;
+  settlement_note: string | null;
   created_at: Date | string;
+}
+
+export interface SupplierExtendedDto extends SupplierDTO {
+  contactName: string | null;
+  contactPhone: string | null;
+  address: string | null;
+  paymentTermsDays: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CreateSupplierInput {
+  code: string;
+  name: string;
+  contactName?: string;
+  contactEmail: string;
+  contactPhone?: string;
+  address?: string;
+  leadTimeDays?: number;
+  paymentTermsDays?: number;
+  isActive?: boolean;
+  status?: SupplierStatusValue;
+}
+
+export interface UpdateSupplierInput {
+  code?: string;
+  name?: string;
+  contactName?: string | null;
+  contactEmail?: string;
+  contactPhone?: string | null;
+  address?: string | null;
+  leadTimeDays?: number;
+  paymentTermsDays?: number;
+  isActive?: boolean;
+  status?: SupplierStatusValue;
+}
+
+export interface SupplierPayableExtendedDto extends SupplierPayableDTO {
+  supplierCode?: string | null;
+  supplierName?: string | null;
+  poNumber: string | null;
+  grnNumber: string | null;
+  bankReference: string | null;
+  paymentReference: string | null;
+  paidAt: string | null;
+  paidBy: string | null;
+  settlementNote: string | null;
 }
 
 export interface PurchaseOrderExtendedDto extends PurchaseOrderDTO {
   totalAmountVnd: number;
   notes: string | null;
+  cancelledBy?: string | null;
+  rejectedBy?: string | null;
 }
 
 export interface GoodsReceiptExtendedDto extends GoodsReceiptDTO {
@@ -168,19 +241,190 @@ export class ProcurementService {
     private readonly rabbitmq: InventoryRabbitMqService,
   ) {}
 
-  async listSuppliers(): Promise<SupplierDTO[]> {
+  async listSuppliers(filters?: {
+    status?: string;
+    isActive?: boolean;
+    q?: string;
+  }): Promise<SupplierExtendedDto[]> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters?.status && filters.status.trim()) {
+      params.push(filters.status.trim().toUpperCase());
+      conditions.push(`status = $${params.length}`);
+    }
+
+    if (filters?.isActive !== undefined) {
+      params.push(filters.isActive);
+      conditions.push(`is_active = $${params.length}`);
+    }
+
+    if (filters?.q && filters.q.trim()) {
+      params.push(`%${filters.q.trim()}%`);
+      const p = `$${params.length}`;
+      conditions.push(
+        `(code ILIKE ${p} OR name ILIKE ${p} OR contact_email ILIKE ${p} OR COALESCE(contact_name, '') ILIKE ${p})`,
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const res = await this.db.query<SupplierRow>(
-      'SELECT * FROM suppliers ORDER BY code ASC',
+      `SELECT * FROM suppliers ${whereClause} ORDER BY code ASC`,
+      params,
     );
-    return res.rows.map((row) => ({
-      id: row.id,
-      code: row.code,
-      name: row.name,
-      contactEmail: row.contact_email,
-      leadTimeDays: Number(row.lead_time_days),
-      defectRatePct: Number(row.defect_rate_pct),
-      status: row.status,
-    }));
+    return res.rows.map((row) => this.mapSupplierRow(row));
+  }
+
+  async createSupplier(input: CreateSupplierInput): Promise<SupplierExtendedDto> {
+    const code = input.code.trim().toUpperCase();
+    if (!/^[A-Z0-9_-]{2,32}$/.test(code)) {
+      throw new ApiDomainException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Mã nhà cung cấp (code) chỉ gồm chữ in hoa, số, dấu gạch dưới hoặc gạch ngang (2–32 ký tự).',
+      );
+    }
+
+    const dup = await this.db.query<{ id: string }>(
+      'SELECT id FROM suppliers WHERE UPPER(code) = $1 LIMIT 1',
+      [code],
+    );
+    if (dup.rows.length > 0) {
+      throw new ApiDomainException(
+        HttpStatus.CONFLICT,
+        ErrorCode.CONFLICT,
+        `Mã nhà cung cấp "${code}" đã tồn tại.`,
+      );
+    }
+
+    const isActive =
+      input.status !== undefined
+        ? input.status === SupplierStatus.ACTIVE
+        : (input.isActive ?? true);
+    const status: SupplierStatusValue = isActive
+      ? SupplierStatus.ACTIVE
+      : SupplierStatus.SUSPENDED;
+    const id = crypto.randomUUID();
+
+    const inserted = await this.db.query<SupplierRow>(
+      `INSERT INTO suppliers (
+        id, code, name, contact_name, contact_email, contact_phone, address,
+        lead_time_days, payment_terms_days, defect_rate_pct, status, is_active,
+        created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, $11, NOW(), NOW())
+      RETURNING *`,
+      [
+        id,
+        code,
+        input.name.trim(),
+        input.contactName?.trim() || null,
+        input.contactEmail.trim().toLowerCase(),
+        input.contactPhone?.trim() || null,
+        input.address?.trim() || null,
+        input.leadTimeDays ?? 7,
+        input.paymentTermsDays ?? 30,
+        status,
+        isActive,
+      ],
+    );
+
+    return this.mapSupplierRow(inserted.rows[0]);
+  }
+
+  async updateSupplier(
+    idOrCode: string,
+    input: UpdateSupplierInput,
+  ): Promise<{ before: SupplierExtendedDto; after: SupplierExtendedDto }> {
+    const trimmed = idOrCode.trim();
+    const isUuid = UUID_REGEX.test(trimmed);
+    const existingRes = await this.db.query<SupplierRow>(
+      isUuid
+        ? 'SELECT * FROM suppliers WHERE id = $1 LIMIT 1'
+        : 'SELECT * FROM suppliers WHERE UPPER(code) = UPPER($1) LIMIT 1',
+      [trimmed],
+    );
+
+    if (existingRes.rows.length === 0) {
+      throw new ApiDomainException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy nhà cung cấp "${idOrCode}".`,
+      );
+    }
+
+    const row = existingRes.rows[0];
+    const before = this.mapSupplierRow(row);
+
+    const nextCode = input.code !== undefined ? input.code.trim().toUpperCase() : row.code;
+    if (nextCode !== row.code) {
+      if (!/^[A-Z0-9_-]{2,32}$/.test(nextCode)) {
+        throw new ApiDomainException(
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+          'Mã nhà cung cấp (code) không hợp lệ (2–32 ký tự A-Z, 0-9, -, _).',
+        );
+      }
+      const dup = await this.db.query<{ id: string }>(
+        'SELECT id FROM suppliers WHERE UPPER(code) = $1 AND id <> $2 LIMIT 1',
+        [nextCode, row.id],
+      );
+      if (dup.rows.length > 0) {
+        throw new ApiDomainException(
+          HttpStatus.CONFLICT,
+          ErrorCode.CONFLICT,
+          `Mã nhà cung cấp "${nextCode}" đã được sử dụng.`,
+        );
+      }
+    }
+
+    let nextIsActive = row.is_active !== false && row.status === SupplierStatus.ACTIVE;
+    if (input.isActive !== undefined) {
+      nextIsActive = input.isActive;
+    } else if (input.status !== undefined) {
+      nextIsActive = input.status === SupplierStatus.ACTIVE;
+    }
+    const nextStatus: SupplierStatusValue = nextIsActive
+      ? SupplierStatus.ACTIVE
+      : SupplierStatus.SUSPENDED;
+
+    const updatedRes = await this.db.query<SupplierRow>(
+      `UPDATE suppliers
+       SET code = $1,
+           name = $2,
+           contact_name = $3,
+           contact_email = $4,
+           contact_phone = $5,
+           address = $6,
+           lead_time_days = $7,
+           payment_terms_days = $8,
+           status = $9,
+           is_active = $10,
+           updated_at = NOW()
+       WHERE id = $11
+       RETURNING *`,
+      [
+        nextCode,
+        input.name !== undefined ? input.name.trim() : row.name,
+        input.contactName !== undefined ? (input.contactName?.trim() || null) : row.contact_name,
+        input.contactEmail !== undefined
+          ? input.contactEmail.trim().toLowerCase()
+          : row.contact_email,
+        input.contactPhone !== undefined ? (input.contactPhone?.trim() || null) : row.contact_phone,
+        input.address !== undefined ? (input.address?.trim() || null) : row.address,
+        input.leadTimeDays !== undefined ? input.leadTimeDays : Number(row.lead_time_days),
+        input.paymentTermsDays !== undefined
+          ? input.paymentTermsDays
+          : Number(row.payment_terms_days ?? 30),
+        nextStatus,
+        nextIsActive,
+        row.id,
+      ],
+    );
+
+    return {
+      before,
+      after: this.mapSupplierRow(updatedRes.rows[0]),
+    };
   }
 
   async listPurchaseOrders(filters: {
@@ -496,7 +740,9 @@ export class ProcurementService {
 
       if (
         poRow.status === PurchaseOrderStatus.NHAP_AI ||
-        poRow.status === PurchaseOrderStatus.DA_HUY
+        poRow.status === PurchaseOrderStatus.DA_HUY ||
+        poRow.status === PurchaseOrderStatus.CANCELLED ||
+        poRow.status === PurchaseOrderStatus.SUPPLIER_REJECTED
       ) {
         throw new ApiDomainException(
           HttpStatus.CONFLICT,
@@ -649,7 +895,12 @@ export class ProcurementService {
       );
 
       const payableId = crypto.randomUUID();
-      const dueDate = formatDateYmd(new Date(Date.now() + 30 * 86_400_000));
+      const supTermsRes = await tx.query<{ payment_terms_days: number | null }>(
+        'SELECT payment_terms_days FROM suppliers WHERE id = $1 LIMIT 1',
+        [poRow.supplier_id],
+      );
+      const termsDays = Math.max(0, Number(supTermsRes.rows[0]?.payment_terms_days ?? 30));
+      const dueDate = formatDateYmd(new Date(Date.now() + termsDays * 86_400_000));
       await tx.query(
         `INSERT INTO supplier_payables (
           id, supplier_id, grn_id, po_id, amount_payable_vnd, status, due_date, created_at
@@ -823,11 +1074,314 @@ export class ProcurementService {
     return out;
   }
 
+  async cancelPurchaseOrder(
+    poIdOrNumber: string,
+    input: { reason: string; actorId?: string | null },
+    opts: { correlationId: string; traceparent?: string },
+  ): Promise<{ before: PurchaseOrderExtendedDto; after: PurchaseOrderExtendedDto }> {
+    const reason = input.reason.trim();
+    const outcome = await this.db.transaction(async (tx) => {
+      const existing = await this.fetchPurchaseOrderJoinedRow(poIdOrNumber, tx, true);
+      if (!existing) {
+        throw new ApiDomainException(
+          HttpStatus.NOT_FOUND,
+          ErrorCode.NOT_FOUND,
+          `Không tìm thấy đơn đặt hàng nhập (PO) "${poIdOrNumber}".`,
+        );
+      }
+
+      const nonCancellable = new Set<string>([
+        PurchaseOrderStatus.HOAN_TAT,
+        PurchaseOrderStatus.HOAN_TAT_MOT_PHAN,
+        PurchaseOrderStatus.DA_HUY,
+        PurchaseOrderStatus.CANCELLED,
+        'RECEIVED',
+        'COMPLETED',
+      ]);
+      if (nonCancellable.has(existing.status)) {
+        throw new ApiDomainException(
+          HttpStatus.CONFLICT,
+          ErrorCode.CONFLICT,
+          `Không thể hủy PO "${existing.po_number}" đang ở trạng thái ${existing.status}.`,
+        );
+      }
+
+      const before = await this.hydratePurchaseOrder(existing, tx);
+
+      await tx.query(
+        `UPDATE purchase_orders
+         SET status = $1,
+             cancel_reason = $2,
+             cancelled_by = $3,
+             cancelled_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $4`,
+        [PurchaseOrderStatus.CANCELLED, reason, input.actorId ?? null, existing.id],
+      );
+
+      const reloaded = await this.fetchPurchaseOrderJoinedRow(existing.id, tx);
+      if (!reloaded) {
+        throw new Error('Failed to reload cancelled Purchase Order');
+      }
+      const after = await this.hydratePurchaseOrder(reloaded, tx);
+      return { before, after };
+    });
+
+    await this.recordAuthAuditLog({
+      actorId: input.actorId ?? null,
+      actorType: 'USER',
+      action: 'PO_CANCELLED',
+      targetType: 'purchase_order',
+      targetId: outcome.after.id,
+      metadataJson: {
+        poNumber: outcome.after.poNumber,
+        previousStatus: outcome.before.status,
+        status: outcome.after.status,
+        cancelReason: reason,
+      },
+      correlationId: opts.correlationId,
+      traceparent: opts.traceparent,
+    });
+
+    return outcome;
+  }
+
+  async rejectPartnerPurchaseOrder(
+    supplierId: string,
+    poIdOrNumber: string,
+    input: { reason: string; proposedDeliveryDate?: string | null },
+    opts: { actorId?: string | null; correlationId: string; traceparent?: string },
+  ): Promise<{ before: PurchaseOrderExtendedDto; after: PurchaseOrderExtendedDto }> {
+    const reason = input.reason.trim();
+    const proposedDate = input.proposedDeliveryDate?.trim() || null;
+
+    const outcome = await this.db.transaction(async (tx) => {
+      const row = await this.fetchPurchaseOrderJoinedRow(poIdOrNumber, tx, true);
+      if (!row) {
+        throw new ApiDomainException(
+          HttpStatus.NOT_FOUND,
+          ErrorCode.NOT_FOUND,
+          `Không tìm thấy đơn đặt hàng nhập (PO) "${poIdOrNumber}".`,
+        );
+      }
+
+      if (row.supplier_id !== supplierId) {
+        throw new ApiDomainException(
+          HttpStatus.FORBIDDEN,
+          ErrorCode.FORBIDDEN,
+          'Bạn không có quyền từ chối đơn đặt hàng thuộc nhà cung cấp khác.',
+        );
+      }
+
+      if (row.status === PurchaseOrderStatus.NHAP_AI) {
+        throw new ApiDomainException(
+          HttpStatus.FORBIDDEN,
+          ErrorCode.PO_DRAFT_FORBIDDEN_FOR_SUPPLIER,
+          'Đơn hàng đang ở trạng thái bản nháp nội bộ (NHAP_AI), nhà cung cấp không được phép thao tác.',
+        );
+      }
+
+      const rejectableStatuses = new Set<string>([
+        PurchaseOrderStatus.CHO_NCC_XAC_NHAN,
+        PurchaseOrderStatus.NCC_DA_XAC_NHAN,
+      ]);
+      if (!rejectableStatuses.has(row.status)) {
+        throw new ApiDomainException(
+          HttpStatus.CONFLICT,
+          ErrorCode.CONFLICT,
+          `PO "${row.po_number}" đang ở trạng thái ${row.status}, không thể từ chối.`,
+        );
+      }
+
+      const before = await this.hydratePurchaseOrder(row, tx);
+      const supplierNoteText = proposedDate
+        ? `Từ chối PO: ${reason} (Đề xuất ngày giao mới: ${proposedDate})`
+        : `Từ chối PO: ${reason}`;
+
+      await tx.query(
+        `UPDATE purchase_orders
+         SET status = $1,
+             supplier_rejection_reason = $2,
+             proposed_delivery_date = $3,
+             supplier_note = $4,
+             rejected_by = $5,
+             rejected_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $6 AND supplier_id = $7`,
+        [
+          PurchaseOrderStatus.SUPPLIER_REJECTED,
+          reason,
+          proposedDate,
+          supplierNoteText,
+          opts.actorId ?? supplierId,
+          row.id,
+          supplierId,
+        ],
+      );
+
+      const reloaded = await this.fetchPurchaseOrderJoinedRow(row.id, tx);
+      if (!reloaded) {
+        throw new Error('Failed to reload rejected Purchase Order');
+      }
+      const after = await this.hydratePurchaseOrder(reloaded, tx);
+      return { before, after };
+    });
+
+    await this.recordAuthAuditLog({
+      actorId: opts.actorId ?? supplierId,
+      actorType: 'USER',
+      action: 'PO_REJECTED_BY_SUPPLIER',
+      targetType: 'purchase_order',
+      targetId: outcome.after.id,
+      metadataJson: {
+        poNumber: outcome.after.poNumber,
+        supplierId,
+        previousStatus: outcome.before.status,
+        status: outcome.after.status,
+        supplierRejectionReason: reason,
+        proposedDeliveryDate: proposedDate,
+      },
+      correlationId: opts.correlationId,
+      traceparent: opts.traceparent,
+    });
+
+    return outcome;
+  }
+
+  async markPayablePaid(
+    payableId: string,
+    input: {
+      bankReference: string;
+      paidAt?: string;
+      note?: string;
+      actorId?: string | null;
+    },
+    opts: { correlationId: string; traceparent?: string },
+  ): Promise<{ before: SupplierPayableExtendedDto; after: SupplierPayableExtendedDto }> {
+    if (!UUID_REGEX.test(payableId.trim())) {
+      throw new ApiDomainException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy phiếu công nợ "${payableId}".`,
+      );
+    }
+
+    let paidAtIso = new Date().toISOString();
+    if (input.paidAt && input.paidAt.trim()) {
+      const parsed = new Date(input.paidAt.trim());
+      if (Number.isNaN(parsed.getTime())) {
+        throw new ApiDomainException(
+          HttpStatus.BAD_REQUEST,
+          ErrorCode.VALIDATION_ERROR,
+          'Định dạng thời điểm thanh toán (paidAt) không hợp lệ.',
+        );
+      }
+      paidAtIso = parsed.toISOString();
+    }
+
+    const bankRef = input.bankReference.trim();
+    const settlementNote = input.note?.trim() || null;
+
+    const outcome = await this.db.transaction(async (tx) => {
+      const existingRes = await tx.query<SupplierPayableRow>(
+        `SELECT sp.*,
+                po.po_number,
+                gr.grn_number,
+                s.code AS supplier_code,
+                s.name AS supplier_name
+         FROM supplier_payables sp
+         LEFT JOIN purchase_orders po ON po.id = sp.po_id
+         LEFT JOIN goods_receipts gr ON gr.id = sp.grn_id
+         LEFT JOIN suppliers s ON s.id = sp.supplier_id
+         WHERE sp.id = $1
+         LIMIT 1
+         FOR UPDATE OF sp`,
+        [payableId.trim()],
+      );
+
+      if (existingRes.rows.length === 0) {
+        throw new ApiDomainException(
+          HttpStatus.NOT_FOUND,
+          ErrorCode.NOT_FOUND,
+          `Không tìm thấy phiếu công nợ "${payableId}".`,
+        );
+      }
+
+      const row = existingRes.rows[0];
+      if (row.status === SupplierPayableStatus.PAID) {
+        throw new ApiDomainException(
+          HttpStatus.CONFLICT,
+          ErrorCode.CONFLICT,
+          `Phiếu công nợ "${payableId}" đã được tất toán (PAID) trước đó.`,
+        );
+      }
+
+      const before = this.mapPayableRow(row);
+
+      await tx.query(
+        `UPDATE supplier_payables
+         SET status = $1,
+             bank_reference = $2,
+             paid_at = $3,
+             paid_by = $4,
+             settlement_note = $5,
+             updated_at = NOW()
+         WHERE id = $6`,
+        [
+          SupplierPayableStatus.PAID,
+          bankRef,
+          paidAtIso,
+          input.actorId ?? null,
+          settlementNote,
+          row.id,
+        ],
+      );
+
+      const reloadedRes = await tx.query<SupplierPayableRow>(
+        `SELECT sp.*,
+                po.po_number,
+                gr.grn_number,
+                s.code AS supplier_code,
+                s.name AS supplier_name
+         FROM supplier_payables sp
+         LEFT JOIN purchase_orders po ON po.id = sp.po_id
+         LEFT JOIN goods_receipts gr ON gr.id = sp.grn_id
+         LEFT JOIN suppliers s ON s.id = sp.supplier_id
+         WHERE sp.id = $1
+         LIMIT 1`,
+        [row.id],
+      );
+
+      const after = this.mapPayableRow(reloadedRes.rows[0]);
+      return { before, after };
+    });
+
+    await this.recordAuthAuditLog({
+      actorId: input.actorId ?? null,
+      actorType: 'USER',
+      action: 'PAYABLE_MARKED_PAID',
+      targetType: 'supplier_payable',
+      targetId: outcome.after.id,
+      metadataJson: {
+        poNumber: outcome.after.poNumber,
+        grnNumber: outcome.after.grnNumber,
+        supplierId: outcome.after.supplierId,
+        amountPayableVnd: outcome.after.amountPayableVnd,
+        bankReference: bankRef,
+        paidAt: paidAtIso,
+      },
+      correlationId: opts.correlationId,
+      traceparent: opts.traceparent,
+    });
+
+    return outcome;
+  }
+
   async listPayables(filters: {
     supplierId?: string;
     poId?: string;
     status?: string;
-  }): Promise<SupplierPayableDTO[]> {
+  }): Promise<SupplierPayableExtendedDto[]> {
     const conditions: string[] = [];
     const params: unknown[] = [];
 
@@ -836,38 +1390,37 @@ export class ProcurementService {
         return [];
       }
       params.push(filters.supplierId.trim());
-      conditions.push(`supplier_id = $${params.length}`);
+      conditions.push(`sp.supplier_id = $${params.length}`);
     }
 
     if (filters.poId && filters.poId.trim()) {
       params.push(filters.poId.trim());
-      conditions.push(`po_id::text = $${params.length}`);
+      conditions.push(`(sp.po_id::text = $${params.length} OR po.po_number = $${params.length})`);
     }
 
     if (filters.status && filters.status.trim()) {
       params.push(filters.status.trim().toUpperCase());
-      conditions.push(`status = $${params.length}`);
+      conditions.push(`sp.status = $${params.length}`);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const res = await this.db.query<SupplierPayableRow>(
-      `SELECT * FROM supplier_payables
+      `SELECT sp.*,
+              po.po_number,
+              gr.grn_number,
+              s.code AS supplier_code,
+              s.name AS supplier_name
+       FROM supplier_payables sp
+       LEFT JOIN purchase_orders po ON po.id = sp.po_id
+       LEFT JOIN goods_receipts gr ON gr.id = sp.grn_id
+       LEFT JOIN suppliers s ON s.id = sp.supplier_id
        ${whereClause}
-       ORDER BY created_at DESC
+       ORDER BY sp.created_at DESC
        LIMIT 200`,
       params,
     );
 
-    return res.rows.map((row) => ({
-      id: row.id,
-      supplierId: row.supplier_id,
-      grnId: row.grn_id,
-      poId: row.po_id,
-      amountPayableVnd: Number(row.amount_payable_vnd),
-      status: row.status,
-      dueDate: row.due_date,
-      createdAt: toIso(row.created_at),
-    }));
+    return res.rows.map((row) => this.mapPayableRow(row));
   }
 
   // ============================================================================
@@ -1083,9 +1636,62 @@ export class ProcurementService {
       approvedAt: row.approved_at ? toIso(row.approved_at) : null,
       confirmedBySupplierUserId: row.confirmed_by,
       confirmedAt: row.confirmed_at ? toIso(row.confirmed_at) : null,
+      cancelReason: row.cancel_reason ?? null,
+      cancelledBy: row.cancelled_by ?? null,
+      cancelledAt: row.cancelled_at ? toIso(row.cancelled_at) : null,
+      supplierRejectionReason: row.supplier_rejection_reason ?? null,
+      proposedDeliveryDate: row.proposed_delivery_date ?? null,
+      rejectedBy: row.rejected_by ?? null,
+      rejectedAt: row.rejected_at ? toIso(row.rejected_at) : null,
       items,
       createdAt: toIso(row.created_at),
       updatedAt: toIso(row.updated_at),
+    };
+  }
+
+  private mapSupplierRow(row: SupplierRow): SupplierExtendedDto {
+    const isActive =
+      row.is_active !== undefined && row.is_active !== null
+        ? Boolean(row.is_active)
+        : row.status === SupplierStatus.ACTIVE;
+    return {
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      contactName: row.contact_name ?? null,
+      contactEmail: row.contact_email,
+      contactPhone: row.contact_phone ?? null,
+      address: row.address ?? null,
+      leadTimeDays: Number(row.lead_time_days),
+      paymentTermsDays: Number(row.payment_terms_days ?? 30),
+      defectRatePct: Number(row.defect_rate_pct),
+      status: row.status,
+      isActive,
+      ...(row.created_at ? { createdAt: toIso(row.created_at) } : {}),
+      ...(row.updated_at ? { updatedAt: toIso(row.updated_at) } : {}),
+    };
+  }
+
+  private mapPayableRow(row: SupplierPayableRow): SupplierPayableExtendedDto {
+    const bankRef = row.bank_reference ?? null;
+    return {
+      id: row.id,
+      supplierId: row.supplier_id,
+      ...(row.supplier_code ? { supplierCode: row.supplier_code } : {}),
+      ...(row.supplier_name ? { supplierName: row.supplier_name } : {}),
+      grnId: row.grn_id,
+      grnNumber: row.grn_number ?? null,
+      poId: row.po_id,
+      poNumber: row.po_number ?? null,
+      amountPayableVnd: Number(row.amount_payable_vnd),
+      status: row.status,
+      dueDate: row.due_date,
+      bankReference: bankRef,
+      paymentReference: bankRef,
+      paidAt: row.paid_at ? toIso(row.paid_at) : null,
+      paidBy: row.paid_by ?? null,
+      settlementNote: row.settlement_note ?? null,
+      createdAt: toIso(row.created_at),
     };
   }
 

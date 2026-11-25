@@ -127,7 +127,7 @@ async function main() {
     console.log('\n[2] Seeded 6-Role RBAC Demo Accounts (Password: Atelier@2026!):');
     console.log('  Role                 | Email                       | 2FA (Mailpit) | Portal');
     console.log('  ---------------------+-----------------------------+---------------+-----------------');
-    console.log('  SUPER_ADMIN          | admin@atelier.local         | Mandatory     | :3001 Admin');
+    console.log('  SUPER_ADMIN          | lebao01121@gmail.com        | Mandatory     | :3001 Admin');
     console.log('  WAREHOUSE_MANAGER    | warehouse@atelier.local     | Mandatory     | :3001 Admin');
     console.log('  ORDER_STAFF          | staff@atelier.local         | Optional      | :3001 Admin');
     console.log('  CATALOG_AI_OPERATOR  | operator@atelier.local      | Optional      | :3001 Admin');

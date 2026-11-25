@@ -1,6 +1,15 @@
 import type { NextConfig } from 'next';
 
+// Enable Next.js standalone runtime bundle for Docker/Linux/CI builds (and Windows with Developer Mode via NEXT_OUTPUT_STANDALONE=1).
+// Prevents Next.js 15 copyTracedFiles EPERM on Windows hosts without SeCreateSymbolicLinkPrivilege for pnpm symlinks.
+const useStandaloneOutput =
+  process.env.NEXT_OUTPUT_STANDALONE === '1' ||
+  process.env.NEXT_OUTPUT_STANDALONE === 'true' ||
+  process.env.DOCKER_BUILD === '1' ||
+  process.platform !== 'win32';
+
 const nextConfig: NextConfig = {
+  ...(useStandaloneOutput ? { output: 'standalone' as const } : {}),
   reactStrictMode: true,
   images: {
     unoptimized: true,

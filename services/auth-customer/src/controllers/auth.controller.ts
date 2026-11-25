@@ -24,13 +24,49 @@ import {
 } from '@atelier/contracts';
 import { getCorrelationIdFromRequest, parseWithZod } from '../common/api-exception';
 import { SERVICE_NAME } from '../config/env';
-import { AuthService, type TwoFactorVerifyResponse } from '../services/auth.service';
+import {
+  AuthService,
+  type ChangePasswordResponse,
+  type ForgotPasswordResponse,
+  type ResetPasswordResponse,
+  type TwoFactorVerifyResponse,
+} from '../services/auth.service';
 import { CustomerService, type TryOnQuotaViewDto } from '../services/customer.service';
 
 const FlexibleTwoFactorVerifySchema = z.object({
   method: TwoFactorMethodSchema.optional(),
   code: z.string().trim().min(4).max(32),
 });
+
+const ForgotPasswordRequestSchema = z.object({
+  email: z.string().trim().email().max(255),
+});
+
+const ResetPasswordRequestSchema = z
+  .object({
+    email: z.string().trim().email().max(255).optional(),
+    code: z.string().trim().min(4).max(128).optional(),
+    otp: z.string().trim().min(4).max(128).optional(),
+    token: z.string().trim().min(4).max(256).optional(),
+    newPassword: z.string().min(8).max(128),
+  })
+  .refine((data) => Boolean(data.code || data.otp || data.token), {
+    message: 'Vui lòng cung cấp mã xác thực (code) hoặc token khôi phục.',
+  });
+
+const ChangePasswordRequestSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(128).optional(),
+    oldPassword: z.string().min(1).max(128).optional(),
+    newPassword: z.string().min(8).max(128),
+  })
+  .refine((data) => Boolean(data.currentPassword || data.oldPassword), {
+    message: 'Vui lòng cung cấp mật khẩu hiện tại (currentPassword).',
+  })
+  .transform((data) => ({
+    currentPassword: (data.currentPassword ?? data.oldPassword) as string,
+    newPassword: data.newPassword,
+  }));
 
 @Controller('v1/auth')
 export class AuthController {
@@ -89,6 +125,51 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<ApiResponse<{ loggedOut: boolean }>> {
     const data = await this.authService.logout(req, res);
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<ForgotPasswordResponse>> {
+    const input = parseWithZod(ForgotPasswordRequestSchema, body);
+    const data = await this.authService.forgotPassword(input, req);
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ApiResponse<ResetPasswordResponse>> {
+    const input = parseWithZod(ResetPasswordRequestSchema, body);
+    const data = await this.authService.resetPassword(input, req, res);
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ApiResponse<ChangePasswordResponse>> {
+    const authUser = await this.authService.authenticateRequest(req);
+    const input = parseWithZod(ChangePasswordRequestSchema, body);
+    const data = await this.authService.changePassword(authUser, input, req, res);
     return createApiResponse(data, {
       correlationId: getCorrelationIdFromRequest(req),
       service: SERVICE_NAME,

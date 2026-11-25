@@ -1,0 +1,99 @@
+{
+  "suite": "verify-partner-e2e",
+  "runTag": "2B20E9",
+  "portalUrl": "http://127.0.0.1:3002",
+  "bffUrl": "http://127.0.0.1:4000",
+  "mailpitUrl": "http://127.0.0.1:8025",
+  "startedAt": "2026-11-25T04:27:01.464Z",
+  "finishedAt": "2026-11-25T04:27:04.817Z",
+  "checks": {
+    "PREFLIGHT": {
+      "title": "Live Partner (:3002), BFF (:4000/health), Mailpit (:8025) & Repeatable Fixtures",
+      "status": "PASS",
+      "elapsedMs": 355,
+      "details": {
+        "partnerStatus": 200,
+        "bffStatus": 200,
+        "mailpitStatus": 200,
+        "confirmablePoNumber": "PO-20261125-F5ECCF",
+        "existingGrnCount": 10,
+        "existingPayableCount": 10,
+        "createdDefectGrnNumber": null
+      }
+    },
+    "CHECK 1": {
+      "title": "CUSTOMER 403 Block (SupplierRoleGuard + BFF 403) & SUPPLIER Login + Real 2FA via Mailpit (:8025)",
+      "status": "PASS",
+      "elapsedMs": 1642.1,
+      "details": {
+        "customerUiBlocked": true,
+        "customerBffStatus": 403,
+        "supplierEmail": "supplier-a@atelier.local",
+        "emailOtpSendHttpStatus": 200,
+        "twoFactorMethodUsed": "EMAIL_OTP_MAILPIT",
+        "mailpitMessageId": "6fe85862-36a3-4f4b-a992-b72dba8bd885",
+        "supplier2faUnlocked": true,
+        "pageErrors": 0
+      }
+    },
+    "CHECK 2": {
+      "title": "SupplierTenantBar Identity, Strict supplier_id Isolation & Zero NHAP_AI Draft Leak",
+      "status": "PASS",
+      "elapsedMs": 58.5,
+      "details": {
+        "tenantBarVisible": true,
+        "boundSupplierId": "11111111-1111-4111-8111-111111111101",
+        "poCountReturned": 22,
+        "nhapAiLeakedCount": 0,
+        "crossTenantLeakedCount": 0,
+        "forgedHeaderOverriddenToOwnTenant": true
+      }
+    },
+    "CHECK 3": {
+      "title": "PO Confirmation (CHO_NCC_XAC_NHAN -> NCC_DA_XAC_NHAN) & Defect-Split GRN Inspection",
+      "status": "PASS",
+      "elapsedMs": 295.7,
+      "details": {
+        "confirmedPoNumber": "PO-20261125-F5ECCF",
+        "confirmedHttpStatus": 200,
+        "updatedBadgeVisible": "Đã xác nhận hẹn giao",
+        "grnCountRendered": 10,
+        "defectSplitGrnCount": 5,
+        "sampleDefectGrn": {
+          "grnNumber": "GRN-20261125-CD4650",
+          "totalAcceptedQty": 8,
+          "totalRejectedQty": 2
+        }
+      }
+    },
+    "CHECK 4": {
+      "title": "Upload 768x1024 (3:4) Flat-Lay PNG & Submit Product Proposal (PartnerSubmissionPanel)",
+      "status": "PASS",
+      "elapsedMs": 458,
+      "details": {
+        "pngDimensions": "768x1024",
+        "pngBytes": 33440,
+        "uploadedAssetId": "a2fb1533-4e5b-4d1c-8c9e-14e4e0815610",
+        "submissionId": "cce7215c-078b-48ae-b849-c0d81b87b885",
+        "proposedName": "Áo Sơ Mi Lụa E2E 3:4 2B20E9",
+        "submissionStatus": "PENDING_REVIEW"
+      }
+    },
+    "CHECK 5": {
+      "title": "Export Payables CSV via Browser Download (UTF-8 BOM 0xEF 0xBB 0xBF + Vietnamese Headers + Data Rows)",
+      "status": "PASS",
+      "elapsedMs": 222.3,
+      "details": {
+        "suggestedFilename": "doi-soat-cong-no-11111111-2026-11-25.csv",
+        "bytes": 1770,
+        "utf8BomVerified": true,
+        "headerRow": "Mã công nợ,Mã đơn đặt hàng (PO),Biên bản nghiệm thu (GRN),Số tiền phải trả (VND),Trạng thái,Hạn thanh toán,Mã tham chiếu ngân hàng (UNC),Ngày tất toán,Ghi chú tất toán,Ngày ghi nhận",
+        "dataRowsCount": 10,
+        "pageErrors": 0
+      }
+    }
+  },
+  "passed": 6,
+  "failed": 0,
+  "totalPageErrors": 0
+}

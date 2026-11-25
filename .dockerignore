@@ -1,33 +1,47 @@
-# Centralized project-local D: data, volumes, caches & AI models
-.project-data/
-.project-data/**
+# Version control & editor metadata
+.git
+.gitignore
+.github
+.vscode
+.idea
 
-# Local dev harness storage & temp
-.local-pgdata/
-.local-minio/
-.secrets/
-services/ai-tryon/.tmp_vton/
+# Node / Next.js / Turbo build outputs & dependencies
+**/node_modules
+**/.next
+**/.next-check
+**/dist
+**/build
+**/.turbo
+**/coverage
+*.tsbuildinfo
 
-# Dependencies & Build artifacts
-node_modules/
-.pnpm-store/
-.next/
-.turbo/
-dist/
-build/
-out/
-coverage/
+# Python virtualenvs & caches
+services/ai-tryon/.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache
+.coverage
+htmlcov
 
-# Python environments & caches
-.venv/
-venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-
-# Version control & local secrets
-.git/
-.env
-.env.local
-.env.*.local
+# Project-local runtime data, volumes, artifacts & logs
+.project-data
+.local-pgdata
+artifacts
 *.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# Environment & secrets (never bake secrets into Docker images)
+.env
+.env.*
+!.env.example
+infra/secrets/*
+!infra/secrets/.gitkeep
+!infra/secrets/README.md
+
+# OS junk
+.DS_Store
+Thumbs.db

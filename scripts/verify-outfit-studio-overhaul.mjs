@@ -468,6 +468,7 @@ async function main() {
     ...process.env,
     ...loadDotEnv(path.join(ROOT_DIR, '.env')),
   };
+  const internalSecret = envVars.INTERNAL_SERVICE_SECRET || 'Atelier_Internal_Svc_2026!';
 
   fs.mkdirSync(AUDIT_DIR, { recursive: true });
 
@@ -509,6 +510,7 @@ async function main() {
     try {
       const reseedProbe = await httpRequest('http://127.0.0.1:4002/v1/catalog/internal/reseed', {
         method: 'POST',
+        headers: { 'x-internal-secret': internalSecret },
         timeoutMs: 45_000,
       });
       if (reseedProbe.status >= 200 && reseedProbe.status < 300) {
@@ -605,7 +607,6 @@ async function main() {
       console.log('[INFRA] Reusing live infra on :6379 / :7700 / :9000 / :1025 / :8025 / :15672.');
     }
 
-    const internalSecret = envVars.INTERNAL_SERVICE_SECRET || 'Atelier_Internal_Svc_2026!';
     const revalidateSecret = envVars.REVALIDATE_SECRET || 'Atelier_Isr_Revalidate_2026!';
 
     const serviceEnv = {
@@ -766,6 +767,7 @@ async function main() {
     console.log(`  [SEED] Calling POST ${CATALOG_BASE}/v1/catalog/internal/reseed ...`);
     const reseedRes = await httpRequest(`${CATALOG_BASE}/v1/catalog/internal/reseed`, {
       method: 'POST',
+      headers: { 'x-internal-secret': internalSecret },
       timeoutMs: 120_000,
     });
     console.log(`  [SEED] Catalog reseed HTTP ${reseedRes.status}`);

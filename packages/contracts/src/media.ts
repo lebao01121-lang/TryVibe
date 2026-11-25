@@ -115,3 +115,24 @@ export const FinalizeMediaRequestSchema = z.object({
   layerZHint: z.number().int().optional(),
 });
 export type FinalizeMediaRequest = z.infer<typeof FinalizeMediaRequestSchema>;
+
+export const MediaBoundingBoxDtoSchema = z.object({
+  x: z.number().int().nonnegative(),
+  y: z.number().int().nonnegative(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  normalizedX: z.number().min(0).max(1),
+  normalizedY: z.number().min(0).max(1),
+  normalizedWidth: z.number().min(0).max(1),
+  normalizedHeight: z.number().min(0).max(1),
+  imageWidth: z.number().int().positive(),
+  imageHeight: z.number().int().positive(),
+  computedFromPixels: z.boolean(),
+});
+export type MediaBoundingBoxDto = z.infer<typeof MediaBoundingBoxDtoSchema>;
+
+export const DeleteMediaAssetResultDtoSchema = z.object({
+  deleted: z.boolean(),
+  assetId: z.string().min(1),
+});
+export type DeleteMediaAssetResultDto = z.infer<typeof DeleteMediaAssetResultDtoSchema>;

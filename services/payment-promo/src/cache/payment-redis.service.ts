@@ -96,4 +96,60 @@ export class PaymentRedisService implements OnModuleInit, OnModuleDestroy {
       );
     }
   }
+
+  /**
+   * Clears cached promotion listings and optional flash-sale counter key on promo mutations
+   * (create, update, archive, approve-draft) so Storefront sees live changes immediately.
+   */
+  async clearPromotionCaches(promoCode?: string): Promise<number> {
+    let deletedCount = 0;
+    try {
+      const ok = await this.client.connect();
+      if (!ok) {
+        return 0;
+      }
+
+      const patterns = [
+        'promo:active*',
+        'promotions:*',
+        'atelier:promotions:*',
+        'bff:storefront:promotions*',
+        'storefront:promotions*',
+      ];
+
+      const keysToDelete = new Set<string>();
+      if (promoCode && promoCode.trim().length > 0) {
+        keysToDelete.add(`promo:flash:${promoCode.trim().toUpperCase()}`);
+      }
+
+      for (const pattern of patterns) {
+        let cursor = '0';
+        let iterations = 0;
+        do {
+          const [nextCursor, batch] = await this.client.raw.scan(
+            cursor,
+            'MATCH',
+            pattern,
+            'COUNT',
+            100,
+          );
+          cursor = nextCursor;
+          for (const key of batch) {
+            keysToDelete.add(key);
+          }
+          iterations += 1;
+        } while (cursor !== '0' && iterations < 20);
+      }
+
+      if (keysToDelete.size > 0) {
+        deletedCount = await this.client.raw.del(...Array.from(keysToDelete));
+      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        { promoCode, err: error instanceof Error ? error.message : String(error) },
+        'Non-fatal Redis promotion cache invalidation failure',
+      );
+    }
+    return deletedCount;
+  }
 }

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BadGatewayException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -62,7 +63,9 @@ import { resolveOccasionMacroImageUrl } from '../occasions/occasion-macro';
 import {
   hydrateSeasonCollectionDto,
   loadSeasonsManifestBySlug,
+  type HydratedSeasonCollectionDto,
   type SeasonDbRow,
+  type SeasonSwatchEntry,
 } from '../seasons/season-lookbook-data';
 import { SeedAssetGenerator } from '../seed/asset-generator';
 import {
@@ -82,6 +85,7 @@ interface CategoryRow {
   description: string | null;
   sort_order: number;
   is_active: boolean;
+  product_count?: number | string;
 }
 
 interface SizeChartRow {
@@ -90,8 +94,11 @@ interface SizeChartRow {
   name: string;
   gender: Gender;
   garment_group: string;
+  category_id?: string | null;
+  stretch_level?: string | null;
   fit_note: string | null;
   measurements_jsonb: SizeMeasurementRow[] | string;
+  updated_at?: Date | string | null;
 }
 
 interface ProductRow {
@@ -116,6 +123,7 @@ interface ProductRow {
   min_price_vnd: number;
   stock_status_summary: StockStatusSummary;
   status: ProductStatus;
+  is_active?: boolean | null;
   size_chart_id: string | null;
   occasion_slugs: string[] | string;
   season_slugs: string[] | string;
@@ -149,9 +157,29 @@ interface SkuRow {
   sale_price_vnd: number | null;
   cost_price_vnd: number;
   supplier_id: string | null;
+  barcode?: string | null;
   weight_grams: number;
   in_stock: boolean;
+  is_active?: boolean | null;
   is_returnable: boolean;
+}
+
+interface OccasionDbRow {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string;
+  description?: string | null;
+  palette_bg: string;
+  palette_ink: string;
+  palette_accent: string;
+  is_dark: boolean;
+  badge_tag: string | null;
+  hero_image_url: string | null;
+  cover_image_url?: string | null;
+  sort_order: number;
+  is_active?: boolean | null;
+  updated_at?: Date | string | null;
 }
 
 interface SubmissionRow {
@@ -265,6 +293,7 @@ function stripSensitiveProductFields(product: ProductSpuDto): ProductSpuDto {
 
 export interface ProductListFilters {
   q?: string;
+  categoryId?: string;
   categorySlug?: string;
   size?: string;
   inStockSize?: string;
@@ -277,6 +306,7 @@ export interface ProductListFilters {
   maxPriceVnd?: number;
   sort?: string;
   status?: ProductStatus;
+  includeArchived?: boolean;
   page?: number;
   pageSize?: number;
   includeCostFields?: boolean;
@@ -287,9 +317,236 @@ export interface ProductListResult {
   total: number;
   page: number;
   pageSize: number;
+  limit: number;
   totalPages: number;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
   usedMeilisearch: boolean;
   processingTimeMs: number;
+}
+
+export interface CategoryViewDto extends CategoryDto {
+  productCount?: number;
+}
+
+export interface ExtendedSizeMeasurementRow extends SizeMeasurementRow {
+  chestMin?: number | null;
+  chestMax?: number | null;
+  chestMinCm?: number | null;
+  chestMaxCm?: number | null;
+  waistMin?: number | null;
+  waistMax?: number | null;
+  waistMinCm?: number | null;
+  waistMaxCm?: number | null;
+  hipMin?: number | null;
+  hipMax?: number | null;
+  hipMinCm?: number | null;
+  hipMaxCm?: number | null;
+  stretchLevel?: string | null;
+  fitNotes?: string | null;
+}
+
+export interface SizeChartViewDto extends Omit<SizeChartDto, 'rows'> {
+  categoryId: string | null;
+  garmentType: string;
+  stretchLevel: string;
+  fitNotes: string | null;
+  rows: ExtendedSizeMeasurementRow[];
+  sizeCode?: SizeCode;
+  chestMin?: number | null;
+  chestMax?: number | null;
+  waistMin?: number | null;
+  waistMax?: number | null;
+  hipMin?: number | null;
+  hipMax?: number | null;
+  shoulderCm?: number | null;
+  weightMinKg?: number | null;
+  weightMaxKg?: number | null;
+  heightMinCm?: number | null;
+  heightMaxCm?: number | null;
+  updatedAt?: string;
+}
+
+export interface OccasionViewDto extends OccasionLookbookDto {
+  title: string;
+  coverImageUrl: string | null;
+  heroImageUrl: string | null;
+  isActive: boolean;
+  spuIds: string[];
+  updatedAt?: string;
+}
+
+export interface CreateOccasionInput {
+  slug?: string;
+  key?: string;
+  name: string;
+  tagline?: string;
+  description?: string | null;
+  themeBg?: string;
+  themeInk?: string;
+  themeAccent?: string;
+  isDark?: boolean;
+  badgeTag?: string | null;
+  coverImageUrl?: string | null;
+  heroImageUrl?: string | null;
+  heroCutoutUrl?: string | null;
+  macroImageUrl?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
+  spuIds?: string[];
+  productSlugs?: string[];
+}
+
+export type UpdateOccasionInput = Partial<CreateOccasionInput>;
+
+export interface CreateSeasonInput {
+  slug?: string;
+  code?: string;
+  name: string;
+  shortName?: string;
+  subtitle?: string;
+  months?: string;
+  seasonTag?: string;
+  materialHeadline?: string;
+  note?: string;
+  paletteHex?: string;
+  seasonOrder?: number;
+  sortOrder?: number;
+  heroImageUrl?: string | null;
+  coverAssetUrl?: string | null;
+  swatches?: SeasonSwatchEntry[];
+  paletteJsonb?: SeasonSwatchEntry[] | Record<string, unknown>;
+  lookbookMeta?: Record<string, unknown> | null;
+  isCurrent?: boolean;
+  isActive?: boolean;
+  spuIds?: string[];
+  productSlugs?: string[];
+}
+
+export type UpdateSeasonInput = Partial<CreateSeasonInput>;
+
+export interface CreateCategoryInput {
+  parentId?: string | null;
+  slug?: string;
+  name: string;
+  description?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export type UpdateCategoryInput = Partial<CreateCategoryInput>;
+
+export interface SizeChartRowInputItem {
+  sizeCode: SizeCode;
+  heightMinCm?: number | null;
+  heightMaxCm?: number | null;
+  weightMinKg?: number | null;
+  weightMaxKg?: number | null;
+  chestMin?: number | null;
+  chestMax?: number | null;
+  chestMinCm?: number | null;
+  chestMaxCm?: number | null;
+  bustCm?: number | null;
+  waistMin?: number | null;
+  waistMax?: number | null;
+  waistMinCm?: number | null;
+  waistMaxCm?: number | null;
+  waistCm?: number | null;
+  hipMin?: number | null;
+  hipMax?: number | null;
+  hipMinCm?: number | null;
+  hipMaxCm?: number | null;
+  hipCm?: number | null;
+  shoulderCm?: number | null;
+  lengthCm?: number | null;
+  stretchLevel?: string | null;
+  fitNotes?: string | null;
+}
+
+export interface CreateSizeChartInput {
+  code?: string;
+  name?: string;
+  categoryId?: string | null;
+  garmentCategory?: string;
+  garmentType?: string;
+  gender?: Gender;
+  stretchLevel?: string;
+  fitNote?: string | null;
+  fitNotes?: string | null;
+  sizeCode?: SizeCode;
+  chestMin?: number | null;
+  chestMax?: number | null;
+  waistMin?: number | null;
+  waistMax?: number | null;
+  hipMin?: number | null;
+  hipMax?: number | null;
+  shoulderCm?: number | null;
+  weightMinKg?: number | null;
+  weightMaxKg?: number | null;
+  heightMinCm?: number | null;
+  heightMaxCm?: number | null;
+  rows?: SizeChartRowInputItem[];
+}
+
+export type UpdateSizeChartInput = Partial<CreateSizeChartInput>;
+
+export interface AddProductVariantInput {
+  variantId?: string | null;
+  sku?: string;
+  skuCode?: string;
+  size?: SizeCode;
+  sizeCode?: SizeCode;
+  colorName: string;
+  colorHex?: string;
+  priceVnd?: number;
+  basePriceVnd?: number;
+  salePriceVnd?: number | null;
+  costPriceVnd?: number;
+  barcode?: string | null;
+  weightGrams?: number;
+  isActive?: boolean;
+  inStock?: boolean;
+  isReturnable?: boolean;
+  supplierId?: string | null;
+  lookbookMainUrl?: string | null;
+  tryonFlatPreviewUrl?: string | null;
+  rackFrontUrl?: string | null;
+  skus?: Array<{
+    sku?: string;
+    skuCode?: string;
+    size?: SizeCode;
+    sizeCode?: SizeCode;
+    priceVnd?: number;
+    basePriceVnd?: number;
+    salePriceVnd?: number | null;
+    costPriceVnd?: number;
+    barcode?: string | null;
+    weightGrams?: number;
+    isActive?: boolean;
+    inStock?: boolean;
+    isReturnable?: boolean;
+    supplierId?: string | null;
+  }>;
+}
+
+export interface AttachProductMediaInput {
+  assetId?: string | null;
+  variantId?: string | null;
+  url?: string | null;
+  mediaUrl?: string | null;
+  publicUrl?: string | null;
+  slot?: string;
+  role?: string;
+  mediaType?: string;
+  assetType?: string;
+  objectKey?: string | null;
+  spatialMetadata?: Record<string, unknown> | null;
+  sortOrder?: number;
+  setAsPrimary?: boolean;
 }
 
 export interface CreateAdminProductInput {
@@ -349,8 +606,15 @@ export interface UpdateAdminProductInput {
   tryonFlatAssetUrl?: string | null;
   fitCalibrationNote?: string | null;
   status?: ProductStatus;
+  isActive?: boolean;
+  sizeChartId?: string | null;
   occasionSlugs?: string[];
   seasonSlugs?: string[];
+  variantId?: string | null;
+  lookbookMainUrl?: string | null;
+  rackFrontAssetId?: string | null;
+  rackFrontUrl?: string | null;
+  mediaAttach?: AttachProductMediaInput | null;
 }
 
 export interface UpdateAdminSkuInput {
@@ -494,7 +758,12 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
 
   private async fetchJsonWithTimeout<T>(
     url: string,
-    options: { method?: string; body?: unknown; timeoutMs?: number } = {},
+    options: {
+      method?: string;
+      body?: unknown;
+      timeoutMs?: number;
+      headers?: Record<string, string>;
+    } = {},
   ): Promise<T | null> {
     const controller = new AbortController();
     const timer = setTimeout(
@@ -502,12 +771,16 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
       options.timeoutMs ?? 1500,
     );
     try {
+      const baseHeaders: Record<string, string> =
+        options.body !== undefined
+          ? { 'Content-Type': 'application/json', Accept: 'application/json' }
+          : { Accept: 'application/json' };
       const res = await fetch(url, {
         method: options.method ?? 'GET',
-        headers:
-          options.body !== undefined
-            ? { 'Content-Type': 'application/json', Accept: 'application/json' }
-            : { Accept: 'application/json' },
+        headers: {
+          ...baseHeaders,
+          ...(options.headers ?? {}),
+        },
         body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
         signal: controller.signal,
       });
@@ -531,6 +804,9 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
       `${this.config.infra.mediaServiceUrl}/v1/media/internal/register-seed-assets`,
       {
         method: 'POST',
+        headers: {
+          'x-internal-secret': this.config.infra.internalServiceSecret,
+        },
         body: { assets },
         timeoutMs: 2000,
       },
@@ -555,6 +831,9 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     const res = await this.fetchJsonWithTimeout<{
       data?: Record<string, { hangerAnchorX?: number; hangerAnchorY?: number }>;
     }>(`${this.config.infra.mediaServiceUrl}/v1/media/internal/spatial-map`, {
+      headers: {
+        'x-internal-secret': this.config.infra.internalServiceSecret,
+      },
       timeoutMs: 1200,
     });
     const raw = res?.data;
@@ -666,12 +945,31 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     return summary;
   }
 
-  public async listCategories(): Promise<CategoryDto[]> {
+  public async listCategories(filters?: {
+    includeInactive?: boolean;
+    parentId?: string;
+  }): Promise<CategoryViewDto[]> {
     const db = await this.dbService.getClient();
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters?.includeInactive === false) {
+      conditions.push('c.is_active = TRUE');
+    }
+    if (filters?.parentId && UUID_REGEX.test(filters.parentId)) {
+      params.push(filters.parentId);
+      conditions.push(`c.parent_id = $${params.length}`);
+    }
+
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const res = await db.query<CategoryRow>(
-      `SELECT id, parent_id, slug, name, description, sort_order, is_active
-       FROM categories
-       ORDER BY sort_order ASC, name ASC`,
+      `SELECT c.id, c.parent_id, c.slug, c.name, c.description, c.sort_order, c.is_active,
+              (SELECT COUNT(*)::int FROM products p WHERE p.category_id = c.id AND p.status <> 'ARCHIVED') AS product_count
+       FROM categories c
+       ${whereClause}
+       ORDER BY c.sort_order ASC, c.name ASC`,
+      params,
     );
     return res.rows.map((row) => ({
       id: row.id,
@@ -681,25 +979,685 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
       description: row.description,
       sortOrder: Number(row.sort_order),
       isActive: Boolean(row.is_active),
+      productCount: Number(row.product_count ?? 0),
     }));
   }
 
-  public async listSizeCharts(): Promise<SizeChartDto[]> {
+  public async createCategory(
+    input: CreateCategoryInput,
+  ): Promise<CategoryViewDto> {
     const db = await this.dbService.getClient();
-    const res = await db.query<SizeChartRow>(
-      `SELECT id, code, name, gender, garment_group, fit_note, measurements_jsonb
-       FROM size_charts
-       ORDER BY code ASC`,
+    const slug = (input.slug?.trim() || slugifyVietnamese(input.name)).toLowerCase();
+    if (!slug) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Category slug could not be derived from name',
+      });
+    }
+
+    const dupRes = await db.query<{ id: string }>(
+      'SELECT id FROM categories WHERE LOWER(slug) = LOWER($1)',
+      [slug],
     );
-    return res.rows.map((row) => ({
+    if (dupRes.rows.length > 0) {
+      throw new ConflictException({
+        code: ErrorCode.CONFLICT,
+        message: `Category slug "${slug}" already exists`,
+      });
+    }
+
+    let parentId: string | null = input.parentId?.trim() || null;
+    if (parentId) {
+      if (!UUID_REGEX.test(parentId)) {
+        const parentBySlug = await db.query<{ id: string }>(
+          'SELECT id FROM categories WHERE slug = $1',
+          [parentId],
+        );
+        parentId = parentBySlug.rows[0]?.id ?? null;
+      }
+      if (!parentId) {
+        throw new BadRequestException({
+          code: ErrorCode.VALIDATION_ERROR,
+          message: `Parent category "${input.parentId}" not found`,
+        });
+      }
+      const parentCheck = await db.query<{ id: string }>(
+        'SELECT id FROM categories WHERE id = $1',
+        [parentId],
+      );
+      if (parentCheck.rows.length === 0) {
+        throw new BadRequestException({
+          code: ErrorCode.VALIDATION_ERROR,
+          message: `Parent category "${parentId}" not found`,
+        });
+      }
+    }
+
+    const id = randomUUID();
+    const inserted = await db.query<CategoryRow>(
+      `INSERT INTO categories (id, parent_id, slug, name, description, sort_order, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, parent_id, slug, name, description, sort_order, is_active`,
+      [
+        id,
+        parentId,
+        slug,
+        input.name.trim(),
+        input.description ?? null,
+        Number(input.sortOrder ?? 0),
+        input.isActive ?? true,
+      ],
+    );
+
+    await this.invalidateStorefrontCaches();
+    const row = inserted.rows[0];
+    return {
+      id: row.id,
+      parentId: row.parent_id,
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      sortOrder: Number(row.sort_order),
+      isActive: Boolean(row.is_active),
+      productCount: 0,
+    };
+  }
+
+  public async updateCategory(
+    idOrSlug: string,
+    input: UpdateCategoryInput,
+  ): Promise<CategoryViewDto> {
+    const db = await this.dbService.getClient();
+    const isUuid = UUID_REGEX.test(idOrSlug);
+    const existingRes = await db.query<CategoryRow>(
+      `SELECT id, parent_id, slug, name, description, sort_order, is_active
+       FROM categories
+       WHERE ${isUuid ? 'id = $1' : 'slug = $1'}`,
+      [idOrSlug],
+    );
+    const existing = existingRes.rows[0];
+    if (!existing) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Category "${idOrSlug}" not found`,
+      });
+    }
+
+    let nextSlug = existing.slug;
+    if (input.slug !== undefined && input.slug.trim()) {
+      nextSlug = input.slug.trim().toLowerCase();
+      if (nextSlug !== existing.slug.toLowerCase()) {
+        const dup = await db.query<{ id: string }>(
+          'SELECT id FROM categories WHERE LOWER(slug) = LOWER($1) AND id <> $2',
+          [nextSlug, existing.id],
+        );
+        if (dup.rows.length > 0) {
+          throw new ConflictException({
+            code: ErrorCode.CONFLICT,
+            message: `Category slug "${nextSlug}" already exists`,
+          });
+        }
+      }
+    }
+
+    let nextParentId: string | null = existing.parent_id;
+    if (input.parentId !== undefined) {
+      const candidate = input.parentId ? input.parentId.trim() : null;
+      if (candidate === null || candidate === '') {
+        nextParentId = null;
+      } else {
+        if (candidate === existing.id) {
+          throw new BadRequestException({
+            code: ErrorCode.VALIDATION_ERROR,
+            message: 'Category cannot be its own parent',
+          });
+        }
+        const parentCheck = await db.query<{ id: string }>(
+          `SELECT id FROM categories WHERE ${UUID_REGEX.test(candidate) ? 'id = $1' : 'slug = $1'}`,
+          [candidate],
+        );
+        if (parentCheck.rows.length === 0) {
+          throw new BadRequestException({
+            code: ErrorCode.VALIDATION_ERROR,
+            message: `Parent category "${candidate}" not found`,
+          });
+        }
+        if (parentCheck.rows[0].id === existing.id) {
+          throw new BadRequestException({
+            code: ErrorCode.VALIDATION_ERROR,
+            message: 'Category cannot be its own parent',
+          });
+        }
+        nextParentId = parentCheck.rows[0].id;
+      }
+    }
+
+    const updatedRes = await db.query<CategoryRow>(
+      `UPDATE categories SET
+         parent_id = $2,
+         slug = $3,
+         name = $4,
+         description = $5,
+         sort_order = $6,
+         is_active = $7
+       WHERE id = $1
+       RETURNING id, parent_id, slug, name, description, sort_order, is_active`,
+      [
+        existing.id,
+        nextParentId,
+        nextSlug,
+        input.name !== undefined ? input.name.trim() : existing.name,
+        input.description !== undefined ? input.description : existing.description,
+        input.sortOrder !== undefined
+          ? Number(input.sortOrder)
+          : Number(existing.sort_order),
+        input.isActive !== undefined ? Boolean(input.isActive) : Boolean(existing.is_active),
+      ],
+    );
+
+    const countRes = await db.query<{ cnt: number | string }>(
+      `SELECT COUNT(*)::int AS cnt FROM products WHERE category_id = $1 AND status <> 'ARCHIVED'`,
+      [existing.id],
+    );
+    await this.invalidateStorefrontCaches();
+    const row = updatedRes.rows[0];
+    return {
+      id: row.id,
+      parentId: row.parent_id,
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      sortOrder: Number(row.sort_order),
+      isActive: Boolean(row.is_active),
+      productCount: Number(countRes.rows[0]?.cnt ?? 0),
+    };
+  }
+
+  public async deleteCategory(idOrSlug: string): Promise<{
+    deleted: boolean;
+    archived: boolean;
+    id: string;
+    slug: string;
+    productCount: number;
+    message?: string;
+  }> {
+    const db = await this.dbService.getClient();
+    const isUuid = UUID_REGEX.test(idOrSlug);
+    const existingRes = await db.query<CategoryRow>(
+      `SELECT id, slug FROM categories WHERE ${isUuid ? 'id = $1' : 'slug = $1'}`,
+      [idOrSlug],
+    );
+    const existing = existingRes.rows[0];
+    if (!existing) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Category "${idOrSlug}" not found`,
+      });
+    }
+
+    const refRes = await db.query<{ cnt: number | string }>(
+      'SELECT COUNT(*)::int AS cnt FROM products WHERE category_id = $1',
+      [existing.id],
+    );
+    const productCount = Number(refRes.rows[0]?.cnt ?? 0);
+
+    if (productCount > 0) {
+      await db.query(
+        'UPDATE categories SET is_active = FALSE WHERE id = $1',
+        [existing.id],
+      );
+      await this.invalidateStorefrontCaches();
+      return {
+        deleted: false,
+        archived: true,
+        id: existing.id,
+        slug: existing.slug,
+        productCount,
+        message: `Danh mục đang có ${productCount} sản phẩm liên kết nên đã được chuyển sang trạng thái tạm ẩn (soft-archive).`,
+      };
+    }
+
+    await db.query('DELETE FROM categories WHERE id = $1', [existing.id]);
+    await this.invalidateStorefrontCaches();
+    return {
+      deleted: true,
+      archived: false,
+      id: existing.id,
+      slug: existing.slug,
+      productCount: 0,
+    };
+  }
+
+  private normalizeSizeMeasurementRow(
+    raw: SizeChartRowInputItem | Record<string, unknown>,
+    defaultStretch?: string,
+  ): ExtendedSizeMeasurementRow {
+    const rec = raw as Record<string, unknown>;
+    const sizeCode = (String(rec.sizeCode ?? 'M').toUpperCase() as SizeCode);
+    const toNum = (v: unknown): number | null => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const chestMin = toNum(rec.chestMin ?? rec.chestMinCm);
+    const chestMax = toNum(rec.chestMax ?? rec.chestMaxCm);
+    const rawBust = toNum(rec.bustCm);
+    const bustCm =
+      rawBust ??
+      (chestMin !== null && chestMax !== null
+        ? Math.round(((chestMin + chestMax) / 2) * 10) / 10
+        : (chestMin ?? chestMax));
+
+    const waistMin = toNum(rec.waistMin ?? rec.waistMinCm);
+    const waistMax = toNum(rec.waistMax ?? rec.waistMaxCm);
+    const rawWaist = toNum(rec.waistCm);
+    const waistCm =
+      rawWaist ??
+      (waistMin !== null && waistMax !== null
+        ? Math.round(((waistMin + waistMax) / 2) * 10) / 10
+        : (waistMin ?? waistMax));
+
+    const hipMin = toNum(rec.hipMin ?? rec.hipMinCm);
+    const hipMax = toNum(rec.hipMax ?? rec.hipMaxCm);
+    const rawHip = toNum(rec.hipCm);
+    const hipCm =
+      rawHip ??
+      (hipMin !== null && hipMax !== null
+        ? Math.round(((hipMin + hipMax) / 2) * 10) / 10
+        : (hipMin ?? hipMax));
+
+    const heightMinCm = toNum(rec.heightMinCm) ?? 150;
+    const heightMaxCm = toNum(rec.heightMaxCm) ?? 170;
+    const weightMinKg = toNum(rec.weightMinKg) ?? 42;
+    const weightMaxKg = toNum(rec.weightMaxKg) ?? 60;
+    const shoulderCm = toNum(rec.shoulderCm);
+    const lengthCm = toNum(rec.lengthCm);
+    const stretchLevel =
+      typeof rec.stretchLevel === 'string' && rec.stretchLevel.trim()
+        ? rec.stretchLevel.trim().toUpperCase()
+        : (defaultStretch ?? null);
+    const fitNotes =
+      typeof rec.fitNotes === 'string' ? rec.fitNotes : null;
+
+    return {
+      sizeCode,
+      heightMinCm,
+      heightMaxCm,
+      weightMinKg,
+      weightMaxKg,
+      bustCm,
+      waistCm,
+      hipCm,
+      shoulderCm,
+      lengthCm,
+      chestMin: chestMin ?? (bustCm !== null ? Math.round((bustCm - 2) * 10) / 10 : null),
+      chestMax: chestMax ?? (bustCm !== null ? Math.round((bustCm + 2) * 10) / 10 : null),
+      chestMinCm: chestMin ?? (bustCm !== null ? Math.round((bustCm - 2) * 10) / 10 : null),
+      chestMaxCm: chestMax ?? (bustCm !== null ? Math.round((bustCm + 2) * 10) / 10 : null),
+      waistMin: waistMin ?? (waistCm !== null ? Math.round((waistCm - 2) * 10) / 10 : null),
+      waistMax: waistMax ?? (waistCm !== null ? Math.round((waistCm + 2) * 10) / 10 : null),
+      waistMinCm: waistMin ?? (waistCm !== null ? Math.round((waistCm - 2) * 10) / 10 : null),
+      waistMaxCm: waistMax ?? (waistCm !== null ? Math.round((waistCm + 2) * 10) / 10 : null),
+      hipMin: hipMin ?? (hipCm !== null ? Math.round((hipCm - 2) * 10) / 10 : null),
+      hipMax: hipMax ?? (hipCm !== null ? Math.round((hipCm + 2) * 10) / 10 : null),
+      hipMinCm: hipMin ?? (hipCm !== null ? Math.round((hipCm - 2) * 10) / 10 : null),
+      hipMaxCm: hipMax ?? (hipCm !== null ? Math.round((hipCm + 2) * 10) / 10 : null),
+      stretchLevel,
+      fitNotes,
+    };
+  }
+
+  private mapSizeChartRow(row: SizeChartRow): SizeChartViewDto {
+    const stretchLevel = (row.stretch_level || 'NONE').toUpperCase();
+    const rawRows = parseJsonField<Array<Record<string, unknown>>>(
+      row.measurements_jsonb,
+      [],
+    );
+    const rows = rawRows.map((item) =>
+      this.normalizeSizeMeasurementRow(item, stretchLevel),
+    );
+    const first = rows[0];
+
+    return {
       id: row.id,
       code: row.code,
       name: row.name,
       gender: row.gender,
+      categoryId: row.category_id ?? null,
       garmentCategory: row.garment_group,
+      garmentType: row.garment_group,
+      stretchLevel,
       fitNote: row.fit_note,
-      rows: parseJsonField<SizeMeasurementRow[]>(row.measurements_jsonb, []),
-    }));
+      fitNotes: row.fit_note,
+      rows,
+      ...(first
+        ? {
+            sizeCode: first.sizeCode,
+            chestMin: first.chestMin ?? null,
+            chestMax: first.chestMax ?? null,
+            waistMin: first.waistMin ?? null,
+            waistMax: first.waistMax ?? null,
+            hipMin: first.hipMin ?? null,
+            hipMax: first.hipMax ?? null,
+            shoulderCm: first.shoulderCm ?? null,
+            weightMinKg: first.weightMinKg,
+            weightMaxKg: first.weightMaxKg,
+            heightMinCm: first.heightMinCm,
+            heightMaxCm: first.heightMaxCm,
+          }
+        : {}),
+      ...(row.updated_at ? { updatedAt: toIsoString(row.updated_at) } : {}),
+    };
+  }
+
+  public async listSizeCharts(filters?: {
+    categoryId?: string;
+    garmentType?: string;
+    gender?: string;
+  }): Promise<SizeChartViewDto[]> {
+    const db = await this.dbService.getClient();
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (filters?.categoryId && UUID_REGEX.test(filters.categoryId)) {
+      params.push(filters.categoryId);
+      conditions.push(`category_id = $${params.length}`);
+    }
+    if (filters?.garmentType && filters.garmentType.trim()) {
+      params.push(filters.garmentType.trim());
+      conditions.push(`LOWER(garment_group) = LOWER($${params.length})`);
+    }
+    if (filters?.gender && filters.gender.trim()) {
+      params.push(filters.gender.trim().toUpperCase());
+      conditions.push(`UPPER(gender) = $${params.length}`);
+    }
+
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const res = await db.query<SizeChartRow>(
+      `SELECT id, code, name, gender, garment_group, category_id, stretch_level, fit_note, measurements_jsonb, updated_at
+       FROM size_charts
+       ${whereClause}
+       ORDER BY code ASC`,
+      params,
+    );
+    return res.rows.map((row) => this.mapSizeChartRow(row));
+  }
+
+  public async createSizeChart(
+    input: CreateSizeChartInput,
+  ): Promise<SizeChartViewDto> {
+    const db = await this.dbService.getClient();
+    const id = randomUUID();
+    const garmentGroup = (
+      input.garmentType?.trim() ||
+      input.garmentCategory?.trim() ||
+      'GENERAL'
+    ).toUpperCase();
+    const stretchLevel = (input.stretchLevel?.trim() || 'NONE').toUpperCase();
+    const fitNote = input.fitNotes ?? input.fitNote ?? null;
+
+    let categoryId: string | null = input.categoryId?.trim() || null;
+    if (categoryId && !UUID_REGEX.test(categoryId)) {
+      const cat = await db.query<{ id: string }>(
+        'SELECT id FROM categories WHERE slug = $1',
+        [categoryId],
+      );
+      categoryId = cat.rows[0]?.id ?? null;
+    }
+
+    const rawRows: SizeChartRowInputItem[] =
+      input.rows && input.rows.length > 0
+        ? input.rows
+        : input.sizeCode
+          ? [
+              {
+                sizeCode: input.sizeCode,
+                heightMinCm: input.heightMinCm,
+                heightMaxCm: input.heightMaxCm,
+                weightMinKg: input.weightMinKg,
+                weightMaxKg: input.weightMaxKg,
+                chestMin: input.chestMin,
+                chestMax: input.chestMax,
+                waistMin: input.waistMin,
+                waistMax: input.waistMax,
+                hipMin: input.hipMin,
+                hipMax: input.hipMax,
+                shoulderCm: input.shoulderCm,
+                stretchLevel,
+                fitNotes: fitNote,
+              },
+            ]
+          : [];
+
+    const normalizedRows = rawRows.map((r) =>
+      this.normalizeSizeMeasurementRow(r, stretchLevel),
+    );
+
+    const baseCode =
+      input.code?.trim().toUpperCase() ||
+      `SC_${slugifyVietnamese(`${garmentGroup}-${input.sizeCode ?? input.name ?? id.slice(0, 6)}`)
+        .toUpperCase()
+        .replace(/-/g, '_')}_${id.slice(0, 4).toUpperCase()}`;
+
+    const dup = await db.query<{ id: string }>(
+      'SELECT id FROM size_charts WHERE UPPER(code) = UPPER($1)',
+      [baseCode],
+    );
+    if (dup.rows.length > 0) {
+      throw new ConflictException({
+        code: ErrorCode.CONFLICT,
+        message: `Size chart code "${baseCode}" already exists`,
+      });
+    }
+
+    const name =
+      input.name?.trim() ||
+      `Bảng size ${garmentGroup}${input.sizeCode ? ` (${input.sizeCode})` : ''}`;
+
+    const inserted = await db.query<SizeChartRow>(
+      `INSERT INTO size_charts (
+         id, code, name, gender, garment_group, category_id, stretch_level, fit_note, measurements_jsonb, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, NOW())
+       RETURNING id, code, name, gender, garment_group, category_id, stretch_level, fit_note, measurements_jsonb, updated_at`,
+      [
+        id,
+        baseCode,
+        name,
+        input.gender ?? Gender.WOMEN,
+        garmentGroup,
+        categoryId,
+        stretchLevel,
+        fitNote,
+        JSON.stringify(normalizedRows),
+      ],
+    );
+
+    await this.invalidateStorefrontCaches();
+    return this.mapSizeChartRow(inserted.rows[0]);
+  }
+
+  public async updateSizeChart(
+    idOrCode: string,
+    input: UpdateSizeChartInput,
+  ): Promise<SizeChartViewDto> {
+    const db = await this.dbService.getClient();
+    const isUuid = UUID_REGEX.test(idOrCode);
+    const existingRes = await db.query<SizeChartRow>(
+      `SELECT id, code, name, gender, garment_group, category_id, stretch_level, fit_note, measurements_jsonb, updated_at
+       FROM size_charts
+       WHERE ${isUuid ? 'id = $1' : 'UPPER(code) = UPPER($1)'}`,
+      [idOrCode],
+    );
+    const existing = existingRes.rows[0];
+    if (!existing) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Size chart "${idOrCode}" not found`,
+      });
+    }
+
+    const nextCode = input.code?.trim().toUpperCase() || existing.code;
+    if (nextCode.toUpperCase() !== existing.code.toUpperCase()) {
+      const dup = await db.query<{ id: string }>(
+        'SELECT id FROM size_charts WHERE UPPER(code) = UPPER($1) AND id <> $2',
+        [nextCode, existing.id],
+      );
+      if (dup.rows.length > 0) {
+        throw new ConflictException({
+          code: ErrorCode.CONFLICT,
+          message: `Size chart code "${nextCode}" already exists`,
+        });
+      }
+    }
+
+    const nextStretch = (
+      input.stretchLevel?.trim() ||
+      existing.stretch_level ||
+      'NONE'
+    ).toUpperCase();
+    const nextFitNote =
+      input.fitNotes !== undefined
+        ? input.fitNotes
+        : input.fitNote !== undefined
+          ? input.fitNote
+          : existing.fit_note;
+
+    let nextCategoryId = existing.category_id ?? null;
+    if (input.categoryId !== undefined) {
+      if (!input.categoryId) {
+        nextCategoryId = null;
+      } else if (UUID_REGEX.test(input.categoryId)) {
+        nextCategoryId = input.categoryId;
+      } else {
+        const cat = await db.query<{ id: string }>(
+          'SELECT id FROM categories WHERE slug = $1',
+          [input.categoryId],
+        );
+        nextCategoryId = cat.rows[0]?.id ?? null;
+      }
+    }
+
+    const existingRows = parseJsonField<Array<Record<string, unknown>>>(
+      existing.measurements_jsonb,
+      [],
+    ).map((r) => this.normalizeSizeMeasurementRow(r, nextStretch));
+
+    let nextRows = existingRows;
+    if (input.rows !== undefined) {
+      nextRows = input.rows.map((r) =>
+        this.normalizeSizeMeasurementRow(r, nextStretch),
+      );
+    } else if (
+      input.sizeCode !== undefined ||
+      input.chestMin !== undefined ||
+      input.chestMax !== undefined ||
+      input.waistMin !== undefined ||
+      input.waistMax !== undefined ||
+      input.hipMin !== undefined ||
+      input.hipMax !== undefined ||
+      input.shoulderCm !== undefined ||
+      input.weightMinKg !== undefined ||
+      input.weightMaxKg !== undefined ||
+      input.heightMinCm !== undefined ||
+      input.heightMaxCm !== undefined
+    ) {
+      const baseRow = existingRows[0] ?? ({ sizeCode: SizeCode.M } as ExtendedSizeMeasurementRow);
+      const updatedSingle = this.normalizeSizeMeasurementRow(
+        {
+          sizeCode: input.sizeCode ?? baseRow.sizeCode,
+          heightMinCm: input.heightMinCm ?? baseRow.heightMinCm,
+          heightMaxCm: input.heightMaxCm ?? baseRow.heightMaxCm,
+          weightMinKg: input.weightMinKg ?? baseRow.weightMinKg,
+          weightMaxKg: input.weightMaxKg ?? baseRow.weightMaxKg,
+          chestMin: input.chestMin !== undefined ? input.chestMin : baseRow.chestMin,
+          chestMax: input.chestMax !== undefined ? input.chestMax : baseRow.chestMax,
+          waistMin: input.waistMin !== undefined ? input.waistMin : baseRow.waistMin,
+          waistMax: input.waistMax !== undefined ? input.waistMax : baseRow.waistMax,
+          hipMin: input.hipMin !== undefined ? input.hipMin : baseRow.hipMin,
+          hipMax: input.hipMax !== undefined ? input.hipMax : baseRow.hipMax,
+          shoulderCm: input.shoulderCm !== undefined ? input.shoulderCm : baseRow.shoulderCm,
+          stretchLevel: nextStretch,
+          fitNotes: nextFitNote,
+        },
+        nextStretch,
+      );
+      if (existingRows.length <= 1) {
+        nextRows = [updatedSingle];
+      } else {
+        const matchIdx = existingRows.findIndex(
+          (r) => r.sizeCode === updatedSingle.sizeCode,
+        );
+        if (matchIdx >= 0) {
+          nextRows = existingRows.map((r, i) => (i === matchIdx ? updatedSingle : r));
+        } else {
+          nextRows = [...existingRows, updatedSingle];
+        }
+      }
+    }
+
+    const updated = await db.query<SizeChartRow>(
+      `UPDATE size_charts SET
+         code = $2,
+         name = $3,
+         gender = $4,
+         garment_group = $5,
+         category_id = $6,
+         stretch_level = $7,
+         fit_note = $8,
+         measurements_jsonb = $9::jsonb,
+         updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, code, name, gender, garment_group, category_id, stretch_level, fit_note, measurements_jsonb, updated_at`,
+      [
+        existing.id,
+        nextCode,
+        input.name?.trim() || existing.name,
+        input.gender ?? existing.gender,
+        (
+          input.garmentType?.trim() ||
+          input.garmentCategory?.trim() ||
+          existing.garment_group
+        ).toUpperCase(),
+        nextCategoryId,
+        nextStretch,
+        nextFitNote,
+        JSON.stringify(nextRows),
+      ],
+    );
+
+    await this.invalidateStorefrontCaches();
+    return this.mapSizeChartRow(updated.rows[0]);
+  }
+
+  public async deleteSizeChart(
+    idOrCode: string,
+  ): Promise<{ deleted: true; id: string; code: string }> {
+    const db = await this.dbService.getClient();
+    const isUuid = UUID_REGEX.test(idOrCode);
+    const existingRes = await db.query<{ id: string; code: string }>(
+      `SELECT id, code FROM size_charts WHERE ${isUuid ? 'id = $1' : 'UPPER(code) = UPPER($1)'}`,
+      [idOrCode],
+    );
+    const existing = existingRes.rows[0];
+    if (!existing) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Size chart "${idOrCode}" not found`,
+      });
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.query(
+        'UPDATE products SET size_chart_id = NULL WHERE size_chart_id = $1',
+        [existing.id],
+      );
+      await tx.query('DELETE FROM size_charts WHERE id = $1', [existing.id]);
+    });
+
+    await this.invalidateStorefrontCaches();
+    return { deleted: true, id: existing.id, code: existing.code };
   }
 
   private async loadSizeChartMap(): Promise<Map<string, SizeChartDto>> {
@@ -745,7 +1703,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
       variantIds.length > 0
         ? await db.query<SkuRow>(
             `SELECT id, variant_id, sku_code, size_code, base_price_vnd, sale_price_vnd,
-                    cost_price_vnd, supplier_id, weight_grams, in_stock, is_returnable
+                    cost_price_vnd, supplier_id, barcode, weight_grams, in_stock, is_active, is_returnable
              FROM skus
              WHERE variant_id = ANY($1::uuid[])
              ORDER BY sku_code ASC`,
@@ -759,7 +1717,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         skuRow.sale_price_vnd !== null && skuRow.sale_price_vnd !== undefined
           ? Number(skuRow.sale_price_vnd)
           : Number(skuRow.base_price_vnd);
-      const dto: SkuDto = {
+      const dto: SkuDto & { barcode?: string | null; isActive?: boolean } = {
         id: skuRow.id,
         variantId: skuRow.variant_id,
         skuCode: skuRow.sku_code,
@@ -769,6 +1727,8 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         weightGrams: Number(skuRow.weight_grams),
         inStock: Boolean(skuRow.in_stock),
         isReturnable: Boolean(skuRow.is_returnable),
+        ...(skuRow.barcode !== undefined ? { barcode: skuRow.barcode } : {}),
+        isActive: skuRow.is_active !== false,
       };
       if (includeCostFields) {
         dto.costPriceVnd = Number(skuRow.cost_price_vnd);
@@ -863,6 +1823,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
       minPriceVnd: Number(pRow.min_price_vnd),
       stockStatusSummary: pRow.stock_status_summary,
       status: pRow.status,
+      isActive: pRow.status !== ProductStatus.ARCHIVED && pRow.is_active !== false,
       sizeChartId: pRow.size_chart_id,
       sizeChart: pRow.size_chart_id
         ? (sizeChartMap.get(pRow.size_chart_id) ?? null)
@@ -888,7 +1849,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
              p.fabric_composition, p.fit_type, p.stretch_level, p.fabric_weight,
              p.gender, p.is_tryon_enabled, p.tryon_garment_category, p.tryon_flat_asset_url,
              p.fit_calibration_note, p.min_price_vnd, p.stock_status_summary, p.status,
-             p.size_chart_id, p.occasion_slugs, p.season_slugs, p.created_at, p.updated_at
+             p.is_active, p.size_chart_id, p.occasion_slugs, p.season_slugs, p.created_at, p.updated_at
       FROM products p
       JOIN categories c ON c.id = p.category_id
       ${whereClause ? `WHERE ${whereClause}` : ''}
@@ -903,22 +1864,30 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
   ): Promise<ProductListResult> {
     const startedAt = Date.now();
     const page = Math.max(1, filters.page ?? 1);
-    const pageSize = Math.min(50, Math.max(1, filters.pageSize ?? 20));
+    const pageSize = Math.min(200, Math.max(1, filters.pageSize ?? 20));
     const offset = (page - 1) * pageSize;
     const includeCostFields = Boolean(filters.includeCostFields);
-    const statusFilter = filters.status ?? (includeCostFields ? undefined : ProductStatus.PUBLISHED);
+    const includeArchived = filters.includeArchived;
+    const statusFilter =
+      filters.status ??
+      (includeCostFields || includeArchived === true
+        ? undefined
+        : ProductStatus.PUBLISHED);
 
     // Try Meilisearch first whenever search query or storefront faceted filtering is used
+    // (Skip Meili when categoryId or includeArchived is explicitly specified so PostgreSQL handles exact filters)
     const shouldUseMeili = Boolean(
-      filters.q?.trim() ||
-        (!includeCostFields &&
-          (filters.categorySlug ||
-            filters.size ||
-            filters.inStockSize ||
-            filters.color ||
-            filters.occasion ||
-            filters.season ||
-            filters.isTryonEnabled !== undefined)),
+      !filters.categoryId &&
+        includeArchived === undefined &&
+        (filters.q?.trim() ||
+          (!includeCostFields &&
+            (filters.categorySlug ||
+              filters.size ||
+              filters.inStockSize ||
+              filters.color ||
+              filters.occasion ||
+              filters.season ||
+              filters.isTryonEnabled !== undefined))),
     );
 
     if (shouldUseMeili) {
@@ -947,7 +1916,14 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
             total: 0,
             page,
             pageSize,
+            limit: pageSize,
             totalPages: 1,
+            pagination: {
+              page,
+              limit: pageSize,
+              total: 0,
+              totalPages: 1,
+            },
             usedMeilisearch: true,
             processingTimeMs: meiliResult.processingTimeMs,
           };
@@ -964,12 +1940,20 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
           .filter((p): p is ProductSpuDto => p !== undefined)
           .map((p) => (includeCostFields ? p : stripSensitiveProductFields(p)));
 
+        const totalPages = Math.max(1, Math.ceil(meiliResult.totalHits / pageSize));
         return {
           items: ordered,
           total: meiliResult.totalHits,
           page,
           pageSize,
-          totalPages: Math.max(1, Math.ceil(meiliResult.totalHits / pageSize)),
+          limit: pageSize,
+          totalPages,
+          pagination: {
+            page,
+            limit: pageSize,
+            total: meiliResult.totalHits,
+            totalPages,
+          },
           usedMeilisearch: true,
           processingTimeMs: meiliResult.processingTimeMs,
         };
@@ -977,14 +1961,32 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     }
 
     // Direct PostgreSQL fallback (full Vietnamese accent-insensitive filtering)
+    const whereClauses: string[] = [];
+    const whereParams: unknown[] = [];
+    if (statusFilter) {
+      whereParams.push(statusFilter);
+      whereClauses.push(`p.status = $${whereParams.length}`);
+    } else if (includeArchived === false) {
+      whereClauses.push(`p.status <> 'ARCHIVED'`);
+    }
+    if (filters.categoryId && UUID_REGEX.test(filters.categoryId)) {
+      whereParams.push(filters.categoryId);
+      whereClauses.push(`p.category_id = $${whereParams.length}`);
+    }
+
     const all = await this.loadProductsByWhere(
-      statusFilter ? 'p.status = $1' : '',
-      statusFilter ? [statusFilter] : [],
+      whereClauses.join(' AND '),
+      whereParams,
       includeCostFields,
     );
 
     const foldedQ = filters.q ? foldVietnamese(filters.q) : '';
     const filtered = all.filter((prod) => {
+      if (filters.categoryId && !UUID_REGEX.test(filters.categoryId)) {
+        if (prod.categoryId !== filters.categoryId && prod.categorySlug !== filters.categoryId) {
+          return false;
+        }
+      }
       if (filters.categorySlug && prod.categorySlug !== filters.categorySlug) {
         return false;
       }
@@ -1037,8 +2039,11 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         if (!hasColor) return false;
       }
       if (foldedQ) {
+        const skuText = prod.variants
+          .flatMap((v) => v.skus.map((s) => s.skuCode))
+          .join(' ');
         const haystack = foldVietnamese(
-          `${prod.name} ${prod.subtitle ?? ''} ${prod.categoryName} ${prod.fabricComposition} ${prod.description}`,
+          `${prod.name} ${prod.slug} ${prod.subtitle ?? ''} ${prod.categoryName} ${prod.fabricComposition} ${prod.description} ${skuText}`,
         );
         const tokens = foldedQ.split(' ').filter(Boolean);
         const synonymsFallback =
@@ -1063,6 +2068,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     }
 
     const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const pageItems = filtered
       .slice(offset, offset + pageSize)
       .map((p) => (includeCostFields ? p : stripSensitiveProductFields(p)));
@@ -1072,7 +2078,14 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
       total,
       page,
       pageSize,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      limit: pageSize,
+      totalPages,
+      pagination: {
+        page,
+        limit: pageSize,
+        total,
+        totalPages,
+      },
       usedMeilisearch: false,
       processingTimeMs: Date.now() - startedAt,
     };
@@ -1381,31 +2394,15 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     ] = await Promise.all([
       this.listCategories(),
       this.loadProductsByWhere('p.status = $1', [ProductStatus.PUBLISHED], false),
-      db.query<{
-        id: string;
-        slug: string;
-        title: string;
-        subtitle: string;
-        palette_bg: string;
-        palette_ink: string;
-        palette_accent: string;
-        is_dark: boolean;
-        badge_tag: string | null;
-        sort_order: number;
-      }>('SELECT * FROM occasion_lookbooks ORDER BY sort_order ASC'),
+      db.query<OccasionDbRow>(
+        'SELECT * FROM occasion_lookbooks WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY sort_order ASC',
+      ),
       db.query<{ occasion_id: string; product_id: string; slot_label: string }>(
         'SELECT occasion_id, product_id, slot_label FROM occasion_lookbook_items ORDER BY sort_order ASC',
       ),
-      db.query<{
-        id: string;
-        slug: string;
-        months: string;
-        title: string;
-        subtitle: string;
-        hero_image_url: string | null;
-        is_current: boolean;
-        sort_order: number;
-      }>('SELECT * FROM seasonal_collections ORDER BY sort_order ASC'),
+      db.query<SeasonDbRow>(
+        'SELECT * FROM seasonal_collections WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY sort_order ASC',
+      ),
       db.query<{
         id: string;
         code: string;
@@ -1688,107 +2685,770 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  public async listOccasions(): Promise<OccasionLookbookDto[]> {
+  private mapOccasionRow(
+    occ: OccasionDbRow,
+    occItems: Array<{ occasion_id: string; product_id: string; slot_label: string }>,
+    productById: Map<string, ProductSpuDto>,
+  ): OccasionViewDto {
+    const linkedRows = occItems.filter(
+      (row) => row.occasion_id === occ.id && productById.has(row.product_id),
+    );
+    const allLinkedProducts = linkedRows.map((row) => productById.get(row.product_id)!);
+    const featuredProducts = allLinkedProducts.slice(0, 8);
+
+    const items: OccasionLookbookItemDto[] = linkedRows.slice(0, 8).map((row) => {
+      const p = productById.get(row.product_id)!;
+      const v0 =
+        p.variants.find((v) => !/-v\d+-lookbook/i.test(v.lookbookMainUrl ?? '')) ??
+        p.variants[0];
+      return {
+        productId: p.id,
+        slug: p.slug,
+        name: p.name,
+        minPriceVnd: p.minPriceVnd,
+        lookbookMainUrl: v0?.lookbookMainUrl ?? null,
+        heroCutoutUrl: resolveOccasionCutoutUrl(p.slug),
+        tryonFlatPreviewUrl:
+          v0?.tryonFlatPreviewUrl ?? p.tryonFlatAssetUrl ?? null,
+        macroImageUrl: resolveOccasionMacroImageUrl(
+          p.slug,
+          p.fabricComposition,
+        ),
+        isTryonEnabled: p.isTryonEnabled,
+        slotLabel: row.slot_label || 'FEATURED',
+      };
+    });
+
+    const coverImageUrl = occ.cover_image_url ?? occ.hero_image_url ?? null;
+
+    return {
+      id: occ.id,
+      slug: occ.slug,
+      key: occ.slug,
+      name: occ.title,
+      title: occ.title,
+      tagline: occ.subtitle,
+      description: occ.description ?? occ.subtitle,
+      coverImageUrl,
+      heroImageUrl: occ.hero_image_url ?? coverImageUrl,
+      themeBg: occ.palette_bg,
+      themeInk: occ.palette_ink,
+      themeAccent: occ.palette_accent,
+      isDark: Boolean(occ.is_dark),
+      badgeTag: occ.badge_tag,
+      heroCutoutUrl: coverImageUrl ?? items[0]?.heroCutoutUrl ?? null,
+      macroImageUrl: items[0]?.macroImageUrl ?? null,
+      sortOrder: Number(occ.sort_order),
+      isActive: occ.is_active !== false,
+      spuIds: allLinkedProducts.map((p) => p.id),
+      productSlugs: allLinkedProducts.map((p) => p.slug),
+      featuredProducts,
+      items,
+      ...(occ.updated_at ? { updatedAt: toIsoString(occ.updated_at) } : {}),
+    };
+  }
+
+  public async listOccasions(filters?: {
+    activeOnly?: boolean;
+  }): Promise<OccasionViewDto[]> {
     const db = await this.dbService.getClient();
-    const [published, occasionsRes, occItemsRes] = await Promise.all([
-      this.loadProductsByWhere('p.status = $1', [ProductStatus.PUBLISHED], false),
-      db.query<{
-        id: string;
-        slug: string;
-        title: string;
-        subtitle: string;
-        palette_bg: string;
-        palette_ink: string;
-        palette_accent: string;
-        is_dark: boolean;
-        badge_tag: string | null;
-        sort_order: number;
-      }>('SELECT * FROM occasion_lookbooks ORDER BY sort_order ASC'),
+    const whereOcc =
+      filters?.activeOnly === true ? 'WHERE COALESCE(is_active, TRUE) = TRUE' : '';
+    const [products, occasionsRes, occItemsRes] = await Promise.all([
+      this.loadProductsByWhere(`p.status <> 'ARCHIVED'`, [], false),
+      db.query<OccasionDbRow>(
+        `SELECT * FROM occasion_lookbooks ${whereOcc} ORDER BY sort_order ASC, title ASC`,
+      ),
       db.query<{ occasion_id: string; product_id: string; slot_label: string }>(
         'SELECT occasion_id, product_id, slot_label FROM occasion_lookbook_items ORDER BY sort_order ASC',
       ),
     ]);
 
-    const cleanProducts = published.map(stripSensitiveProductFields);
+    const cleanProducts = products.map(stripSensitiveProductFields);
     const productById = new Map(cleanProducts.map((p) => [p.id, p]));
 
-    return occasionsRes.rows.map((occ) => {
-      const linkedRows = occItemsRes.rows.filter(
-        (row) => row.occasion_id === occ.id && productById.has(row.product_id),
+    return occasionsRes.rows.map((occ) =>
+      this.mapOccasionRow(occ, occItemsRes.rows, productById),
+    );
+  }
+
+  public async getOccasionByIdOrSlug(idOrSlug: string): Promise<OccasionViewDto> {
+    const db = await this.dbService.getClient();
+    const isUuid = UUID_REGEX.test(idOrSlug);
+    const [products, occRes, occItemsRes] = await Promise.all([
+      this.loadProductsByWhere(`p.status <> 'ARCHIVED'`, [], false),
+      db.query<OccasionDbRow>(
+        `SELECT * FROM occasion_lookbooks WHERE ${isUuid ? 'id = $1' : 'slug = $1'} LIMIT 1`,
+        [idOrSlug],
+      ),
+      db.query<{ occasion_id: string; product_id: string; slot_label: string }>(
+        'SELECT occasion_id, product_id, slot_label FROM occasion_lookbook_items ORDER BY sort_order ASC',
+      ),
+    ]);
+    const occ = occRes.rows[0];
+    if (!occ) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Occasion "${idOrSlug}" not found`,
+      });
+    }
+    const cleanProducts = products.map(stripSensitiveProductFields);
+    const productById = new Map(cleanProducts.map((p) => [p.id, p]));
+    return this.mapOccasionRow(occ, occItemsRes.rows, productById);
+  }
+
+  private async resolveProductRefs(
+    spuIds?: string[],
+    productSlugs?: string[],
+  ): Promise<Array<{ id: string; slug: string }>> {
+    const db = await this.dbService.getClient();
+    const validIds = (spuIds ?? []).filter((id) => UUID_REGEX.test(id));
+    const slugCandidates = [
+      ...(productSlugs ?? []),
+      ...(spuIds ?? []).filter((id) => !UUID_REGEX.test(id)),
+    ]
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (validIds.length === 0 && slugCandidates.length === 0) {
+      return [];
+    }
+
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (validIds.length > 0) {
+      params.push(validIds);
+      clauses.push(`id = ANY($${params.length}::uuid[])`);
+    }
+    if (slugCandidates.length > 0) {
+      params.push(slugCandidates);
+      clauses.push(`slug = ANY($${params.length}::text[])`);
+    }
+
+    const res = await db.query<{ id: string; slug: string }>(
+      `SELECT id, slug FROM products WHERE ${clauses.join(' OR ')}`,
+      params,
+    );
+    const byId = new Map(res.rows.map((r) => [r.id, r]));
+    const bySlug = new Map(res.rows.map((r) => [r.slug, r]));
+    const ordered: Array<{ id: string; slug: string }> = [];
+    const seen = new Set<string>();
+
+    for (const ref of [...(spuIds ?? []), ...(productSlugs ?? [])]) {
+      const found = byId.get(ref) ?? bySlug.get(ref);
+      if (found && !seen.has(found.id)) {
+        seen.add(found.id);
+        ordered.push(found);
+      }
+    }
+    return ordered;
+  }
+
+  private async syncProductJsonTagSlug(
+    column: 'occasion_slugs' | 'season_slugs',
+    slug: string,
+    linkedProductIds: string[],
+  ): Promise<void> {
+    const db = await this.dbService.getClient();
+    const linkedSet = new Set(linkedProductIds);
+    const rowsRes = await db.query<{ id: string; slugs: string[] | string }>(
+      `SELECT id, ${column} AS slugs FROM products`,
+    );
+    for (const row of rowsRes.rows) {
+      const current = parseJsonField<string[]>(row.slugs, []);
+      const hasSlug = current.includes(slug);
+      const shouldHave = linkedSet.has(row.id);
+      if (shouldHave && !hasSlug) {
+        const next = [...current, slug];
+        await db.query(
+          `UPDATE products SET ${column} = $2::jsonb, updated_at = NOW() WHERE id = $1`,
+          [row.id, JSON.stringify(next)],
+        );
+      } else if (!shouldHave && hasSlug) {
+        const next = current.filter((s) => s !== slug);
+        await db.query(
+          `UPDATE products SET ${column} = $2::jsonb, updated_at = NOW() WHERE id = $1`,
+          [row.id, JSON.stringify(next)],
+        );
+      }
+    }
+  }
+
+  public async createOccasion(
+    input: CreateOccasionInput,
+  ): Promise<OccasionViewDto> {
+    const db = await this.dbService.getClient();
+    const slug = (
+      input.slug?.trim() ||
+      input.key?.trim() ||
+      slugifyVietnamese(input.name)
+    ).toLowerCase();
+    if (!slug) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Occasion slug is required',
+      });
+    }
+
+    const dup = await db.query<{ id: string }>(
+      'SELECT id FROM occasion_lookbooks WHERE LOWER(slug) = LOWER($1)',
+      [slug],
+    );
+    if (dup.rows.length > 0) {
+      throw new ConflictException({
+        code: ErrorCode.CONFLICT,
+        message: `Occasion slug "${slug}" already exists`,
+      });
+    }
+
+    const id = randomUUID();
+    const coverImageUrl =
+      input.coverImageUrl ?? input.heroImageUrl ?? input.heroCutoutUrl ?? null;
+    const subtitle =
+      input.tagline?.trim() || input.description?.trim() || input.name.trim();
+    const linkedProducts = await this.resolveProductRefs(
+      input.spuIds,
+      input.productSlugs,
+    );
+
+    await db.transaction(async (tx) => {
+      await tx.query(
+        `INSERT INTO occasion_lookbooks (
+           id, slug, title, subtitle, description, palette_bg, palette_ink, palette_accent,
+           is_dark, badge_tag, hero_image_url, cover_image_url, sort_order, is_active, updated_at
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $8,
+           $9, $10, $11, $12, $13, $14, NOW()
+         )`,
+        [
+          id,
+          slug,
+          input.name.trim(),
+          subtitle,
+          input.description ?? subtitle,
+          input.themeBg ?? '#FBF7EF',
+          input.themeInk ?? '#1C1410',
+          input.themeAccent ?? '#B08A4A',
+          Boolean(input.isDark ?? false),
+          input.badgeTag ?? null,
+          coverImageUrl,
+          coverImageUrl,
+          Number(input.sortOrder ?? 0),
+          input.isActive ?? true,
+        ],
       );
-      const linkedProducts = linkedRows
-        .map((row) => productById.get(row.product_id)!)
-        .slice(0, 4);
 
-      const items: OccasionLookbookItemDto[] = linkedRows
-        .slice(0, 4)
-        .map((row) => {
-          const p = productById.get(row.product_id)!;
-          const v0 =
-            p.variants.find(
-              (v) => !/-v\d+-lookbook/i.test(v.lookbookMainUrl ?? ''),
-            ) ?? p.variants[0];
-          return {
-            productId: p.id,
-            slug: p.slug,
-            name: p.name,
-            minPriceVnd: p.minPriceVnd,
-            lookbookMainUrl: v0?.lookbookMainUrl ?? null,
-            heroCutoutUrl: resolveOccasionCutoutUrl(p.slug),
-            tryonFlatPreviewUrl:
-              v0?.tryonFlatPreviewUrl ?? p.tryonFlatAssetUrl ?? null,
-            macroImageUrl: resolveOccasionMacroImageUrl(
-              p.slug,
-              p.fabricComposition,
-            ),
-            isTryonEnabled: p.isTryonEnabled,
-            slotLabel: row.slot_label || 'FEATURED',
-          };
-        });
-
-      return {
-        id: occ.id,
-        slug: occ.slug,
-        key: occ.slug,
-        name: occ.title,
-        tagline: occ.subtitle,
-        description: occ.subtitle,
-        themeBg: occ.palette_bg,
-        themeInk: occ.palette_ink,
-        themeAccent: occ.palette_accent,
-        isDark: Boolean(occ.is_dark),
-        badgeTag: occ.badge_tag,
-        heroCutoutUrl: items[0]?.heroCutoutUrl ?? null,
-        macroImageUrl: items[0]?.macroImageUrl ?? null,
-        sortOrder: Number(occ.sort_order),
-        productSlugs: linkedProducts.map((p) => p.slug),
-        featuredProducts: linkedProducts,
-        items,
-      };
+      for (let i = 0; i < linkedProducts.length; i += 1) {
+        await tx.query(
+          `INSERT INTO occasion_lookbook_items (id, occasion_id, product_id, slot_label, sort_order)
+           VALUES ($1, $2, $3, 'FEATURED', $4)
+           ON CONFLICT (occasion_id, product_id) DO NOTHING`,
+          [randomUUID(), id, linkedProducts[i].id, i],
+        );
+      }
     });
+
+    if (linkedProducts.length > 0) {
+      await this.syncProductJsonTagSlug(
+        'occasion_slugs',
+        slug,
+        linkedProducts.map((p) => p.id),
+      );
+    }
+
+    await this.invalidateStorefrontCaches();
+    return this.getOccasionByIdOrSlug(id);
+  }
+
+  public async updateOccasion(
+    idOrSlug: string,
+    input: UpdateOccasionInput,
+  ): Promise<OccasionViewDto> {
+    const db = await this.dbService.getClient();
+    const isUuid = UUID_REGEX.test(idOrSlug);
+    const existingRes = await db.query<OccasionDbRow>(
+      `SELECT * FROM occasion_lookbooks WHERE ${isUuid ? 'id = $1' : 'slug = $1'} LIMIT 1`,
+      [idOrSlug],
+    );
+    const existing = existingRes.rows[0];
+    if (!existing) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Occasion "${idOrSlug}" not found`,
+      });
+    }
+
+    let nextSlug = existing.slug;
+    const requestedSlug = (input.slug ?? input.key)?.trim().toLowerCase();
+    if (requestedSlug && requestedSlug !== existing.slug.toLowerCase()) {
+      const dup = await db.query<{ id: string }>(
+        'SELECT id FROM occasion_lookbooks WHERE LOWER(slug) = LOWER($1) AND id <> $2',
+        [requestedSlug, existing.id],
+      );
+      if (dup.rows.length > 0) {
+        throw new ConflictException({
+          code: ErrorCode.CONFLICT,
+          message: `Occasion slug "${requestedSlug}" already exists`,
+        });
+      }
+      nextSlug = requestedSlug;
+    }
+
+    const nextCover =
+      input.coverImageUrl !== undefined
+        ? input.coverImageUrl
+        : input.heroImageUrl !== undefined
+          ? input.heroImageUrl
+          : input.heroCutoutUrl !== undefined
+            ? input.heroCutoutUrl
+            : (existing.cover_image_url ?? existing.hero_image_url);
+
+    const hasLinksUpdate =
+      input.spuIds !== undefined || input.productSlugs !== undefined;
+    const linkedProducts = hasLinksUpdate
+      ? await this.resolveProductRefs(input.spuIds, input.productSlugs)
+      : [];
+
+    await db.transaction(async (tx) => {
+      await tx.query(
+        `UPDATE occasion_lookbooks SET
+           slug = $2,
+           title = $3,
+           subtitle = $4,
+           description = $5,
+           palette_bg = $6,
+           palette_ink = $7,
+           palette_accent = $8,
+           is_dark = $9,
+           badge_tag = $10,
+           hero_image_url = $11,
+           cover_image_url = $12,
+           sort_order = $13,
+           is_active = $14,
+           updated_at = NOW()
+         WHERE id = $1`,
+        [
+          existing.id,
+          nextSlug,
+          input.name !== undefined ? input.name.trim() : existing.title,
+          input.tagline !== undefined ? input.tagline.trim() : existing.subtitle,
+          input.description !== undefined
+            ? input.description
+            : (existing.description ?? existing.subtitle),
+          input.themeBg ?? existing.palette_bg,
+          input.themeInk ?? existing.palette_ink,
+          input.themeAccent ?? existing.palette_accent,
+          input.isDark !== undefined ? Boolean(input.isDark) : Boolean(existing.is_dark),
+          input.badgeTag !== undefined ? input.badgeTag : existing.badge_tag,
+          nextCover,
+          nextCover,
+          input.sortOrder !== undefined
+            ? Number(input.sortOrder)
+            : Number(existing.sort_order),
+          input.isActive !== undefined
+            ? Boolean(input.isActive)
+            : existing.is_active !== false,
+        ],
+      );
+
+      if (hasLinksUpdate) {
+        await tx.query(
+          'DELETE FROM occasion_lookbook_items WHERE occasion_id = $1',
+          [existing.id],
+        );
+        for (let i = 0; i < linkedProducts.length; i += 1) {
+          await tx.query(
+            `INSERT INTO occasion_lookbook_items (id, occasion_id, product_id, slot_label, sort_order)
+             VALUES ($1, $2, $3, 'FEATURED', $4)
+             ON CONFLICT (occasion_id, product_id) DO NOTHING`,
+            [randomUUID(), existing.id, linkedProducts[i].id, i],
+          );
+        }
+      }
+    });
+
+    if (hasLinksUpdate) {
+      await this.syncProductJsonTagSlug(
+        'occasion_slugs',
+        nextSlug,
+        linkedProducts.map((p) => p.id),
+      );
+    }
+
+    await this.invalidateStorefrontCaches();
+    return this.getOccasionByIdOrSlug(existing.id);
+  }
+
+  public async deleteOccasion(
+    idOrSlug: string,
+  ): Promise<{ deleted: true; id: string; slug: string }> {
+    const db = await this.dbService.getClient();
+    const isUuid = UUID_REGEX.test(idOrSlug);
+    const existingRes = await db.query<{ id: string; slug: string }>(
+      `SELECT id, slug FROM occasion_lookbooks WHERE ${isUuid ? 'id = $1' : 'slug = $1'} LIMIT 1`,
+      [idOrSlug],
+    );
+    const existing = existingRes.rows[0];
+    if (!existing) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Occasion "${idOrSlug}" not found`,
+      });
+    }
+
+    await db.query('DELETE FROM occasion_lookbooks WHERE id = $1', [existing.id]);
+    await this.syncProductJsonTagSlug('occasion_slugs', existing.slug, []);
+    await this.invalidateStorefrontCaches();
+    return { deleted: true, id: existing.id, slug: existing.slug };
   }
 
   private buildHydratedSeasons(
     rows: readonly SeasonDbRow[],
     cleanProducts: readonly ProductSpuDto[],
-  ): SeasonalCollectionDto[] {
+  ): HydratedSeasonCollectionDto[] {
     const manifestBySlug = loadSeasonsManifestBySlug();
     return rows.map((row) =>
       hydrateSeasonCollectionDto(row, cleanProducts, manifestBySlug),
     );
   }
 
-  public async listSeasons(): Promise<SeasonalCollectionDto[]> {
+  public async listSeasons(filters?: {
+    activeOnly?: boolean;
+  }): Promise<HydratedSeasonCollectionDto[]> {
     const db = await this.dbService.getClient();
-    const [published, seasonsRes] = await Promise.all([
-      this.loadProductsByWhere('p.status = $1', [ProductStatus.PUBLISHED], false),
+    const whereClause =
+      filters?.activeOnly === true ? 'WHERE COALESCE(is_active, TRUE) = TRUE' : '';
+    const [products, seasonsRes] = await Promise.all([
+      this.loadProductsByWhere(`p.status <> 'ARCHIVED'`, [], false),
       db.query<SeasonDbRow>(
-        'SELECT id, slug, months, title, subtitle, hero_image_url, is_current, sort_order FROM seasonal_collections ORDER BY sort_order ASC',
+        `SELECT * FROM seasonal_collections ${whereClause} ORDER BY sort_order ASC, title ASC`,
       ),
     ]);
 
-    const cleanProducts = published.map(stripSensitiveProductFields);
+    const cleanProducts = products.map(stripSensitiveProductFields);
     return this.buildHydratedSeasons(seasonsRes.rows, cleanProducts);
+  }
+
+  public async getSeasonByIdOrSlug(
+    idOrSlug: string,
+  ): Promise<HydratedSeasonCollectionDto> {
+    const db = await this.dbService.getClient();
+    const isUuid = UUID_REGEX.test(idOrSlug);
+    const [products, seasonsRes] = await Promise.all([
+      this.loadProductsByWhere(`p.status <> 'ARCHIVED'`, [], false),
+      db.query<SeasonDbRow>(
+        `SELECT * FROM seasonal_collections WHERE ${isUuid ? 'id = $1' : 'slug = $1 OR code = $1'} LIMIT 1`,
+        [idOrSlug],
+      ),
+    ]);
+    if (seasonsRes.rows.length === 0) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Season "${idOrSlug}" not found`,
+      });
+    }
+    const cleanProducts = products.map(stripSensitiveProductFields);
+    return this.buildHydratedSeasons(seasonsRes.rows, cleanProducts)[0];
+  }
+
+  private normalizeInputSwatches(
+    swatches?: SeasonSwatchEntry[],
+    paletteJsonb?: SeasonSwatchEntry[] | Record<string, unknown>,
+  ): SeasonSwatchEntry[] {
+    if (Array.isArray(swatches)) {
+      return swatches;
+    }
+    if (Array.isArray(paletteJsonb)) {
+      return paletteJsonb;
+    }
+    if (paletteJsonb && typeof paletteJsonb === 'object') {
+      return Object.entries(paletteJsonb)
+        .filter(([, v]) => typeof v === 'string' && v.trim().length > 0)
+        .map(([k, v]) => ({ name: k, hex: String(v).trim() }));
+    }
+    return [];
+  }
+
+  public async createSeason(
+    input: CreateSeasonInput,
+  ): Promise<HydratedSeasonCollectionDto> {
+    const db = await this.dbService.getClient();
+    const slug = (
+      input.slug?.trim() ||
+      input.code?.trim() ||
+      slugifyVietnamese(input.name)
+    ).toLowerCase();
+    if (!slug) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Season slug/code is required',
+      });
+    }
+
+    const dup = await db.query<{ id: string }>(
+      'SELECT id FROM seasonal_collections WHERE LOWER(slug) = LOWER($1)',
+      [slug],
+    );
+    if (dup.rows.length > 0) {
+      throw new ConflictException({
+        code: ErrorCode.CONFLICT,
+        message: `Season slug "${slug}" already exists`,
+      });
+    }
+
+    const id = randomUUID();
+    const swatches = this.normalizeInputSwatches(input.swatches, input.paletteJsonb);
+    const paletteHex =
+      input.paletteHex?.trim() || swatches[0]?.hex || '#B08A4A';
+    const heroImageUrl = input.heroImageUrl ?? input.coverAssetUrl ?? null;
+    const sortOrder = Number(input.seasonOrder ?? input.sortOrder ?? 0);
+    const subtitle =
+      input.subtitle?.trim() || input.note?.trim() || input.materialHeadline?.trim() || input.name.trim();
+    const linkedProducts = await this.resolveProductRefs(
+      input.spuIds,
+      input.productSlugs,
+    );
+    const spuIds = linkedProducts.map((p) => p.id);
+    const productSlugs = Array.from(
+      new Set([
+        ...linkedProducts.map((p) => p.slug),
+        ...(input.productSlugs ?? []),
+      ]),
+    );
+
+    await db.transaction(async (tx) => {
+      if (input.isCurrent === true) {
+        await tx.query('UPDATE seasonal_collections SET is_current = FALSE');
+      }
+      await tx.query(
+        `INSERT INTO seasonal_collections (
+           id, slug, code, months, title, season_tag, short_name, material_headline,
+           subtitle, palette_hex, hero_image_url, swatches_jsonb, palette_jsonb,
+           lookbook_meta_jsonb, spu_ids_jsonb, product_slugs_jsonb,
+           is_current, is_active, sort_order, updated_at
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $8,
+           $9, $10, $11, $12::jsonb, $13::jsonb,
+           $14::jsonb, $15::jsonb, $16::jsonb,
+           $17, $18, $19, NOW()
+         )`,
+        [
+          id,
+          slug,
+          input.code?.trim() || slug,
+          input.months?.trim() || 'T1–T12',
+          input.name.trim(),
+          input.seasonTag?.trim() || input.shortName?.trim() || input.name.trim(),
+          input.shortName?.trim() || input.name.trim(),
+          input.materialHeadline?.trim() || subtitle,
+          subtitle,
+          paletteHex,
+          heroImageUrl,
+          JSON.stringify(swatches),
+          JSON.stringify(swatches),
+          JSON.stringify(input.lookbookMeta ?? {}),
+          JSON.stringify(spuIds),
+          JSON.stringify(productSlugs),
+          Boolean(input.isCurrent ?? false),
+          input.isActive ?? true,
+          sortOrder,
+        ],
+      );
+    });
+
+    if (spuIds.length > 0) {
+      await this.syncProductJsonTagSlug('season_slugs', slug, spuIds);
+    }
+
+    await this.invalidateStorefrontCaches();
+    return this.getSeasonByIdOrSlug(id);
+  }
+
+  public async updateSeason(
+    idOrSlug: string,
+    input: UpdateSeasonInput,
+  ): Promise<HydratedSeasonCollectionDto> {
+    const db = await this.dbService.getClient();
+    const isUuid = UUID_REGEX.test(idOrSlug);
+    const existingRes = await db.query<SeasonDbRow>(
+      `SELECT * FROM seasonal_collections WHERE ${isUuid ? 'id = $1' : 'slug = $1 OR code = $1'} LIMIT 1`,
+      [idOrSlug],
+    );
+    const existing = existingRes.rows[0];
+    if (!existing) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Season "${idOrSlug}" not found`,
+      });
+    }
+
+    let nextSlug = existing.slug;
+    if (input.slug && input.slug.trim().toLowerCase() !== existing.slug.toLowerCase()) {
+      const candidate = input.slug.trim().toLowerCase();
+      const dup = await db.query<{ id: string }>(
+        'SELECT id FROM seasonal_collections WHERE LOWER(slug) = LOWER($1) AND id <> $2',
+        [candidate, existing.id],
+      );
+      if (dup.rows.length > 0) {
+        throw new ConflictException({
+          code: ErrorCode.CONFLICT,
+          message: `Season slug "${candidate}" already exists`,
+        });
+      }
+      nextSlug = candidate;
+    }
+
+    const hasSwatchUpdate =
+      input.swatches !== undefined || input.paletteJsonb !== undefined;
+    const nextSwatches = hasSwatchUpdate
+      ? this.normalizeInputSwatches(input.swatches, input.paletteJsonb)
+      : parseJsonField<SeasonSwatchEntry[]>(
+          existing.swatches_jsonb as SeasonSwatchEntry[] | string | null | undefined,
+          [],
+        );
+
+    const hasLinksUpdate =
+      input.spuIds !== undefined || input.productSlugs !== undefined;
+    const linkedProducts = hasLinksUpdate
+      ? await this.resolveProductRefs(input.spuIds, input.productSlugs)
+      : [];
+    const nextSpuIds = hasLinksUpdate
+      ? linkedProducts.map((p) => p.id)
+      : parseJsonField<string[]>(
+          existing.spu_ids_jsonb as string[] | string | null | undefined,
+          [],
+        );
+    const nextProductSlugs = hasLinksUpdate
+      ? Array.from(
+          new Set([
+            ...linkedProducts.map((p) => p.slug),
+            ...(input.productSlugs ?? []),
+          ]),
+        )
+      : parseJsonField<string[]>(
+          existing.product_slugs_jsonb as string[] | string | null | undefined,
+          [],
+        );
+
+    const nextHero =
+      input.heroImageUrl !== undefined
+        ? input.heroImageUrl
+        : input.coverAssetUrl !== undefined
+          ? input.coverAssetUrl
+          : existing.hero_image_url;
+    const nextOrder =
+      input.seasonOrder !== undefined
+        ? Number(input.seasonOrder)
+        : input.sortOrder !== undefined
+          ? Number(input.sortOrder)
+          : Number(existing.sort_order);
+    const nextSubtitle =
+      input.subtitle !== undefined
+        ? input.subtitle
+        : input.note !== undefined
+          ? input.note
+          : existing.subtitle;
+    const nextLookbookMeta =
+      input.lookbookMeta !== undefined
+        ? (input.lookbookMeta ?? {})
+        : parseJsonField<Record<string, unknown>>(
+            existing.lookbook_meta_jsonb as Record<string, unknown> | string | null | undefined,
+            {},
+          );
+
+    await db.transaction(async (tx) => {
+      if (input.isCurrent === true) {
+        await tx.query(
+          'UPDATE seasonal_collections SET is_current = FALSE WHERE id <> $1',
+          [existing.id],
+        );
+      }
+      await tx.query(
+        `UPDATE seasonal_collections SET
+           slug = $2,
+           code = $3,
+           months = $4,
+           title = $5,
+           season_tag = $6,
+           short_name = $7,
+           material_headline = $8,
+           subtitle = $9,
+           palette_hex = $10,
+           hero_image_url = $11,
+           swatches_jsonb = $12::jsonb,
+           palette_jsonb = $13::jsonb,
+           lookbook_meta_jsonb = $14::jsonb,
+           spu_ids_jsonb = $15::jsonb,
+           product_slugs_jsonb = $16::jsonb,
+           is_current = $17,
+           is_active = $18,
+           sort_order = $19,
+           updated_at = NOW()
+         WHERE id = $1`,
+        [
+          existing.id,
+          nextSlug,
+          input.code?.trim() || existing.code || nextSlug,
+          input.months?.trim() || existing.months,
+          input.name?.trim() || existing.title,
+          input.seasonTag?.trim() || existing.season_tag || existing.title,
+          input.shortName !== undefined
+            ? input.shortName.trim()
+            : (existing.short_name ?? existing.title),
+          input.materialHeadline !== undefined
+            ? input.materialHeadline.trim()
+            : (existing.material_headline ?? nextSubtitle),
+          nextSubtitle,
+          input.paletteHex?.trim() ||
+            nextSwatches[0]?.hex ||
+            existing.palette_hex ||
+            '#B08A4A',
+          nextHero,
+          JSON.stringify(nextSwatches),
+          JSON.stringify(nextSwatches),
+          JSON.stringify(nextLookbookMeta),
+          JSON.stringify(nextSpuIds),
+          JSON.stringify(nextProductSlugs),
+          input.isCurrent !== undefined
+            ? Boolean(input.isCurrent)
+            : Boolean(existing.is_current),
+          input.isActive !== undefined
+            ? Boolean(input.isActive)
+            : existing.is_active !== false,
+          nextOrder,
+        ],
+      );
+    });
+
+    if (hasLinksUpdate) {
+      await this.syncProductJsonTagSlug('season_slugs', nextSlug, nextSpuIds);
+    }
+
+    await this.invalidateStorefrontCaches();
+    return this.getSeasonByIdOrSlug(existing.id);
+  }
+
+  public async deleteSeason(
+    idOrSlug: string,
+  ): Promise<{ deleted: true; id: string; slug: string }> {
+    const db = await this.dbService.getClient();
+    const isUuid = UUID_REGEX.test(idOrSlug);
+    const existingRes = await db.query<{ id: string; slug: string }>(
+      `SELECT id, slug FROM seasonal_collections WHERE ${isUuid ? 'id = $1' : 'slug = $1 OR code = $1'} LIMIT 1`,
+      [idOrSlug],
+    );
+    const existing = existingRes.rows[0];
+    if (!existing) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: `Season "${idOrSlug}" not found`,
+      });
+    }
+
+    await db.query('DELETE FROM seasonal_collections WHERE id = $1', [existing.id]);
+    await this.syncProductJsonTagSlug('season_slugs', existing.slug, []);
+    await this.invalidateStorefrontCaches();
+    return { deleted: true, id: existing.id, slug: existing.slug };
   }
 
   public async handleFitStatsUpdated(
@@ -2005,6 +3665,18 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         ? Number.parseFloat(String(input.fabricWeight)) || 200
         : Number.parseFloat(existing.fabricWeight) || 200;
 
+    const nextStatus =
+      input.status ??
+      (input.isActive === false
+        ? ProductStatus.ARCHIVED
+        : input.isActive === true && existing.status === ProductStatus.ARCHIVED
+          ? ProductStatus.PUBLISHED
+          : existing.status);
+    const nextIsActive =
+      input.isActive !== undefined
+        ? Boolean(input.isActive)
+        : nextStatus !== ProductStatus.ARCHIVED;
+
     await db.query(
       `UPDATE products SET
          category_id = $2,
@@ -2021,8 +3693,10 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
          tryon_flat_asset_url = $13,
          fit_calibration_note = $14,
          status = $15,
-         occasion_slugs = $16::jsonb,
-         season_slugs = $17::jsonb,
+         is_active = $16,
+         size_chart_id = $17,
+         occasion_slugs = $18::jsonb,
+         season_slugs = $19::jsonb,
          updated_at = NOW()
        WHERE id = $1`,
       [
@@ -2046,15 +3720,461 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         input.fitCalibrationNote !== undefined
           ? input.fitCalibrationNote
           : existing.fitCalibrationNote,
-        input.status ?? existing.status,
+        nextStatus,
+        nextIsActive,
+        input.sizeChartId !== undefined ? input.sizeChartId : existing.sizeChartId,
         JSON.stringify(input.occasionSlugs ?? existing.occasionSlugs),
         JSON.stringify(input.seasonSlugs ?? existing.seasonSlugs),
       ],
     );
 
+    if (input.mediaAttach) {
+      await this.attachProductMedia(existing.id, input.mediaAttach);
+    } else if (
+      input.lookbookMainUrl !== undefined ||
+      input.rackFrontAssetId !== undefined ||
+      input.rackFrontUrl !== undefined
+    ) {
+      const targetVariantId =
+        input.variantId ?? existing.variants[0]?.id ?? null;
+      if (targetVariantId) {
+        await db.query(
+          `UPDATE product_variants SET
+             lookbook_main_url = COALESCE($2, lookbook_main_url),
+             rack_front_asset_id = COALESCE($3, rack_front_asset_id),
+             rack_front_url = COALESCE($4, rack_front_url)
+           WHERE id = $1`,
+          [
+            targetVariantId,
+            input.lookbookMainUrl ?? null,
+            input.rackFrontAssetId ?? null,
+            input.rackFrontUrl ?? null,
+          ],
+        );
+      }
+    }
+
     const updated = await this.getAdminProductByIdOrSlug(existing.id);
     await this.meili.syncProducts([updated]);
+    await this.invalidateStorefrontCaches([updated.slug]);
     return updated;
+  }
+
+  public async addProductVariant(
+    productIdOrSlug: string,
+    input: AddProductVariantInput,
+  ): Promise<{
+    variant: ProductVariantDto;
+    sku: SkuDto;
+    skus: SkuDto[];
+    product: ProductSpuDto;
+  }> {
+    const product = await this.getAdminProductByIdOrSlug(productIdOrSlug);
+    const db = await this.dbService.getClient();
+
+    const colorName = input.colorName.trim();
+    const colorHex = (input.colorHex?.trim() || '#1C1410').toUpperCase();
+
+    const skuInputs =
+      input.skus && input.skus.length > 0
+        ? input.skus
+        : [
+            {
+              sku: input.sku,
+              skuCode: input.skuCode,
+              size: input.size,
+              sizeCode: input.sizeCode,
+              priceVnd: input.priceVnd,
+              basePriceVnd: input.basePriceVnd,
+              salePriceVnd: input.salePriceVnd,
+              costPriceVnd: input.costPriceVnd,
+              barcode: input.barcode,
+              weightGrams: input.weightGrams,
+              isActive: input.isActive,
+              inStock: input.inStock,
+              isReturnable: input.isReturnable,
+              supplierId: input.supplierId,
+            },
+          ];
+
+    let targetVariantId: string | null = null;
+    if (input.variantId && UUID_REGEX.test(input.variantId)) {
+      const existingVar = product.variants.find((v) => v.id === input.variantId);
+      if (!existingVar) {
+        throw new NotFoundException({
+          code: ErrorCode.NOT_FOUND,
+          message: `Variant "${input.variantId}" does not belong to product "${product.id}"`,
+        });
+      }
+      targetVariantId = existingVar.id;
+    } else {
+      const matchedVar = product.variants.find(
+        (v) =>
+          v.colorName.trim().toLowerCase() === colorName.toLowerCase() &&
+          v.colorHex.trim().toUpperCase() === colorHex,
+      );
+      if (matchedVar) {
+        targetVariantId = matchedVar.id;
+      }
+    }
+
+    const createdSkuIds: string[] = [];
+
+    await db.transaction(async (tx) => {
+      if (!targetVariantId) {
+        targetVariantId = randomUUID();
+        await tx.query(
+          `INSERT INTO product_variants (
+             id, product_id, color_name, color_hex, lookbook_main_url,
+             tryon_flat_preview_url, rack_front_url
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            targetVariantId,
+            product.id,
+            colorName,
+            colorHex,
+            input.lookbookMainUrl ?? product.variants[0]?.lookbookMainUrl ?? null,
+            input.tryonFlatPreviewUrl ?? product.tryonFlatAssetUrl ?? null,
+            input.rackFrontUrl ?? null,
+          ],
+        );
+      }
+
+      for (let i = 0; i < skuInputs.length; i += 1) {
+        const s = skuInputs[i];
+        const sizeCode = (s.sizeCode ?? s.size ?? SizeCode.M) as SizeCode;
+        const basePriceVnd = Number(
+          s.basePriceVnd ?? s.priceVnd ?? product.minPriceVnd ?? 1_950_000,
+        );
+        const salePriceVnd =
+          s.salePriceVnd !== undefined && s.salePriceVnd !== null
+            ? Number(s.salePriceVnd)
+            : null;
+        const costPriceVnd = Number(s.costPriceVnd ?? 0);
+        const weightGrams = Number(s.weightGrams ?? 350);
+        const isActive = s.isActive ?? true;
+        const inStock = s.inStock ?? isActive;
+        const isReturnable = s.isReturnable ?? true;
+        const skuId = randomUUID();
+        const skuCode =
+          (s.skuCode ?? s.sku)?.trim() ||
+          `AT-${product.id.slice(0, 6).toUpperCase()}-${sizeCode}-${skuId.slice(0, 4).toUpperCase()}`;
+
+        const dupSku = await tx.query<{ id: string }>(
+          'SELECT id FROM skus WHERE UPPER(sku_code) = UPPER($1)',
+          [skuCode],
+        );
+        if (dupSku.rows.length > 0) {
+          throw new ConflictException({
+            code: ErrorCode.CONFLICT,
+            message: `SKU code "${skuCode}" already exists`,
+          });
+        }
+
+        await tx.query(
+          `INSERT INTO skus (
+             id, variant_id, sku_code, size_code, base_price_vnd, sale_price_vnd,
+             cost_price_vnd, supplier_id, barcode, weight_grams, in_stock, is_active, is_returnable
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [
+            skuId,
+            targetVariantId,
+            skuCode,
+            sizeCode,
+            basePriceVnd,
+            salePriceVnd,
+            costPriceVnd,
+            s.supplierId && UUID_REGEX.test(s.supplierId) ? s.supplierId : null,
+            s.barcode ?? null,
+            weightGrams,
+            inStock,
+            isActive,
+            isReturnable,
+          ],
+        );
+        createdSkuIds.push(skuId);
+      }
+
+      const siblingSkus = await tx.query<{
+        base_price_vnd: number;
+        sale_price_vnd: number | null;
+        in_stock: boolean;
+      }>(
+        `SELECT s.base_price_vnd, s.sale_price_vnd, s.in_stock
+         FROM skus s
+         JOIN product_variants v ON v.id = s.variant_id
+         WHERE v.product_id = $1`,
+        [product.id],
+      );
+
+      const minPrice = siblingSkus.rows.reduce((min, row) => {
+        const eff =
+          row.sale_price_vnd !== null && row.sale_price_vnd !== undefined
+            ? Number(row.sale_price_vnd)
+            : Number(row.base_price_vnd);
+        return Math.min(min, eff);
+      }, Number.MAX_SAFE_INTEGER);
+
+      const inStockCount = siblingSkus.rows.filter((r) => r.in_stock).length;
+      const stockSummary =
+        inStockCount === 0
+          ? StockStatusSummary.OUT_OF_STOCK
+          : inStockCount <= 2
+            ? StockStatusSummary.LOW_STOCK
+            : StockStatusSummary.IN_STOCK;
+
+      await tx.query(
+        `UPDATE products SET
+           min_price_vnd = $2,
+           stock_status_summary = $3,
+           updated_at = NOW()
+         WHERE id = $1`,
+        [
+          product.id,
+          minPrice === Number.MAX_SAFE_INTEGER ? product.minPriceVnd : minPrice,
+          stockSummary,
+        ],
+      );
+    });
+
+    const updatedProduct = await this.getAdminProductByIdOrSlug(product.id);
+    await this.meili.syncProducts([updatedProduct]);
+    await this.invalidateStorefrontCaches([updatedProduct.slug]);
+
+    const variant =
+      updatedProduct.variants.find((v) => v.id === targetVariantId) ??
+      updatedProduct.variants[0];
+    const createdSkus = variant.skus.filter((s) => createdSkuIds.includes(s.id));
+    const firstSku = createdSkus[0] ?? variant.skus[variant.skus.length - 1];
+
+    return {
+      variant,
+      sku: firstSku,
+      skus: createdSkus,
+      product: updatedProduct,
+    };
+  }
+
+  public async archiveProduct(
+    idOrSlug: string,
+    correlationId?: string,
+    traceparent?: string,
+  ): Promise<{
+    archived: true;
+    deleted: true;
+    id: string;
+    slug: string;
+    status: ProductStatus;
+    isActive: false;
+    product: ProductSpuDto;
+  }> {
+    const existing = await this.getAdminProductByIdOrSlug(idOrSlug);
+    const db = await this.dbService.getClient();
+
+    await db.query(
+      `UPDATE products
+       SET status = $2,
+           is_active = FALSE,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [existing.id, ProductStatus.ARCHIVED],
+    );
+
+    const updated = await this.getAdminProductByIdOrSlug(existing.id);
+    await this.meili.syncProducts([updated]);
+    await this.invalidateStorefrontCaches([updated.slug]);
+    void this.triggerStorefrontRevalidate(
+      [updated.slug],
+      correlationId,
+      traceparent,
+    );
+
+    return {
+      archived: true,
+      deleted: true,
+      id: updated.id,
+      slug: updated.slug,
+      status: ProductStatus.ARCHIVED,
+      isActive: false,
+      product: updated,
+    };
+  }
+
+  public async attachProductMedia(
+    productIdOrSlug: string,
+    input: AttachProductMediaInput,
+    correlationId?: string,
+    traceparent?: string,
+  ): Promise<{
+    attached: true;
+    productId: string;
+    slug: string;
+    variantId: string | null;
+    slot: string;
+    url: string | null;
+    assetId: string | null;
+    product: ProductSpuDto;
+  }> {
+    const product = await this.getAdminProductByIdOrSlug(productIdOrSlug);
+    const db = await this.dbService.getClient();
+
+    const url = (input.url ?? input.mediaUrl ?? input.publicUrl ?? '').trim() || null;
+    const assetId = input.assetId?.trim() || null;
+    if (!url && !assetId) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Either url (mediaUrl/publicUrl) or assetId is required to attach media',
+      });
+    }
+
+    let targetVariant = product.variants[0] ?? null;
+    if (input.variantId) {
+      const foundVar = product.variants.find((v) => v.id === input.variantId);
+      if (!foundVar) {
+        throw new NotFoundException({
+          code: ErrorCode.NOT_FOUND,
+          message: `Variant "${input.variantId}" does not belong to product "${product.id}"`,
+        });
+      }
+      targetVariant = foundVar;
+    }
+
+    const rawKind = (
+      input.slot ??
+      input.role ??
+      input.mediaType ??
+      input.assetType ??
+      'LOOKBOOK_MAIN'
+    )
+      .trim()
+      .toUpperCase();
+
+    const normalizedSlot:
+      | 'LOOKBOOK_MAIN'
+      | 'RACK_FRONT'
+      | 'RACK_BACK'
+      | 'STUDIO_LAYER'
+      | 'TRYON_FLAT' =
+      rawKind === 'RACK_FRONT' || rawKind === 'RACK_CUTOUT_2_3'
+        ? 'RACK_FRONT'
+        : rawKind === 'RACK_BACK'
+          ? 'RACK_BACK'
+          : rawKind === 'STUDIO_LAYER' || rawKind === 'STUDIO_LAYER_2_3'
+            ? 'STUDIO_LAYER'
+            : rawKind === 'TRYON_FLAT' || rawKind === 'TRYON_FLAT_3_4'
+              ? 'TRYON_FLAT'
+              : 'LOOKBOOK_MAIN';
+
+    await db.transaction(async (tx) => {
+      if (targetVariant) {
+        const mergedSpec = input.spatialMetadata
+          ? {
+              ...(targetVariant.layerSpecJsonb ?? {}),
+              ...input.spatialMetadata,
+            }
+          : (targetVariant.layerSpecJsonb ?? {});
+
+        if (normalizedSlot === 'RACK_FRONT') {
+          await tx.query(
+            `UPDATE product_variants SET
+               rack_front_asset_id = COALESCE($2, rack_front_asset_id),
+               rack_front_url = COALESCE($3, rack_front_url),
+               layer_spec_jsonb = $4::jsonb
+             WHERE id = $1`,
+            [targetVariant.id, assetId, url, JSON.stringify(mergedSpec)],
+          );
+        } else if (normalizedSlot === 'RACK_BACK') {
+          await tx.query(
+            `UPDATE product_variants SET
+               rack_back_asset_id = COALESCE($2, rack_back_asset_id),
+               rack_back_url = COALESCE($3, rack_back_url)
+             WHERE id = $1`,
+            [targetVariant.id, assetId, url],
+          );
+        } else if (normalizedSlot === 'STUDIO_LAYER') {
+          await tx.query(
+            `UPDATE product_variants SET
+               studio_layer_asset_id = COALESCE($2, studio_layer_asset_id),
+               studio_layer_url = COALESCE($3, studio_layer_url),
+               layer_spec_jsonb = $4::jsonb
+             WHERE id = $1`,
+            [targetVariant.id, assetId, url, JSON.stringify(mergedSpec)],
+          );
+        } else if (normalizedSlot === 'TRYON_FLAT') {
+          await tx.query(
+            `UPDATE product_variants SET
+               tryon_flat_preview_url = COALESCE($2, tryon_flat_preview_url)
+             WHERE id = $1`,
+            [targetVariant.id, url],
+          );
+        } else {
+          if (url && input.setAsPrimary !== false) {
+            await tx.query(
+              `UPDATE product_variants SET
+                 lookbook_main_url = $2
+               WHERE id = $1`,
+              [targetVariant.id, url],
+            );
+          }
+        }
+      }
+
+      if (normalizedSlot === 'TRYON_FLAT' && url) {
+        await tx.query(
+          `UPDATE products SET
+             tryon_flat_asset_url = $2,
+             is_tryon_enabled = TRUE,
+             tryon_garment_category = CASE
+               WHEN tryon_garment_category = 'NONE' THEN 'UPPER'
+               ELSE tryon_garment_category
+             END,
+             updated_at = NOW()
+           WHERE id = $1`,
+          [product.id, url],
+        );
+      } else {
+        await tx.query('UPDATE products SET updated_at = NOW() WHERE id = $1', [
+          product.id,
+        ]);
+      }
+
+      if (url) {
+        await tx.query(
+          `INSERT INTO product_media (
+             id, product_id, variant_id, media_type, url, object_key, sort_order
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            randomUUID(),
+            product.id,
+            targetVariant?.id ?? null,
+            normalizedSlot,
+            url,
+            input.objectKey ?? assetId ?? null,
+            Number(input.sortOrder ?? 0),
+          ],
+        );
+      }
+    });
+
+    const updated = await this.getAdminProductByIdOrSlug(product.id);
+    await this.meili.syncProducts([updated]);
+    await this.invalidateStorefrontCaches([updated.slug]);
+    void this.triggerStorefrontRevalidate(
+      [updated.slug],
+      correlationId,
+      traceparent,
+    );
+
+    return {
+      attached: true,
+      productId: updated.id,
+      slug: updated.slug,
+      variantId: targetVariant?.id ?? null,
+      slot: normalizedSlot,
+      url,
+      assetId,
+      product: updated,
+    };
   }
 
   public async updateAdminSku(

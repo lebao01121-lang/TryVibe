@@ -353,6 +353,22 @@ const RESTRICTED_FIELD_SET: ReadonlySet<string> = new Set([
   'giaNhap',
   'gia_nhap',
   'cogs',
+  'cogsVnd',
+  'cogs_vnd',
+  'totalCogsVnd',
+  'total_cogs_vnd',
+  'grossMarginVnd',
+  'gross_margin_vnd',
+  'grossMarginPct',
+  'gross_margin_pct',
+  'marginPct',
+  'margin_pct',
+  'grossProfitVnd',
+  'gross_profit_vnd',
+  'avgCostVnd',
+  'avg_cost_vnd',
+  'averageCostVnd',
+  'average_cost_vnd',
   'unitCostVnd',
   'unit_cost_vnd',
   'estimatedCostVnd',
@@ -381,9 +397,25 @@ function isRestrictedFieldKey(key: string): boolean {
     lower === 'line_cost_vnd' ||
     lower === 'estimatedcostvnd' ||
     lower === 'estimated_cost_vnd' ||
+    lower === 'avgcostvnd' ||
+    lower === 'avg_cost_vnd' ||
+    lower === 'averagecostvnd' ||
+    lower === 'average_cost_vnd' ||
     lower === 'gianhap' ||
     lower === 'gia_nhap' ||
-    lower === 'cogs'
+    lower === 'cogs' ||
+    lower === 'cogsvnd' ||
+    lower === 'cogs_vnd' ||
+    lower === 'totalcogsvnd' ||
+    lower === 'total_cogs_vnd' ||
+    lower === 'grossmarginvnd' ||
+    lower === 'gross_margin_vnd' ||
+    lower === 'grossmarginpct' ||
+    lower === 'gross_margin_pct' ||
+    lower === 'marginpct' ||
+    lower === 'margin_pct' ||
+    lower === 'grossprofitvnd' ||
+    lower === 'gross_profit_vnd'
   );
 }
 
@@ -446,4 +478,107 @@ export function redactRestrictedFields<T>(
     return payload;
   }
   return stripRestrictedRecursive(payload, new WeakSet<object>()) as T;
+}
+
+const STOREFRONT_INTERNAL_FIELD_SET: ReadonlySet<string> = new Set([
+  ...RESTRICTED_FIELD_SET,
+  'supplierId',
+  'supplier_id',
+  'supplierName',
+  'supplier_name',
+  'supplierCode',
+  'supplier_code',
+  'supplierCost',
+  'supplier_cost',
+  'wholesaleCostVnd',
+  'wholesale_cost_vnd',
+  'purchaseOrder',
+  'purchaseOrders',
+  'purchase_order',
+  'purchase_orders',
+  'poId',
+  'po_id',
+  'poNumber',
+  'po_number',
+  'poCode',
+  'po_code',
+  'warehouseCode',
+  'warehouse_code',
+  'createdByActorType',
+  'created_by_actor_type',
+  'internalNote',
+  'internal_note',
+  'approveEndpoint',
+  'actionEndpoint',
+]);
+
+function isStorefrontInternalKey(key: string): boolean {
+  if (isRestrictedFieldKey(key) || STOREFRONT_INTERNAL_FIELD_SET.has(key)) {
+    return true;
+  }
+  const lower = key.toLowerCase();
+  return (
+    lower.includes('costprice') ||
+    lower.includes('cost_price') ||
+    lower.includes('unitcost') ||
+    lower.includes('unit_cost') ||
+    lower.includes('wholesalecost') ||
+    lower.includes('wholesale_cost') ||
+    lower.includes('suppliercost') ||
+    lower.includes('supplier_cost') ||
+    lower === 'supplierid' ||
+    lower === 'supplier_id' ||
+    lower === 'suppliername' ||
+    lower === 'supplier_name' ||
+    lower === 'suppliercode' ||
+    lower === 'supplier_code' ||
+    lower === 'purchaseorder' ||
+    lower === 'purchaseorders' ||
+    lower === 'ponumber' ||
+    lower === 'po_number' ||
+    lower === 'pocode' ||
+    lower === 'po_code' ||
+    lower === 'poid' ||
+    lower === 'po_id'
+  );
+}
+
+function stripStorefrontInternalRecursive(
+  value: unknown,
+  seen: WeakSet<object>,
+): unknown {
+  if (value === null || value === undefined || typeof value !== 'object') {
+    return value;
+  }
+  if (value instanceof Date) {
+    return new Date(value.getTime());
+  }
+  if (seen.has(value)) {
+    return undefined;
+  }
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return value.map((item) => stripStorefrontInternalRecursive(item, seen));
+    }
+    const record = value as Record<string, unknown>;
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, entryValue] of Object.entries(record)) {
+      if (isStorefrontInternalKey(key)) {
+        continue;
+      }
+      cleaned[key] = stripStorefrontInternalRecursive(entryValue, seen);
+    }
+    return cleaned;
+  } finally {
+    seen.delete(value);
+  }
+}
+
+/**
+ * Strict Storefront redaction: strips ALL procurement cost, supplier, PO, and internal fields
+ * unconditionally (0% internal leakage to Guest/Customer storefront callers).
+ */
+export function redactStorefrontPayload<T>(payload: T): T {
+  return stripStorefrontInternalRecursive(payload, new WeakSet<object>()) as T;
 }

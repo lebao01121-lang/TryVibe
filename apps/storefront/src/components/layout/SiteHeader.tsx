@@ -583,6 +583,10 @@ export function SiteHeader({
 
   const isScrolledDark = activeIndex >= 0 && !isLight;
 
+  if (pathname === '/thu-do-ai' || pathname.startsWith('/thu-do-ai/')) {
+    return null;
+  }
+
   return (
     <>
       <header

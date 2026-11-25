@@ -84,6 +84,7 @@ export class BffPassThroughClient {
     path: string,
     body?: unknown,
     extraHeaders: Record<string, string> = {},
+    timeoutOverrideMs?: number,
   ): Promise<BffRequestResult<T>> {
     const baseHeaders: Record<string, string> = {
       Accept: 'application/json',
@@ -101,7 +102,8 @@ export class BffPassThroughClient {
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const effectiveTimeout = timeoutOverrideMs ?? this.timeoutMs;
+    const timer = setTimeout(() => controller.abort(), effectiveTimeout);
 
     try {
       const response = await fetch(`${this.bffUrl}${path}`, {
@@ -178,15 +180,147 @@ export class BffPassThroughClient {
   public async getJson<T>(
     path: string,
     extraHeaders?: Record<string, string>,
+    timeoutMs?: number,
   ): Promise<BffRequestResult<T>> {
-    return this.requestJson<T>('GET', path, undefined, extraHeaders);
+    return this.requestJson<T>('GET', path, undefined, extraHeaders, timeoutMs);
   }
 
   public async postJson<T>(
     path: string,
     body: unknown,
     extraHeaders?: Record<string, string>,
+    timeoutMs?: number,
   ): Promise<BffRequestResult<T>> {
-    return this.requestJson<T>('POST', path, body, extraHeaders);
+    return this.requestJson<T>('POST', path, body, extraHeaders, timeoutMs);
+  }
+
+  /**
+   * Read-only / customer Storefront BFF client (`/bff/v1/storefront/*` ONLY).
+   * - If an authenticated CallerAuthContext with a real Bearer JWT is active, forwards
+   *   the exact caller JWT via Layer 5 `JwtPassThroughContext.buildForwardHeaders`.
+   * - If called by a read-only `GUEST_CUSTOMER` (no JWT), sends ONLY public headers +
+   *   traceparent/correlationId (strictly blocking any non-storefront path!).
+   */
+  private async requestStorefrontJson<T>(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+    extraHeaders: Record<string, string> = {},
+    timeoutOverrideMs?: number,
+  ): Promise<BffRequestResult<T>> {
+    if (!path.startsWith('/bff/v1/storefront/')) {
+      throw new BffHttpError(
+        403,
+        ErrorCode.FORBIDDEN,
+        `Storefront client strictly forbids non-storefront path "${path}".`,
+      );
+    }
+
+    const activeCtx = this.jwtContext.get();
+    if (activeCtx && activeCtx.bearerToken) {
+      return this.requestJson<T>(method, path, body, extraHeaders, timeoutOverrideMs);
+    }
+
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      ...extraHeaders,
+    };
+    if (body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+    }
+    if (!headers[TRACEPARENT_HEADER]) {
+      headers[TRACEPARENT_HEADER] = createChildTraceparent(undefined);
+    }
+
+    const controller = new AbortController();
+    const effectiveTimeout = timeoutOverrideMs ?? this.timeoutMs;
+    const timer = setTimeout(() => controller.abort(), effectiveTimeout);
+
+    try {
+      const response = await fetch(`${this.bffUrl}${path}`, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+
+      const rawText = await response.text();
+      let parsed: unknown = null;
+      if (rawText) {
+        try {
+          parsed = JSON.parse(rawText) as unknown;
+        } catch {
+          parsed = rawText;
+        }
+      }
+
+      const unwrapped = unwrapApiEnvelope<T>(parsed);
+      if (!response.ok) {
+        return {
+          ok: false,
+          status: response.status,
+          data: unwrapped.data,
+          rawBody: parsed,
+          errorCode:
+            unwrapped.errorCode ??
+            (response.status === 403
+              ? ErrorCode.FORBIDDEN
+              : response.status === 401
+                ? ErrorCode.UNAUTHORIZED
+                : ErrorCode.INTERNAL_ERROR),
+          errorMessage:
+            unwrapped.errorMessage ??
+            `BFF returned HTTP ${response.status} for ${method} ${path}`,
+          errorDetails: unwrapped.errorDetails,
+          offlineFallback: false,
+        };
+      }
+
+      return {
+        ok: true,
+        status: response.status,
+        data: unwrapped.data,
+        rawBody: parsed,
+        offlineFallback: false,
+      };
+    } catch (error) {
+      this.logger.warn(
+        {
+          method,
+          path,
+          bffUrl: this.bffUrl,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        'Storefront BFF upstream unreachable during read-only tool call',
+      );
+      return {
+        ok: false,
+        status: 0,
+        data: null,
+        rawBody: null,
+        errorCode: ErrorCode.DEPENDENCY_UNAVAILABLE,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        offlineFallback: true,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  public async getStorefrontJson<T>(
+    path: string,
+    extraHeaders?: Record<string, string>,
+    timeoutMs?: number,
+  ): Promise<BffRequestResult<T>> {
+    return this.requestStorefrontJson<T>('GET', path, undefined, extraHeaders, timeoutMs);
+  }
+
+  public async postStorefrontJson<T>(
+    path: string,
+    body: unknown,
+    extraHeaders?: Record<string, string>,
+    timeoutMs?: number,
+  ): Promise<BffRequestResult<T>> {
+    return this.requestStorefrontJson<T>('POST', path, body, extraHeaders, timeoutMs);
   }
 }

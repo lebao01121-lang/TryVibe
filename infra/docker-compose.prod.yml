@@ -1,0 +1,900 @@
+name: fashion-atelier-ai-platform-prod
+
+# =============================================================================
+# Fashion Atelier AI Platform (v3.1) — Production Docker Compose Orchestration
+#
+# Architecture:
+#   - 7 Base Infrastructure Services (PostgreSQL 16 + pgvector, Redis 7,
+#     Meilisearch v1.11, RabbitMQ 3.13 + Prometheus plugin, MinIO + bucket init,
+#     Mailpit SMTP)
+#   - 1 NGINX TLS 1.2/1.3 Reverse Proxy (:80 / :443)
+#   - 15 Application Containers:
+#       * 3 Next.js Standalone Portals (storefront:3000, admin-portal:3001, partner-portal:3002)
+#       * Zero-Trust BFF + Socket.io Redis Adapter (bff:4000)
+#       * 8-Layer MCP Copilot & Local Ollama Gateway (mcp-copilot:4010)
+#       * 8 Isolated DDD NestJS Microservices (:4001 - :4008)
+#       * Python AI Virtual Try-On API (ai-tryon-api:4009) & Worker (ai-tryon-worker)
+#   - Centralized Observability Stack included via `--profile observability`:
+#       `./observability/docker-compose.observability.yml`
+#       (atelier-otel-collector, atelier-tempo, atelier-prometheus, atelier-grafana)
+#
+# Security Policy:
+#   - ZERO hardcoded default passwords anywhere in this file.
+#   - All credentials are injected via Docker `secrets:` (/run/secrets/*) and
+#     mandatory `${VAR:?...}` variables supplied via `.env.prod` or CI vault.
+# =============================================================================
+
+include:
+  - ./observability/docker-compose.observability.yml
+
+x-prod-logging: &prod-logging
+  driver: "json-file"
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+x-common-otel-env: &common-otel-env
+  NODE_ENV: production
+  INFRA_MODE: docker
+  TZ: Asia/Ho_Chi_Minh
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318/v1/traces}
+  OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-otlp}
+  INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET in .env.prod}
+  INTERNAL_SERVICE_SECRET_FILE: /run/secrets/internal_service_secret
+
+secrets:
+  postgres_password:
+    file: ${ATELIER_SECRETS_DIR:-./secrets}/postgres_password.txt
+  redis_password:
+    file: ${ATELIER_SECRETS_DIR:-./secrets}/redis_password.txt
+  rabbitmq_password:
+    file: ${ATELIER_SECRETS_DIR:-./secrets}/rabbitmq_password.txt
+  minio_secret_key:
+    file: ${ATELIER_SECRETS_DIR:-./secrets}/minio_secret_key.txt
+  internal_service_secret:
+    file: ${ATELIER_SECRETS_DIR:-./secrets}/internal_service_secret.txt
+  meilisearch_master_key:
+    file: ${ATELIER_SECRETS_DIR:-./secrets}/meilisearch_master_key.txt
+  jwt_private_key:
+    file: ${ATELIER_SECRETS_DIR:-./secrets}/jwt_private_key.pem
+
+services:
+  # ===========================================================================
+  # 1. Core Data & Messaging Infrastructure
+  # ===========================================================================
+
+  atelier-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: atelier-postgres
+    restart: unless-stopped
+    mem_limit: 1024m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.prod}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      TZ: Asia/Ho_Chi_Minh
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=200
+      - -c
+      - work_mem=8MB
+    volumes:
+      - ../.project-data/volumes/atelier_pgdata:/var/lib/postgresql/data
+      - ./sql/init-isolated-dbs.sql:/docker-entrypoint-initdb.d/01-init-isolated-dbs.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB:-postgres}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      atelier_net:
+        aliases:
+          - postgres
+
+  atelier-redis:
+    image: redis:7-alpine
+    container_name: atelier-redis
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *prod-logging
+    secrets:
+      - redis_password
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass "$$(tr -d '\r\n' < /run/secrets/redis_password)"
+    volumes:
+      - ../.project-data/volumes/atelier_redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(tr -d '\r\n' < /run/secrets/redis_password)\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      atelier_net:
+        aliases:
+          - redis
+
+  atelier-meilisearch:
+    image: getmeili/meilisearch:v1.11
+    container_name: atelier-meilisearch
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *prod-logging
+    secrets:
+      - meilisearch_master_key
+    environment:
+      MEILI_ENV: production
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_MAX_INDEXING_MEMORY: 256Mb
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        export MEILI_MASTER_KEY="$$(tr -d '\r\n' < /run/secrets/meilisearch_master_key)"
+        exec /bin/meilisearch
+    volumes:
+      - ../.project-data/volumes/atelier_meilidata:/meili_data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:7700/health | grep -q available || curl -fsS http://127.0.0.1:7700/health | grep -q available"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      atelier_net:
+        aliases:
+          - meilisearch
+
+  atelier-rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: atelier-rabbitmq
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *prod-logging
+    secrets:
+      - rabbitmq_password
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env.prod}
+      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: "0.7"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        export RABBITMQ_DEFAULT_PASS="$$(tr -d '\r\n' < /run/secrets/rabbitmq_password)"
+        rabbitmq-plugins enable --offline rabbitmq_prometheus >/dev/null 2>&1 || true
+        exec docker-entrypoint.sh rabbitmq-server
+    volumes:
+      - ../.project-data/volumes/atelier_rmqdata/mnesia:/var/lib/rabbitmq/mnesia
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      atelier_net:
+        aliases:
+          - rabbitmq
+
+  atelier-minio:
+    image: minio/minio:latest
+    container_name: atelier-minio
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *prod-logging
+    secrets:
+      - minio_secret_key
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env.prod}
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_secret_key
+    command: ["server", "/data", "--console-address", ":9001"]
+    volumes:
+      - ../.project-data/volumes/atelier_miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live || wget -q --spider http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      atelier_net:
+        aliases:
+          - minio
+
+  atelier-minio-mc:
+    image: minio/mc:latest
+    container_name: atelier-minio-mc
+    restart: "no"
+    mem_limit: 64m
+    logging: *prod-logging
+    secrets:
+      - minio_secret_key
+    depends_on:
+      atelier-minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env.prod}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        MINIO_PASS="$$(tr -d '\r\n' < /run/secrets/minio_secret_key)"
+        mc alias set local http://atelier-minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_PASS"
+        mc mb --ignore-existing local/atelier-public
+        mc mb --ignore-existing local/atelier-garments
+        mc mb --ignore-existing local/atelier-private-tryon
+        mc anonymous set download local/atelier-public
+        mc anonymous set none local/atelier-garments
+        mc anonymous set none local/atelier-private-tryon
+        mc ilm ls local/atelier-private-tryon | grep -q "1d" || mc ilm rule add --expire-days 1 local/atelier-private-tryon
+        echo "Production MinIO buckets configured (private tryon locked + 1d fallback ILM)."
+    networks:
+      - atelier_net
+
+  atelier-mailpit:
+    image: axllent/mailpit:latest
+    container_name: atelier-mailpit
+    restart: unless-stopped
+    mem_limit: 128m
+    logging: *prod-logging
+    environment:
+      MP_MAX_MESSAGES: 500
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8025/livez || /mailpit readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      atelier_net:
+        aliases:
+          - mailpit
+
+  # ===========================================================================
+  # 2. Eight Isolated DDD NestJS Microservices (:4001 - :4008)
+  # ===========================================================================
+
+  auth-customer:
+    image: ${IMAGE_REGISTRY:-atelier}/auth-customer:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/auth-customer/Dockerfile
+    container_name: atelier-auth-customer
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+      - redis_password
+      - internal_service_secret
+      - jwt_private_key
+    depends_on:
+      atelier-postgres:
+        condition: service_healthy
+      atelier-redis:
+        condition: service_healthy
+    environment:
+      <<: *common-otel-env
+      SERVICE_NAME: auth-customer
+      PORT: 4001
+      AUTH_SERVICE_PORT: 4001
+      POSTGRES_HOST: atelier-postgres
+      POSTGRES_PORT: 5432
+      AUTH_DB_USER: ${AUTH_DB_USER:-svc_auth}
+      AUTH_DB_NAME: auth_db
+      AUTH_DATABASE_URL: postgresql://${AUTH_DB_USER:-svc_auth}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/auth_db
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.prod}@atelier-redis:6379/0
+      JWT_ACCESS_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.prod}
+      JWT_REFRESH_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.prod}
+      JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
+      SMTP_HOST: ${SMTP_HOST:-atelier-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      MAILPIT_HOST: atelier-mailpit
+    networks:
+      atelier_net:
+        aliases:
+          - auth-customer
+
+  catalog-lookbook:
+    image: ${IMAGE_REGISTRY:-atelier}/catalog-lookbook:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/catalog-lookbook/Dockerfile
+    container_name: atelier-catalog-lookbook
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+      - redis_password
+      - meilisearch_master_key
+      - internal_service_secret
+    depends_on:
+      atelier-postgres:
+        condition: service_healthy
+      atelier-redis:
+        condition: service_healthy
+      atelier-meilisearch:
+        condition: service_healthy
+    environment:
+      <<: *common-otel-env
+      SERVICE_NAME: catalog-lookbook
+      PORT: 4002
+      CATALOG_SERVICE_PORT: 4002
+      POSTGRES_HOST: atelier-postgres
+      POSTGRES_PORT: 5432
+      CATALOG_DATABASE_URL: postgresql://${CATALOG_DB_USER:-svc_catalog}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/catalog_db
+      RAG_VECTOR_DATABASE_URL: postgresql://${RAG_DB_USER:-svc_rag}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/rag_vector_db
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.prod}@atelier-redis:6379/0
+      MEILISEARCH_HOST: http://atelier-meilisearch:7700
+      MEILISEARCH_MASTER_KEY: ${MEILISEARCH_MASTER_KEY:?set MEILISEARCH_MASTER_KEY in .env.prod}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      atelier_net:
+        aliases:
+          - catalog-lookbook
+
+  media-pipeline:
+    image: ${IMAGE_REGISTRY:-atelier}/media-pipeline:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/media-pipeline/Dockerfile
+    container_name: atelier-media-pipeline
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+      - rabbitmq_password
+      - minio_secret_key
+      - internal_service_secret
+    depends_on:
+      atelier-postgres:
+        condition: service_healthy
+      atelier-rabbitmq:
+        condition: service_healthy
+      atelier-minio:
+        condition: service_healthy
+    environment:
+      <<: *common-otel-env
+      SERVICE_NAME: media-pipeline
+      PORT: 4003
+      MEDIA_SERVICE_PORT: 4003
+      MEDIA_DATABASE_URL: postgresql://${MEDIA_DB_USER:-svc_media}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/media_db
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER in .env.prod}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env.prod}@atelier-rabbitmq:5672/
+      MINIO_ENDPOINT: atelier-minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env.prod}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY in .env.prod}
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_secret_key
+    networks:
+      atelier_net:
+        aliases:
+          - media-pipeline
+
+  inventory:
+    image: ${IMAGE_REGISTRY:-atelier}/inventory:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/inventory/Dockerfile
+    container_name: atelier-inventory
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+      - redis_password
+      - rabbitmq_password
+      - internal_service_secret
+    depends_on:
+      atelier-postgres:
+        condition: service_healthy
+      atelier-redis:
+        condition: service_healthy
+      atelier-rabbitmq:
+        condition: service_healthy
+    environment:
+      <<: *common-otel-env
+      SERVICE_NAME: inventory
+      PORT: 4004
+      INVENTORY_SERVICE_PORT: 4004
+      INVENTORY_DATABASE_URL: postgresql://${INVENTORY_DB_USER:-svc_inventory}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/inventory_db
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.prod}@atelier-redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER in .env.prod}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env.prod}@atelier-rabbitmq:5672/
+    networks:
+      atelier_net:
+        aliases:
+          - inventory
+
+  cart-outfit:
+    image: ${IMAGE_REGISTRY:-atelier}/cart-outfit:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/cart-outfit/Dockerfile
+    container_name: atelier-cart-outfit
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+      - redis_password
+      - internal_service_secret
+    depends_on:
+      atelier-postgres:
+        condition: service_healthy
+      atelier-redis:
+        condition: service_healthy
+    environment:
+      <<: *common-otel-env
+      SERVICE_NAME: cart-outfit
+      PORT: 4005
+      CART_SERVICE_PORT: 4005
+      CART_DATABASE_URL: postgresql://${CART_DB_USER:-svc_cart}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/cart_db
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.prod}@atelier-redis:6379/0
+      CATALOG_SERVICE_URL: http://catalog-lookbook:4002
+      INVENTORY_SERVICE_URL: http://inventory:4004
+    networks:
+      atelier_net:
+        aliases:
+          - cart-outfit
+
+  order-rma:
+    image: ${IMAGE_REGISTRY:-atelier}/order-rma:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/order-rma/Dockerfile
+    container_name: atelier-order-rma
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+      - rabbitmq_password
+      - internal_service_secret
+    depends_on:
+      atelier-postgres:
+        condition: service_healthy
+      atelier-rabbitmq:
+        condition: service_healthy
+    environment:
+      <<: *common-otel-env
+      SERVICE_NAME: order-rma
+      PORT: 4006
+      ORDER_SERVICE_PORT: 4006
+      ORDER_DATABASE_URL: postgresql://${ORDER_DB_USER:-svc_order}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/order_db
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER in .env.prod}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env.prod}@atelier-rabbitmq:5672/
+      INVENTORY_SERVICE_URL: http://inventory:4004
+      PAYMENT_SERVICE_URL: http://payment-promo:4007
+      CART_SERVICE_URL: http://cart-outfit:4005
+      NOTIFY_SERVICE_URL: http://notify-review:4008
+    networks:
+      atelier_net:
+        aliases:
+          - order-rma
+
+  payment-promo:
+    image: ${IMAGE_REGISTRY:-atelier}/payment-promo:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/payment-promo/Dockerfile
+    container_name: atelier-payment-promo
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+      - rabbitmq_password
+      - internal_service_secret
+    depends_on:
+      atelier-postgres:
+        condition: service_healthy
+      atelier-rabbitmq:
+        condition: service_healthy
+    environment:
+      <<: *common-otel-env
+      SERVICE_NAME: payment-promo
+      PORT: 4007
+      PAYMENT_SERVICE_PORT: 4007
+      PAYMENT_DATABASE_URL: postgresql://${PAYMENT_DB_USER:-svc_payment}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/payment_db
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER in .env.prod}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env.prod}@atelier-rabbitmq:5672/
+      ORDER_SERVICE_URL: http://order-rma:4006
+    networks:
+      atelier_net:
+        aliases:
+          - payment-promo
+
+  notify-review:
+    image: ${IMAGE_REGISTRY:-atelier}/notify-review:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/notify-review/Dockerfile
+    container_name: atelier-notify-review
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+      - redis_password
+      - rabbitmq_password
+      - internal_service_secret
+    depends_on:
+      atelier-postgres:
+        condition: service_healthy
+      atelier-redis:
+        condition: service_healthy
+      atelier-rabbitmq:
+        condition: service_healthy
+      atelier-mailpit:
+        condition: service_healthy
+    environment:
+      <<: *common-otel-env
+      SERVICE_NAME: notify-review
+      PORT: 4008
+      NOTIFY_SERVICE_PORT: 4008
+      NOTIFY_DATABASE_URL: postgresql://${NOTIFY_DB_USER:-svc_notify}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/notify_db
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.prod}@atelier-redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER in .env.prod}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env.prod}@atelier-rabbitmq:5672/
+      SMTP_HOST: ${SMTP_HOST:-atelier-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      CATALOG_SERVICE_URL: http://catalog-lookbook:4002
+    networks:
+      atelier_net:
+        aliases:
+          - notify-review
+
+  # ===========================================================================
+  # 3. AI Virtual Try-On (Split API + Standalone RabbitMQ/Auto-Purge Worker)
+  # ===========================================================================
+
+  ai-tryon-api:
+    image: ${IMAGE_REGISTRY:-atelier}/ai-tryon:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/ai-tryon/Dockerfile
+    container_name: atelier-ai-tryon-api
+    restart: unless-stopped
+    mem_limit: 1024m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+      - redis_password
+      - rabbitmq_password
+      - minio_secret_key
+      - internal_service_secret
+    depends_on:
+      atelier-postgres:
+        condition: service_healthy
+      atelier-redis:
+        condition: service_healthy
+      atelier-rabbitmq:
+        condition: service_healthy
+      atelier-minio:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      INFRA_MODE: docker
+      TRYON_ROLE: api
+      AI_TRYON_HOST: 0.0.0.0
+      AI_TRYON_PORT: 4009
+      POSTGRES_HOST: atelier-postgres
+      POSTGRES_PORT: 5432
+      TRYON_DB_USER: ${TRYON_DB_USER:-svc_tryon}
+      TRYON_DB_NAME: tryon_db
+      TRYON_DB_PASSWORD_FILE: /run/secrets/postgres_password
+      TRYON_DATABASE_URL: postgresql://${TRYON_DB_USER:-svc_tryon}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/tryon_db
+      REDIS_HOST: atelier-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      RABBITMQ_HOST: atelier-rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env.prod}
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+      MINIO_ENDPOINT: atelier-minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env.prod}
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_secret_key
+      INTERNAL_SERVICE_SECRET_FILE: /run/secrets/internal_service_secret
+      BFF_URL: http://bff:4000
+      CATALOG_SERVICE_URL: http://catalog-lookbook:4002
+      TRYON_PROVIDER: ${TRYON_PROVIDER:-auto}
+      TRYON_PURGE_TTL_MINUTES: 15
+      TRYON_ENABLE_BACKGROUND_PURGE: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318/v1/traces}
+    volumes:
+      - ../.project-data/ai-models:/app/.project-data/ai-models
+      - ../.project-data/tmp/ai-tryon-api:/app/.project-data/tmp
+    networks:
+      atelier_net:
+        aliases:
+          - ai-tryon-api
+          - ai-tryon
+
+  ai-tryon-worker:
+    image: ${IMAGE_REGISTRY:-atelier}/ai-tryon:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: services/ai-tryon/Dockerfile
+    container_name: atelier-ai-tryon-worker
+    restart: unless-stopped
+    mem_limit: 1536m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+      - redis_password
+      - rabbitmq_password
+      - minio_secret_key
+      - internal_service_secret
+    depends_on:
+      atelier-postgres:
+        condition: service_healthy
+      atelier-redis:
+        condition: service_healthy
+      atelier-rabbitmq:
+        condition: service_healthy
+      atelier-minio:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      INFRA_MODE: docker
+      TRYON_ROLE: worker
+      POSTGRES_HOST: atelier-postgres
+      POSTGRES_PORT: 5432
+      TRYON_DB_USER: ${TRYON_DB_USER:-svc_tryon}
+      TRYON_DB_NAME: tryon_db
+      TRYON_DB_PASSWORD_FILE: /run/secrets/postgres_password
+      TRYON_DATABASE_URL: postgresql://${TRYON_DB_USER:-svc_tryon}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/tryon_db
+      REDIS_HOST: atelier-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      RABBITMQ_HOST: atelier-rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env.prod}
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+      MINIO_ENDPOINT: atelier-minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env.prod}
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_secret_key
+      INTERNAL_SERVICE_SECRET_FILE: /run/secrets/internal_service_secret
+      BFF_URL: http://bff:4000
+      CATALOG_SERVICE_URL: http://catalog-lookbook:4002
+      TRYON_PROVIDER: ${TRYON_PROVIDER:-auto}
+      TRYON_PURGE_TTL_MINUTES: 15
+      TRYON_ENABLE_BACKGROUND_PURGE: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318/v1/traces}
+    volumes:
+      - ../.project-data/ai-models:/app/.project-data/ai-models
+      - ../.project-data/tmp/ai-tryon-worker:/app/.project-data/tmp
+    networks:
+      atelier_net:
+        aliases:
+          - ai-tryon-worker
+
+  # ===========================================================================
+  # 4. Zero-Trust BFF Gateway (:4000) & 8-Layer MCP Copilot (:4010)
+  # ===========================================================================
+
+  bff:
+    image: ${IMAGE_REGISTRY:-atelier}/bff:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: apps/bff/Dockerfile
+    container_name: atelier-bff
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *prod-logging
+    secrets:
+      - redis_password
+      - internal_service_secret
+      - jwt_private_key
+    depends_on:
+      atelier-redis:
+        condition: service_healthy
+      auth-customer:
+        condition: service_healthy
+      catalog-lookbook:
+        condition: service_healthy
+      inventory:
+        condition: service_healthy
+      order-rma:
+        condition: service_healthy
+      payment-promo:
+        condition: service_healthy
+    environment:
+      <<: *common-otel-env
+      SERVICE_NAME: bff
+      PORT: 4000
+      BFF_PORT: 4000
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.prod}@atelier-redis:6379/0
+      JWT_ACCESS_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.prod}
+      JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
+      AUTH_SERVICE_URL: http://auth-customer:4001
+      CATALOG_SERVICE_URL: http://catalog-lookbook:4002
+      MEDIA_SERVICE_URL: http://media-pipeline:4003
+      INVENTORY_SERVICE_URL: http://inventory:4004
+      CART_SERVICE_URL: http://cart-outfit:4005
+      ORDER_SERVICE_URL: http://order-rma:4006
+      PAYMENT_SERVICE_URL: http://payment-promo:4007
+      NOTIFY_SERVICE_URL: http://notify-review:4008
+      TRYON_SERVICE_URL: http://ai-tryon-api:4009
+      AI_TRYON_SERVICE_URL: http://ai-tryon-api:4009
+      MCP_COPILOT_URL: http://mcp-copilot:4010
+      MAILPIT_HOST: atelier-mailpit
+    networks:
+      atelier_net:
+        aliases:
+          - bff
+
+  mcp-copilot:
+    image: ${IMAGE_REGISTRY:-atelier}/mcp-copilot:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: apps/mcp-copilot/Dockerfile
+    container_name: atelier-mcp-copilot
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *prod-logging
+    secrets:
+      - postgres_password
+      - internal_service_secret
+    depends_on:
+      atelier-postgres:
+        condition: service_healthy
+      bff:
+        condition: service_healthy
+    environment:
+      <<: *common-otel-env
+      SERVICE_NAME: mcp-copilot
+      PORT: 4010
+      MCP_COPILOT_PORT: 4010
+      BFF_URL: http://bff:4000
+      RAG_VECTOR_DATABASE_URL: postgresql://${RAG_DB_USER:-svc_rag}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@atelier-postgres:5432/rag_vector_db
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MAIN_MODEL: ${OLLAMA_MAIN_MODEL:-qwen2.5:7b}
+      OLLAMA_FAST_MODEL: ${OLLAMA_FAST_MODEL:-qwen2.5:3b}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      atelier_net:
+        aliases:
+          - mcp-copilot
+
+  # ===========================================================================
+  # 5. Three Next.js 15 Standalone Web Portals (:3000, :3001, :3002)
+  # ===========================================================================
+
+  storefront:
+    image: ${IMAGE_REGISTRY:-atelier}/storefront:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: apps/storefront/Dockerfile
+      args:
+        NEXT_PUBLIC_BFF_URL: ${STOREFRONT_PUBLIC_BFF_URL:-https://localhost}
+        NEXT_PUBLIC_WS_URL: ${STOREFRONT_PUBLIC_WS_URL:-https://localhost}
+        BFF_INTERNAL_URL: http://bff:4000
+    container_name: atelier-storefront
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *prod-logging
+    depends_on:
+      bff:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      BFF_INTERNAL_URL: http://bff:4000
+      NEXT_PUBLIC_BFF_URL: ${STOREFRONT_PUBLIC_BFF_URL:-https://localhost}
+      NEXT_PUBLIC_WS_URL: ${STOREFRONT_PUBLIC_WS_URL:-https://localhost}
+    networks:
+      atelier_net:
+        aliases:
+          - storefront
+
+  admin-portal:
+    image: ${IMAGE_REGISTRY:-atelier}/admin-portal:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: apps/admin-portal/Dockerfile
+      args:
+        NEXT_PUBLIC_BFF_URL: ${ADMIN_PUBLIC_BFF_URL:-https://admin.localhost}
+        NEXT_PUBLIC_WS_URL: ${ADMIN_PUBLIC_WS_URL:-https://admin.localhost}
+    container_name: atelier-admin-portal
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *prod-logging
+    depends_on:
+      bff:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3001
+      BFF_INTERNAL_URL: http://bff:4000
+      NEXT_PUBLIC_BFF_URL: ${ADMIN_PUBLIC_BFF_URL:-https://admin.localhost}
+      NEXT_PUBLIC_WS_URL: ${ADMIN_PUBLIC_WS_URL:-https://admin.localhost}
+    networks:
+      atelier_net:
+        aliases:
+          - admin-portal
+
+  partner-portal:
+    image: ${IMAGE_REGISTRY:-atelier}/partner-portal:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: apps/partner-portal/Dockerfile
+      args:
+        NEXT_PUBLIC_BFF_URL: ${PARTNER_PUBLIC_BFF_URL:-https://partner.localhost}
+        NEXT_PUBLIC_WS_URL: ${PARTNER_PUBLIC_WS_URL:-https://partner.localhost}
+    container_name: atelier-partner-portal
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *prod-logging
+    depends_on:
+      bff:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3002
+      BFF_INTERNAL_URL: http://bff:4000
+      NEXT_PUBLIC_BFF_URL: ${PARTNER_PUBLIC_BFF_URL:-https://partner.localhost}
+      NEXT_PUBLIC_WS_URL: ${PARTNER_PUBLIC_WS_URL:-https://partner.localhost}
+    networks:
+      atelier_net:
+        aliases:
+          - partner-portal
+
+  # ===========================================================================
+  # 6. NGINX TLS 1.2/1.3 Reverse Proxy (:80 / :443)
+  # ===========================================================================
+
+  atelier-nginx:
+    image: nginx:1.27-alpine
+    container_name: atelier-nginx
+    restart: unless-stopped
+    mem_limit: 128m
+    logging: *prod-logging
+    depends_on:
+      storefront:
+        condition: service_healthy
+      admin-portal:
+        condition: service_healthy
+      partner-portal:
+        condition: service_healthy
+      bff:
+        condition: service_healthy
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --no-check-certificate -O- https://127.0.0.1/nginx-health | grep -q OK"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      atelier_net:
+        aliases:
+          - nginx
+
+networks:
+  atelier_net:
+    driver: bridge

@@ -5,6 +5,9 @@ import { ApiExceptionFilter } from './common/payment-api.exception';
 import { loadPaymentPromoConfig, PAYMENT_CONFIG_TOKEN } from './config/env';
 import { PaymentDbService } from './db/payment-db.service';
 import { PaymentEventPublisherService } from './messaging/payment-event-publisher.service';
+import { MomoAdapter } from './payments/adapters/momo.adapter';
+import { PayOsAdapter } from './payments/adapters/payos.adapter';
+import { VnpayAdapter } from './payments/adapters/vnpay.adapter';
 import { PaymentsController } from './payments/payments.controller';
 import { PaymentsService } from './payments/payments.service';
 import { PromotionsController } from './promotions/promotions.controller';
@@ -25,6 +28,9 @@ import { PaymentPromoController } from './service.controller';
     PaymentDbService,
     PaymentRedisService,
     PaymentEventPublisherService,
+    PayOsAdapter,
+    VnpayAdapter,
+    MomoAdapter,
     PromotionsService,
     PaymentsService,
   ],

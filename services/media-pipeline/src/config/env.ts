@@ -30,6 +30,7 @@ export interface MediaPipelineConfig {
   publicBaseUrl: string;
   maxUploadBytes: number;
   corsAllowedOrigins: string[];
+  internalServiceSecret: string;
   database: {
     envVar: string;
     url: string;
@@ -168,6 +169,8 @@ export function loadMediaPipelineConfig(): MediaPipelineConfig {
     publicBaseUrl,
     maxUploadBytes: MAX_UPLOAD_BYTES,
     corsAllowedOrigins: parseCorsOrigins(process.env.CORS_ALLOWED_ORIGINS),
+    internalServiceSecret:
+      process.env.INTERNAL_SERVICE_SECRET?.trim() || 'Atelier_Internal_Svc_2026!',
     database: parseIsolatedDatabaseTarget(process.env.MEDIA_DATABASE_URL),
     infra: {
       minioEndpoint,

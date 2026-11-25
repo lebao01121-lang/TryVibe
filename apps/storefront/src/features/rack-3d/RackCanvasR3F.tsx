@@ -42,6 +42,7 @@ export interface RackCanvasR3FProps {
   items: RackGarmentItemDto[];
   focusRef: MutableRefObject<number>;
   shouldRender: boolean;
+  maxDpr?: number;
   activeVariants: Record<string, number>;
   showBackMap: Record<string, boolean>;
   onPresentChange: (index: number) => void;
@@ -164,6 +165,7 @@ function syncCanvasCursor(
 function RackScene({
   items,
   focusRef,
+  shouldRender,
   activeVariants,
   showBackMap,
   onPresentChange,
@@ -171,7 +173,7 @@ function RackScene({
   onTogglePresentedBack,
   onHoverChange,
   onContextLost,
-}: Omit<RackCanvasR3FProps, 'shouldRender'>) {
+}: Omit<RackCanvasR3FProps, 'maxDpr'>) {
   const { gl, scene, camera, size } = useThree();
 
   const rootGroupRef = useRef<THREE.Group | null>(null);
@@ -183,6 +185,9 @@ function RackScene({
   const loadedUrlsRef = useRef<Set<string>>(new Set());
   const transparentTexRef = useRef<THREE.DataTexture | null>(null);
   const loaderRef = useRef<THREE.TextureLoader | null>(null);
+  const sceneDisposedRef = useRef(false);
+  const shouldRenderRef = useRef(shouldRender);
+  shouldRenderRef.current = shouldRender;
 
   // Mutable 60Hz animation refs mutated directly inside useFrame (ZERO React setState)
   const smoothFocusRef = useRef(0);
@@ -222,10 +227,38 @@ function RackScene({
     return transparentTexRef.current;
   };
 
+  // Explicit VRAM texture reclamation on swatch / front-back texture swaps
+  const evictUnreferencedTextures = (runtimes: GarmentRuntime[]): void => {
+    const activeTextures = new Set<THREE.Texture>();
+    if (transparentTexRef.current) {
+      activeTextures.add(transparentTexRef.current);
+    }
+    for (let i = 0; i < runtimes.length; i += 1) {
+      const rt = runtimes[i];
+      if (!rt) continue;
+      const texA = rt.mat.uniforms.uMapA?.value as THREE.Texture | undefined;
+      const texB = rt.mat.uniforms.uMapB?.value as THREE.Texture | undefined;
+      const texShadow = rt.shadowMat.uniforms.uMap?.value as
+        | THREE.Texture
+        | undefined;
+      if (texA) activeTextures.add(texA);
+      if (texB) activeTextures.add(texB);
+      if (texShadow) activeTextures.add(texShadow);
+    }
+
+    for (const [url, tex] of Array.from(textureCacheRef.current.entries())) {
+      if (!activeTextures.has(tex)) {
+        tex.dispose();
+        textureCacheRef.current.delete(url);
+        loadedUrlsRef.current.delete(url);
+      }
+    }
+  };
+
   // Load real WebP cutout textures cleanly; NEVER draw fake placeholder polygons
   const resolveTexture = (
     url: string | null,
-    onReady?: () => void,
+    onReady?: (loadedTexture: THREE.Texture) => void,
   ): { texture: THREE.Texture; alreadyLoaded: boolean } => {
     if (!url) {
       return { texture: getTransparentTex(), alreadyLoaded: false };
@@ -236,7 +269,7 @@ function RackScene({
     if (existing) {
       const isLoaded = loadedUrlsRef.current.has(url);
       if (isLoaded) {
-        onReady?.();
+        onReady?.(existing);
       }
       return { texture: existing, alreadyLoaded: isLoaded };
     }
@@ -250,6 +283,10 @@ function RackScene({
     const tex = loaderRef.current.load(
       url,
       (loaded: THREE.Texture) => {
+        if (sceneDisposedRef.current || textureCacheRef.current.get(url) !== loaded) {
+          loaded.dispose();
+          return;
+        }
         loaded.colorSpace = THREE.SRGBColorSpace;
         loaded.anisotropy = 4;
         loaded.generateMipmaps = true;
@@ -257,11 +294,17 @@ function RackScene({
         loaded.magFilter = THREE.LinearFilter;
         loaded.needsUpdate = true;
         loadedUrlsRef.current.add(url);
-        onReady?.();
+        onReady?.(loaded);
       },
       undefined,
       () => {
-        // Stay cleanly transparent on load failure (zero fake polygons)
+        // Dispose failed texture handle & stay cleanly transparent (zero fake polygons)
+        const failed = textureCacheRef.current.get(url);
+        if (failed === tex) {
+          textureCacheRef.current.delete(url);
+          loadedUrlsRef.current.delete(url);
+          tex.dispose();
+        }
       },
     );
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -274,7 +317,7 @@ function RackScene({
     return { texture: tex, alreadyLoaded: false };
   };
 
-  // 1. RoomEnvironment IBL + WebGL context loss listener
+  // 1. RoomEnvironment IBL + WebGL context loss listener + explicit renderTarget.dispose()
   useEffect(() => {
     gl.outputColorSpace = THREE.SRGBColorSpace;
     gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -282,8 +325,8 @@ function RackScene({
 
     const pmrem = new THREE.PMREMGenerator(gl);
     const roomEnv = new RoomEnvironment();
-    const envRT = pmrem.fromScene(roomEnv, 0.04);
-    scene.environment = envRT.texture;
+    const renderTarget = pmrem.fromScene(roomEnv, 0.04);
+    scene.environment = renderTarget.texture;
     pmrem.dispose();
     roomEnv.dispose();
 
@@ -302,7 +345,8 @@ function RackScene({
       dom.removeAttribute('data-cursor');
       dom.removeAttribute('data-cursor-label');
       scene.environment = null;
-      envRT.dispose();
+      renderTarget.texture.dispose();
+      renderTarget.dispose();
     };
   }, [gl, scene]);
 
@@ -323,6 +367,7 @@ function RackScene({
 
   // 3. Build Extended Horizontal Brass Rail, Sculpted 3D Hangers, Wall Shadows & 118 Spark Particles
   useEffect(() => {
+    sceneDisposedRef.current = false;
     const rootGroup = new THREE.Group();
     const rackGroup = new THREE.Group();
     rootGroup.add(rackGroup);
@@ -561,9 +606,38 @@ function RackScene({
     stillTimeRef.current = 0;
 
     return () => {
+      sceneDisposedRef.current = true;
+      const disposedRuntimes = runtimesRef.current;
       runtimesRef.current = [];
       pickMeshesRef.current = [];
       sparkMatRef.current = null;
+
+      // Explicit per-runtime shader & physical material disposal
+      for (const rt of disposedRuntimes) {
+        rt.mat.dispose();
+        rt.shadowMat.dispose();
+        rt.hangerBrassMat.dispose();
+        rt.hangerWoodMat.dispose();
+      }
+
+      // Explicit shared geometry & material disposal
+      const sharedGeometries: THREE.BufferGeometry[] = [
+        railGeo,
+        finialGeo,
+        planeGeo,
+        ringGeo,
+        hookGeo,
+        ferruleGeo,
+        shoulderGeo,
+        shoulderTipLeftGeo,
+        shoulderTipRightGeo,
+        sparkGeo,
+      ];
+      for (const geometry of sharedGeometries) {
+        geometry.dispose();
+      }
+      brassMat.dispose();
+      sparkMat.dispose();
 
       disposeObject3D(rootGroup as unknown as DisposableObject3D);
 
@@ -576,16 +650,16 @@ function RackScene({
           const mats = Array.isArray(meshLike.material)
             ? meshLike.material
             : [meshLike.material];
-          for (const m of mats) {
-            if (m && typeof m.dispose === 'function') {
-              m.dispose();
+          for (const material of mats) {
+            if (material && typeof material.dispose === 'function') {
+              material.dispose();
             }
           }
         }
       });
 
-      for (const tex of textureCacheRef.current.values()) {
-        tex.dispose();
+      for (const texture of textureCacheRef.current.values()) {
+        texture.dispose();
       }
       textureCacheRef.current.clear();
       loadedUrlsRef.current.clear();
@@ -603,7 +677,7 @@ function RackScene({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gl, items, scene]);
 
-  // 4. Sync color swatch selection & front/back flip into shader uniforms
+  // 4. Sync color swatch selection & front/back flip into shader uniforms + reclaim swapped textures
   useEffect(() => {
     const runtimes = runtimesRef.current;
     for (let i = 0; i < runtimes.length; i += 1) {
@@ -630,18 +704,31 @@ function RackScene({
 
       if (nextKey !== rt.currentUrl) {
         rt.currentUrl = nextKey;
-        const { texture: nextTex, alreadyLoaded } = resolveTexture(nextUrl, () => {
-          const targetRt = runtimesRef.current[i];
-          if (targetRt && targetRt.currentUrl === nextKey) {
-            targetRt.fadeTarget = 1;
-          }
-        });
-        rt.mat.uniforms.uMapB.value = nextTex;
-        rt.shadowMat.uniforms.uMap.value = nextTex;
-        rt.mixProgress = 0;
-        rt.isMixing = true;
-        if (alreadyLoaded) {
-          rt.fadeTarget = 1;
+        const applySwappedTexture = (targetRt: GarmentRuntime, nextTex: THREE.Texture) => {
+          targetRt.mat.uniforms.uMapB.value = nextTex;
+          targetRt.shadowMat.uniforms.uMap.value = nextTex;
+          targetRt.mixProgress = 0;
+          targetRt.isMixing = true;
+          targetRt.fadeTarget = 1;
+          evictUnreferencedTextures(runtimesRef.current);
+        };
+
+        const { texture: nextTex, alreadyLoaded } = resolveTexture(
+          nextUrl,
+          (loadedTex) => {
+            const targetRt = runtimesRef.current[i];
+            if (
+              !sceneDisposedRef.current &&
+              targetRt &&
+              targetRt.currentUrl === nextKey
+            ) {
+              applySwappedTexture(targetRt, loadedTex);
+            }
+          },
+        );
+
+        if (alreadyLoaded || !nextUrl) {
+          applySwappedTexture(rt, nextTex);
         }
         applySpringImpulse(rt.pendulum, 0.45, rt.fabricWeight);
       }
@@ -701,6 +788,7 @@ function RackScene({
 
   // 6. 60Hz WebGL animation loop — mutates Three.js objects & uniforms directly (ZERO setState!)
   useFrame((_state, delta) => {
+    if (!shouldRenderRef.current) return;
     const rackGroup = rackGroupRef.current;
     const runtimes = runtimesRef.current;
     if (!rackGroup || runtimes.length === 0) return;
@@ -835,16 +923,21 @@ function RackScene({
         rt.backFlip = rt.backFlipTarget;
       }
 
-      // Smooth color swatch / side texture crossfade (uMix: 0 -> 1)
+      // Smooth color swatch / side texture crossfade (uMix: 0 -> 1) + VRAM texture reclamation
       if (rt.isMixing) {
         rt.mixProgress = Math.min(1, rt.mixProgress + dt * 2.6);
         const easedMix =
           rt.mixProgress * rt.mixProgress * (3 - 2 * rt.mixProgress);
         rt.mat.uniforms.uMix.value = easedMix;
         if (rt.mixProgress >= 1) {
-          rt.mat.uniforms.uMapA.value = rt.mat.uniforms.uMapB.value;
+          const replacedTexture = rt.mat.uniforms.uMapA.value as THREE.Texture | null;
+          const activeTexture = rt.mat.uniforms.uMapB.value as THREE.Texture | null;
+          rt.mat.uniforms.uMapA.value = activeTexture;
           rt.mat.uniforms.uMix.value = 0;
           rt.isMixing = false;
+          if (replacedTexture && replacedTexture !== activeTexture) {
+            evictUnreferencedTextures(runtimes);
+          }
         }
       }
 
@@ -928,6 +1021,7 @@ export function RackCanvasR3F({
   items,
   focusRef,
   shouldRender,
+  maxDpr = 1.5,
   activeVariants,
   showBackMap,
   onPresentChange,
@@ -939,7 +1033,7 @@ export function RackCanvasR3F({
   return (
     <Canvas
       className="rack__gl absolute inset-0 h-full w-full"
-      dpr={[1, 1.5]}
+      dpr={[1, maxDpr]}
       frameloop={shouldRender ? 'always' : 'never'}
       camera={{ fov: 28, near: 0.1, far: 100, position: [0, 0, 16] }}
       gl={{
@@ -956,6 +1050,7 @@ export function RackCanvasR3F({
       <RackScene
         items={items}
         focusRef={focusRef}
+        shouldRender={shouldRender}
         activeVariants={activeVariants}
         showBackMap={showBackMap}
         onPresentChange={onPresentChange}

@@ -12,10 +12,12 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { redactRestrictedFields } from '@atelier/ai-harness';
 import {
   createApiErrorResponse,
   createApiResponse,
   ErrorCode,
+  Role,
   SeasonAiRestyleRequestSchema,
   type HomepageCampaignDto,
   type JwtAccessPayload,
@@ -41,8 +43,9 @@ import {
   stripStorefrontSensitiveFields,
 } from '../common/sanitize';
 import { BFF_CONFIG_TOKEN, type BffConfig } from '../config/env';
-import { CurrentUser } from '../security/auth-types';
+import { CurrentUser, type AuthenticatedRequest } from '../security/auth-types';
 import { JwtAuthGuard } from '../security/guards';
+import { JwtVerifierService } from '../security/jwt-verifier.service';
 
 export { STOREFRONT_BOOTSTRAP_CACHE_KEY };
 
@@ -53,6 +56,255 @@ const SEASONS_TTL_SECONDS = 300;
 const PRODUCTS_TTL_SECONDS = 60;
 const SEASON_RESTYLE_TTL_SECONDS = 604_800; // 7 days
 const SAFE_SEASON_SLUG_RE = /^[a-z0-9-]+$/i;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const STOREFRONT_CHAT_RATE_LIMIT = 20;
+const STOREFRONT_CHAT_GUEST_IP_RATE_LIMIT = 30;
+const STOREFRONT_CHAT_RATE_WINDOW_SECONDS = 60;
+
+const STOREFRONT_CHAT_EXTRA_SENSITIVE_KEYS: ReadonlySet<string> = new Set([
+  'costpricevnd',
+  'cost_price_vnd',
+  'costprice',
+  'cost_price',
+  'unitcostvnd',
+  'unit_cost_vnd',
+  'totalcostvnd',
+  'total_cost_vnd',
+  'estimatedcostvnd',
+  'estimated_cost_vnd',
+  'landedcostvnd',
+  'landed_cost_vnd',
+  'wholesalecostvnd',
+  'wholesale_cost_vnd',
+  'wholesalepricevnd',
+  'wholesale_price_vnd',
+  'gianhap',
+  'gia_nhap',
+  'cogs',
+  'suppliercost',
+  'supplier_cost',
+  'suppliercode',
+  'supplier_code',
+  'suppliername',
+  'supplier_name',
+  'supplieremail',
+  'supplier_email',
+  'purchaseorder',
+  'purchase_order',
+  'purchaseorders',
+  'purchase_orders',
+  'pocode',
+  'po_code',
+  'ponumber',
+  'po_number',
+  'poid',
+  'po_id',
+  'draftpo',
+  'draft_po',
+  'grncode',
+  'grn_code',
+  'grnid',
+  'grn_id',
+  'payables',
+  'payableid',
+  'payable_id',
+  'supplierpayable',
+  'supplier_payable',
+  'supplierbatchcode',
+  'supplier_batch_code',
+  'marginpct',
+  'margin_pct',
+  'profitmargin',
+  'profit_margin',
+  'internalsecret',
+  'internal_secret',
+  'supplierid',
+  'supplier_id',
+]);
+
+const STOREFRONT_BLOCKED_ACTION_CARD_TYPES: ReadonlySet<string> = new Set([
+  'PO_DRAFT_CREATED',
+  'CLEARANCE_DRAFT_CREATED',
+  'GARMENT_IMAGE_PROCESSED',
+]);
+
+function stripExtraChatInternalFields(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet<object>(),
+): unknown {
+  if (value === null || value === undefined || typeof value !== 'object') {
+    return value;
+  }
+  if (value instanceof Date) {
+    return new Date(value.getTime());
+  }
+  if (seen.has(value)) {
+    return undefined;
+  }
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return value.map((item) => stripExtraChatInternalFields(item, seen));
+    }
+    const record = value as Record<string, unknown>;
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(record)) {
+      if (STOREFRONT_CHAT_EXTRA_SENSITIVE_KEYS.has(key.toLowerCase())) {
+        continue;
+      }
+      if (key === 'actionCards' && Array.isArray(entry)) {
+        cleaned[key] = entry
+          .filter((card) => {
+            if (!card || typeof card !== 'object' || Array.isArray(card)) {
+              return false;
+            }
+            const cardType = String((card as Record<string, unknown>).type ?? '').toUpperCase();
+            return !STOREFRONT_BLOCKED_ACTION_CARD_TYPES.has(cardType);
+          })
+          .map((card) => stripExtraChatInternalFields(card, seen));
+        continue;
+      }
+      cleaned[key] = stripExtraChatInternalFields(entry, seen);
+    }
+    return cleaned;
+  } finally {
+    seen.delete(value);
+  }
+}
+
+function sanitizeStorefrontChatPayload<T>(payload: T): T {
+  const step1 = stripStorefrontSensitiveFields(payload);
+  const step2 = redactRestrictedFields(step1, [Role.CUSTOMER]);
+  return stripExtraChatInternalFields(step2) as T;
+}
+
+type SentimentLabelValue = 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE';
+
+export interface ReviewSentimentSummary {
+  positiveCount: number;
+  neutralCount: number;
+  negativeCount: number;
+  positivePct: number;
+  neutralPct: number;
+  negativePct: number;
+  averageSentimentScore: number;
+  totalScored: number;
+}
+
+function deriveSentimentLabel(rawLabel: unknown, rawScore: unknown): SentimentLabelValue {
+  if (typeof rawLabel === 'string') {
+    const upper = rawLabel.trim().toUpperCase();
+    if (upper === 'POSITIVE' || upper === 'NEUTRAL' || upper === 'NEGATIVE') {
+      return upper;
+    }
+  }
+  const score = Number(rawScore);
+  if (Number.isFinite(score)) {
+    if (score >= 0.2) return 'POSITIVE';
+    if (score <= -0.2) return 'NEGATIVE';
+  }
+  return 'NEUTRAL';
+}
+
+function normalizeReviewsWithSentiment(
+  rawReviews: unknown[],
+): {
+  reviews: unknown[];
+  computedSummary: ReviewSentimentSummary;
+} {
+  let positiveCount = 0;
+  let neutralCount = 0;
+  let negativeCount = 0;
+  let scoreSum = 0;
+  let totalScored = 0;
+
+  const reviews = rawReviews.map((entry) => {
+    const rec = asRecord(entry);
+    if (!rec) return entry;
+
+    const rawScore = rec.sentimentScore ?? rec.diemCamXucNlp;
+    const numericScore =
+      rawScore !== null && rawScore !== undefined && Number.isFinite(Number(rawScore))
+        ? Number(rawScore)
+        : null;
+    const sentimentLabel = deriveSentimentLabel(rec.sentimentLabel, numericScore);
+
+    if (sentimentLabel === 'POSITIVE') positiveCount += 1;
+    else if (sentimentLabel === 'NEGATIVE') negativeCount += 1;
+    else neutralCount += 1;
+
+    if (numericScore !== null) {
+      scoreSum += numericScore;
+      totalScored += 1;
+    }
+
+    return {
+      ...rec,
+      sentimentScore: numericScore,
+      diemCamXucNlp: numericScore,
+      sentimentLabel,
+    };
+  });
+
+  const total = reviews.length;
+  const positivePct = total > 0 ? Math.round((positiveCount / total) * 100) : 0;
+  const negativePct = total > 0 ? Math.round((negativeCount / total) * 100) : 0;
+  const neutralPct = total > 0 ? Math.max(0, 100 - positivePct - negativePct) : 0;
+  const averageSentimentScore =
+    totalScored > 0 ? Math.round((scoreSum / totalScored) * 1000) / 1000 : 0;
+
+  return {
+    reviews,
+    computedSummary: {
+      positiveCount,
+      neutralCount,
+      negativeCount,
+      positivePct,
+      neutralPct,
+      negativePct,
+      averageSentimentScore,
+      totalScored,
+    },
+  };
+}
+
+function enrichReviewEnvelopeWithSentiment(payload: unknown): unknown {
+  const sanitized = stripStorefrontSensitiveFields(payload);
+  const root = asRecord(sanitized);
+  if (!root) return sanitized;
+
+  const dataRec = asRecord(root.data);
+  const target = dataRec ?? root;
+  if (!Array.isArray(target.reviews)) {
+    return sanitized;
+  }
+
+  const { reviews, computedSummary } = normalizeReviewsWithSentiment(target.reviews);
+  const existingSummary = asRecord(target.sentimentSummary);
+  const sentimentSummary = existingSummary
+    ? {
+        ...computedSummary,
+        ...existingSummary,
+      }
+    : computedSummary;
+
+  if (dataRec) {
+    return {
+      ...root,
+      data: {
+        ...dataRec,
+        reviews,
+        sentimentSummary,
+      },
+    };
+  }
+
+  return {
+    ...root,
+    reviews,
+    sentimentSummary,
+  };
+}
 
 const HERO_EYEBROW_CANONICAL =
   'FASHION ATELIER · EST. 2019 · MAY ĐO THỦ CÔNG TẠI HÀ NỘI';
@@ -390,12 +642,15 @@ function mergeHomepageCampaign(
 
 @Injectable()
 export class StorefrontBffService {
+  private readonly chatRateWindows = new Map<string, number[]>();
+
   constructor(
     @Inject(BFF_CONFIG_TOKEN) private readonly config: BffConfig,
     @Inject(BffRedisService) private readonly redis: BffRedisService,
     @Inject(HttpProxyService) private readonly proxy: HttpProxyService,
     @Inject(CacheInvalidationService)
     private readonly cacheInvalidation: CacheInvalidationService,
+    @Inject(JwtVerifierService) private readonly jwtVerifier: JwtVerifierService,
   ) {}
 
   async handleBootstrap(req: Request, res: Response): Promise<void> {
@@ -864,6 +1119,7 @@ export class StorefrontBffService {
 
     let fitStats: unknown = sanitizedProduct.fitStats ?? null;
     let reviews: unknown[] = [];
+    let sentimentSummary: ReviewSentimentSummary | Record<string, unknown> | null = null;
     let reviewsDegraded = false;
 
     if (productId) {
@@ -883,7 +1139,12 @@ export class StorefrontBffService {
             fitStats = reviewsPayload.fitStats;
           }
           if (Array.isArray(reviewsPayload.reviews)) {
-            reviews = reviewsPayload.reviews;
+            const normalized = normalizeReviewsWithSentiment(reviewsPayload.reviews);
+            reviews = normalized.reviews;
+            const upstreamSummary = asRecord(reviewsPayload.sentimentSummary);
+            sentimentSummary = upstreamSummary
+              ? { ...normalized.computedSummary, ...upstreamSummary }
+              : normalized.computedSummary;
           }
         }
       } else {
@@ -891,12 +1152,13 @@ export class StorefrontBffService {
       }
     }
 
-    // Backward-compatible composite: top-level ProductSpuDto fields + product + fitStats + reviews + reviewsDegraded
+    // Backward-compatible composite: top-level ProductSpuDto fields + product + fitStats + reviews + sentimentSummary + reviewsDegraded
     const compositeData = stripStorefrontSensitiveFields({
       ...sanitizedProduct,
       product: sanitizedProduct,
       fitStats,
       reviews,
+      sentimentSummary,
       reviewsDegraded,
     });
 
@@ -926,11 +1188,25 @@ export class StorefrontBffService {
   }
 
   async handleSizeRecommend(body: unknown, req: Request, res: Response): Promise<void> {
+    let forwardedBody = body;
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      const rec = { ...(body as Record<string, unknown>) };
+      if (!rec.productSlug && typeof rec.slug === 'string' && rec.slug.trim()) {
+        rec.productSlug = rec.slug.trim();
+      }
+      if (rec.fitPreference === 'SNUG') {
+        rec.fitPreference = 'SLIM';
+      } else if (rec.fitPreference === 'TRUE_TO_SIZE') {
+        rec.fitPreference = 'REGULAR';
+      }
+      forwardedBody = rec;
+    }
+
     const upstream = await this.proxy.request({
       method: 'POST',
       url: `${this.config.upstreams.catalogLookbookUrl}/v1/catalog/size-recommend`,
       req,
-      body,
+      body: forwardedBody,
     });
     this.proxy.sendProxyResponse(res, upstream, (payload) =>
       stripStorefrontSensitiveFields(payload),
@@ -947,6 +1223,305 @@ export class StorefrontBffService {
     this.proxy.sendProxyResponse(res, upstream, (payload) =>
       stripStorefrontSensitiveFields(payload),
     );
+  }
+
+  async handleStorefrontChat(
+    body: unknown,
+    req: AuthenticatedRequest,
+    res: Response,
+  ): Promise<void> {
+    const correlationId = getOrCreateCorrelationId(req.headers as HeaderBag);
+    const clientIp = this.proxy.extractClientIp(req);
+
+    // Strip any client-spoofed privileged headers before optional JWT verification
+    delete req.headers['x-user-id'];
+    delete req.headers['x-user-roles'];
+    delete req.headers['x-actor-roles'];
+    delete req.headers['x-supplier-id'];
+    delete req.headers['x-internal-secret'];
+    delete req.headers['x-user-email'];
+    delete req.headers['x-user-name'];
+    delete req.headers['x-loyalty-tier'];
+
+    const user = await this.jwtVerifier.verifyRequestOptional(req);
+
+    const bodyObj = asRecord(body) ?? {};
+    const headerGuestRaw = req.headers['x-guest-session-id'];
+    const headerGuest = Array.isArray(headerGuestRaw) ? headerGuestRaw[0] : headerGuestRaw;
+    const bodyGuest =
+      typeof bodyObj.guestSessionId === 'string' && bodyObj.guestSessionId.trim().length > 0
+        ? bodyObj.guestSessionId.trim()
+        : undefined;
+    const guestSessionId =
+      (typeof headerGuest === 'string' && headerGuest.trim().length > 0
+        ? headerGuest.trim().slice(0, 128)
+        : undefined) ??
+      bodyGuest?.slice(0, 128) ??
+      `guest-${createHash('sha256').update(clientIp).digest('hex').slice(0, 16)}`;
+
+    // Dedicated sliding-window rate limiter (20 req/min) keyed by userId OR guestSessionId + clientIp
+    const bypassHeader = req.headers['x-load-test-bypass'];
+    const isRateLimitBypassed =
+      this.config.nodeEnv !== 'production' && bypassHeader === '1';
+
+    if (isRateLimitBypassed) {
+      res.setHeader('X-RateLimit-Limit', String(STOREFRONT_CHAT_RATE_LIMIT));
+      res.setHeader('X-RateLimit-Remaining', String(STOREFRONT_CHAT_RATE_LIMIT));
+    } else {
+      const rateKey = user
+        ? `user:${user.sub}`
+        : `guest:${guestSessionId}:${clientIp}`;
+      const [primaryWindow, guestIpWindow] = await Promise.all([
+        this.incrementChatRateWindow(rateKey, STOREFRONT_CHAT_RATE_WINDOW_SECONDS),
+        user
+          ? Promise.resolve(null)
+          : this.incrementChatRateWindow(
+              `guest-ip:${clientIp}`,
+              STOREFRONT_CHAT_RATE_WINDOW_SECONDS,
+            ),
+      ]);
+      const primaryExceeded = primaryWindow.count > STOREFRONT_CHAT_RATE_LIMIT;
+      const guestIpExceeded =
+        guestIpWindow !== null && guestIpWindow.count > STOREFRONT_CHAT_GUEST_IP_RATE_LIMIT;
+      const remaining = Math.max(0, STOREFRONT_CHAT_RATE_LIMIT - primaryWindow.count);
+      res.setHeader('X-RateLimit-Limit', String(STOREFRONT_CHAT_RATE_LIMIT));
+      res.setHeader('X-RateLimit-Remaining', String(remaining));
+
+      if (primaryExceeded || guestIpExceeded) {
+        const retryAfter = Math.max(
+          1,
+          primaryExceeded
+            ? primaryWindow.retryAfterSeconds
+            : (guestIpWindow?.retryAfterSeconds ?? 1),
+        );
+        const appliedLimit = primaryExceeded
+          ? STOREFRONT_CHAT_RATE_LIMIT
+          : STOREFRONT_CHAT_GUEST_IP_RATE_LIMIT;
+        res.setHeader('Retry-After', String(retryAfter));
+        res.status(429).json(
+          createApiErrorResponse(
+            ErrorCode.RATE_LIMITED,
+            `Bạn đang gửi tin nhắn quá nhanh (giới hạn ${appliedLimit} lượt/phút). Vui lòng thử lại sau ${retryAfter} giây.`,
+            {
+              bucket: primaryExceeded ? 'storefront_chat' : 'storefront_chat_ip',
+              limit: appliedLimit,
+              windowSeconds: STOREFRONT_CHAT_RATE_WINDOW_SECONDS,
+              retryAfterSeconds: retryAfter,
+            },
+            { correlationId, service: this.config.serviceName },
+          ),
+        );
+        return;
+      }
+    }
+
+    const rawMessage =
+      typeof bodyObj.message === 'string'
+        ? bodyObj.message.trim()
+        : typeof bodyObj.prompt === 'string'
+          ? bodyObj.prompt.trim()
+          : '';
+    if (!rawMessage || rawMessage.length > 2000) {
+      res.status(400).json(
+        createApiErrorResponse(
+          ErrorCode.VALIDATION_ERROR,
+          'Tin nhắn tư vấn cần có từ 1 đến 2000 ký tự.',
+          undefined,
+          { correlationId, service: this.config.serviceName },
+        ),
+      );
+      return;
+    }
+
+    const existingContext = asRecord(bodyObj.context) ?? {};
+    const safeSessionId =
+      typeof bodyObj.sessionId === 'string' && bodyObj.sessionId.trim().length > 0
+        ? bodyObj.sessionId.trim().slice(0, 128)
+        : undefined;
+    const safeHistory = Array.isArray(bodyObj.history)
+      ? bodyObj.history.slice(-12)
+      : undefined;
+    const safeBodyProfile = asRecord(bodyObj.bodyProfile) ?? undefined;
+    const safeBypassCache =
+      typeof bodyObj.bypassCache === 'boolean' ? bodyObj.bypassCache : undefined;
+
+    // HARD-FORCE portal = 'STOREFRONT' and allowlist ONLY safe storefront fields
+    // (explicitly ignoring any client-supplied portal, caller, roles, or scope!)
+    const forwardedBody: Record<string, unknown> = {
+      message: rawMessage,
+      portal: 'STOREFRONT',
+      guestSessionId,
+      ...(safeSessionId ? { sessionId: safeSessionId } : {}),
+      ...(safeBypassCache !== undefined ? { bypassCache: safeBypassCache } : {}),
+      ...(safeHistory ? { history: safeHistory } : {}),
+      ...(safeBodyProfile ? { bodyProfile: safeBodyProfile } : {}),
+      context: {
+        ...existingContext,
+        ...(safeBodyProfile ? { bodyProfile: safeBodyProfile } : {}),
+        ...(safeHistory ? { history: safeHistory } : {}),
+        portal: 'STOREFRONT',
+        actorType: user ? 'CUSTOMER' : 'GUEST_CUSTOMER',
+        guestSessionId,
+        ...(user ? { userId: user.sub, loyaltyTier: user.loyaltyTier } : {}),
+      },
+    };
+
+    const upstream = user
+      ? await this.proxy.request({
+          method: 'POST',
+          url: `${this.config.upstreams.mcpCopilotUrl}/v1/copilot/chat`,
+          req,
+          body: forwardedBody,
+          correlationId,
+          timeoutMs: 65_000,
+          extraHeaders: {
+            'x-user-id': user.sub,
+            'x-user-roles': Role.CUSTOMER,
+            'x-actor-roles': Role.CUSTOMER,
+            'x-user-email': user.email,
+            'x-loyalty-tier': user.loyaltyTier,
+            'x-guest-session-id': guestSessionId,
+            'x-client-ip': clientIp,
+          },
+        })
+      : await this.proxy.request({
+          method: 'POST',
+          url: `${this.config.upstreams.mcpCopilotUrl}/v1/copilot/chat`,
+          body: forwardedBody,
+          correlationId,
+          timeoutMs: 65_000,
+          extraHeaders: {
+            'x-internal-secret': this.config.internalServiceSecret,
+            'x-user-roles': 'GUEST_CUSTOMER',
+            'x-actor-roles': 'GUEST_CUSTOMER',
+            'x-guest-session-id': guestSessionId,
+            'x-client-ip': clientIp,
+            'X-Forwarded-For': clientIp,
+          },
+        });
+
+    this.proxy.sendProxyResponse(res, upstream, (payload) =>
+      sanitizeStorefrontChatPayload(payload),
+    );
+  }
+
+  private async incrementChatRateWindow(
+    rateKey: string,
+    windowSeconds: number,
+  ): Promise<{ count: number; retryAfterSeconds: number }> {
+    const nowMs = Date.now();
+    const windowMs = windowSeconds * 1000;
+    const currentSlot = Math.floor(nowMs / windowMs);
+    const prevSlot = currentSlot - 1;
+    const elapsedRatio = (nowMs % windowMs) / windowMs;
+    const prevWeight = 1 - elapsedRatio;
+
+    const hashedKey = createHash('sha256').update(rateKey).digest('hex').slice(0, 24);
+    const currentKey = `rl:bff:storefront_chat:${hashedKey}:${currentSlot}`;
+    const prevKey = `rl:bff:storefront_chat:${hashedKey}:${prevSlot}`;
+
+    const currentRes = await this.redis.incrWithTtlSafe(currentKey, windowSeconds * 2);
+    if (currentRes !== null) {
+      const prevRaw = await this.redis.getSafe(prevKey);
+      const prevCount = prevRaw ? Number.parseInt(prevRaw, 10) || 0 : 0;
+      const weightedCount = Math.ceil(prevCount * prevWeight) + currentRes.count;
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((windowMs - (nowMs % windowMs)) / 1000),
+      );
+      return { count: weightedCount, retryAfterSeconds };
+    }
+
+    const cutoff = nowMs - windowMs;
+    const existing = this.chatRateWindows.get(rateKey) ?? [];
+    const active = existing.filter((ts) => ts > cutoff);
+    active.push(nowMs);
+    this.chatRateWindows.set(rateKey, active);
+
+    if (this.chatRateWindows.size > 1500) {
+      for (const [k, timestamps] of this.chatRateWindows.entries()) {
+        if (timestamps.length === 0 || timestamps[timestamps.length - 1] <= cutoff) {
+          this.chatRateWindows.delete(k);
+        }
+      }
+    }
+
+    const oldest = active[0] ?? nowMs;
+    const retryAfterSeconds = Math.max(1, Math.ceil((oldest + windowMs - nowMs) / 1000));
+    return { count: active.length, retryAfterSeconds };
+  }
+
+  async handleListProductReviewsBySlugOrId(
+    slugOrId: string,
+    query: Record<string, unknown>,
+    req: Request,
+    res: Response,
+  ): Promise<void> {
+    const correlationId = getOrCreateCorrelationId(req.headers as HeaderBag);
+    const trimmed = (slugOrId || '').trim();
+    if (!trimmed) {
+      res.status(400).json(
+        createApiErrorResponse(
+          ErrorCode.VALIDATION_ERROR,
+          'Thiếu mã hoặc slug sản phẩm.',
+          undefined,
+          { correlationId, service: this.config.serviceName },
+        ),
+      );
+      return;
+    }
+
+    let resolvedProductId = trimmed;
+    if (!UUID_REGEX.test(trimmed)) {
+      const cachedRaw = await this.redis.getSafe(`bff:storefront:product:${trimmed}`);
+      let foundId: string | null = null;
+      if (cachedRaw) {
+        try {
+          const parsed = JSON.parse(cachedRaw) as unknown;
+          const dataObj = unwrapDataPayload(parsed);
+          if (typeof dataObj?.id === 'string' && UUID_REGEX.test(dataObj.id)) {
+            foundId = dataObj.id;
+          }
+        } catch {
+          foundId = null;
+        }
+      }
+
+      if (!foundId) {
+        const productRes = await this.proxy.request({
+          method: 'GET',
+          url: `${this.config.upstreams.catalogLookbookUrl}/v1/catalog/products/${encodeURIComponent(trimmed)}`,
+          req,
+          correlationId,
+          timeoutMs: 3000,
+        });
+        if (!productRes.ok) {
+          this.proxy.sendProxyResponse(res, productRes, (payload) =>
+            stripStorefrontSensitiveFields(payload),
+          );
+          return;
+        }
+        const productData = unwrapDataPayload(productRes.body);
+        if (typeof productData?.id === 'string' && UUID_REGEX.test(productData.id)) {
+          foundId = productData.id;
+        }
+      }
+
+      if (!foundId) {
+        res.status(404).json(
+          createApiErrorResponse(
+            ErrorCode.NOT_FOUND,
+            `Không tìm thấy sản phẩm "${trimmed}".`,
+            undefined,
+            { correlationId, service: this.config.serviceName },
+          ),
+        );
+        return;
+      }
+      resolvedProductId = foundId;
+    }
+
+    await this.handleListProductReviews(resolvedProductId, query, req, res);
   }
 
   async handleListProductReviews(
@@ -972,6 +1547,16 @@ export class StorefrontBffService {
             productId,
             fitStats: null,
             reviews: [],
+            sentimentSummary: {
+              positiveCount: 0,
+              neutralCount: 0,
+              negativeCount: 0,
+              positivePct: 0,
+              neutralPct: 0,
+              negativePct: 0,
+              averageSentimentScore: 0,
+              totalScored: 0,
+            },
             total: 0,
             reviewsDegraded: true,
           },
@@ -982,7 +1567,7 @@ export class StorefrontBffService {
     }
 
     this.proxy.sendProxyResponse(res, upstream, (payload) =>
-      stripStorefrontSensitiveFields(payload),
+      enrichReviewEnvelopeWithSentiment(payload),
     );
   }
 
@@ -1113,6 +1698,16 @@ export class StorefrontBffController {
     await this.storefront.handleListProducts(query, req, res);
   }
 
+  @Get('products/:slugOrId/reviews')
+  async listProductReviewsBySlugOrId(
+    @Param('slugOrId') slugOrId: string,
+    @Query() query: Record<string, unknown>,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.storefront.handleListProductReviewsBySlugOrId(slugOrId, query, req, res);
+  }
+
   @Get('products/:slug')
   async getProductBySlug(
     @Param('slug') slug: string,
@@ -1120,6 +1715,15 @@ export class StorefrontBffController {
     @Res() res: Response,
   ): Promise<void> {
     await this.storefront.handleProductCompositeBySlug(slug, req, res);
+  }
+
+  @Post('chat')
+  async chatStorefront(
+    @Body() body: unknown,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.storefront.handleStorefrontChat(body, req, res);
   }
 
   @Get('categories')

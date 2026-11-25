@@ -251,6 +251,8 @@ export const AuditLogDtoSchema = z.object({
   resourceId: z.string().nullable(),
   correlationId: z.string().nullable(),
   ipAddress: z.string().nullable().optional(),
+  beforeJsonb: z.record(z.unknown()).nullable().optional(),
+  afterJsonb: z.record(z.unknown()).nullable().optional(),
   metadata: z.record(z.unknown()),
   createdAt: z.string(),
 });
@@ -265,6 +267,72 @@ export const CreateAuditLogInputSchema = z.object({
   resourceId: z.string().nullable().optional(),
   correlationId: z.string().nullable().optional(),
   ipAddress: z.string().nullable().optional(),
+  beforeJsonb: z.record(z.unknown()).nullable().optional(),
+  afterJsonb: z.record(z.unknown()).nullable().optional(),
   metadata: z.record(z.unknown()).default({}),
 });
 export type CreateAuditLogInput = z.infer<typeof CreateAuditLogInputSchema>;
+
+// ----------------------------------------------------------------------------
+// Stage P2.1: IAM Create User, Reset 2FA, Paginated Audit Logs & CRM Customers
+// ----------------------------------------------------------------------------
+
+export const AdminCreateUserDtoSchema = z.object({
+  email: z.string().trim().email(),
+  fullName: z.string().trim().min(1).max(140),
+  password: z.string().min(8).max(128),
+  roles: z.array(RoleSchema).min(1),
+  supplierId: z.string().min(1).nullable().optional(),
+  phone: z.string().trim().min(8).max(24).nullable().optional(),
+  status: UserStatusSchema.default(UserStatus.ACTIVE),
+});
+export type AdminCreateUserRequest = z.infer<typeof AdminCreateUserDtoSchema>;
+export type AdminCreateUserDto = AdminCreateUserRequest;
+
+export const AdminReset2FaResultDtoSchema = z.object({
+  userId: z.string().min(1),
+  mfaEnabled: z.boolean(),
+  revokedSessions: z.boolean().optional(),
+  resetAt: z.string(),
+});
+export type AdminReset2FaResultDto = z.infer<typeof AdminReset2FaResultDtoSchema>;
+
+export const AuditLogQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  action: z.string().trim().optional(),
+  actor: z.string().trim().optional(),
+  resourceType: z.string().trim().optional(),
+  from: z.string().trim().optional(),
+  to: z.string().trim().optional(),
+});
+export type AuditLogQuery = z.infer<typeof AuditLogQuerySchema>;
+
+export const PaginatedAuditLogsDtoSchema = z.object({
+  items: z.array(AuditLogDtoSchema),
+  pagination: z.object({
+    page: z.number().int().positive(),
+    limit: z.number().int().positive(),
+    total: z.number().int().nonnegative(),
+    totalPages: z.number().int().nonnegative(),
+  }),
+});
+export type PaginatedAuditLogsDto = z.infer<typeof PaginatedAuditLogsDtoSchema>;
+
+export const AdminCustomerSummaryDtoSchema = z.object({
+  id: z.string().min(1),
+  email: z.string().email(),
+  fullName: z.string().min(1),
+  phone: z.string().nullable().optional(),
+  vipTier: LoyaltyTierSchema,
+  loyaltyTier: LoyaltyTierSchema,
+  tryOnQuotaRemaining: z.number().int().nonnegative(),
+  tryOnDailyLimit: z.number().int().nonnegative(),
+  codTrustScore: z.number().min(0).max(100),
+  isActive: z.boolean(),
+  status: UserStatusSchema,
+  orderCount: z.number().int().nonnegative().optional(),
+  rmaCount: z.number().int().nonnegative().optional(),
+  createdAt: z.string(),
+});
+export type AdminCustomerSummaryDto = z.infer<typeof AdminCustomerSummaryDtoSchema>;

@@ -9,15 +9,29 @@ import { CATEGORY_TABS } from '@/lib/catalog-data';
 
 export const dynamic = 'force-dynamic';
 
+function parseSafeDate(value: string | undefined, fallback: Date): Date {
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = getSiteBaseUrl();
   const now = new Date();
 
-  const [productsRes, occasions, seasons] = await Promise.all([
-    fetchStorefrontProducts({ limit: 100 }),
-    fetchOccasionLookbooks(),
-    fetchSeasonalCollections(),
-  ]);
+  const [productsSettled, occasionsSettled, seasonsSettled] =
+    await Promise.allSettled([
+      fetchStorefrontProducts({ limit: 100 }),
+      fetchOccasionLookbooks(),
+      fetchSeasonalCollections(),
+    ]);
+
+  const products =
+    productsSettled.status === 'fulfilled' ? productsSettled.value.products : [];
+  const occasions =
+    occasionsSettled.status === 'fulfilled' ? occasionsSettled.value : [];
+  const seasons =
+    seasonsSettled.status === 'fulfilled' ? seasonsSettled.value : [];
 
   const staticRoutes: MetadataRoute.Sitemap = [
     {
@@ -47,34 +61,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   const categoryRoutes: MetadataRoute.Sitemap = CATEGORY_TABS.map((cat) => ({
-    url: `${baseUrl}/bo-suu-tap/${cat.slug}`,
+    url: `${baseUrl}/bo-suu-tap/${encodeURIComponent(cat.slug)}`,
     lastModified: now,
     changeFrequency: 'weekly',
     priority: 0.8,
   }));
 
   const occasionRoutes: MetadataRoute.Sitemap = occasions.map((occ) => ({
-    url: `${baseUrl}/bo-suu-tap/${occ.slug}`,
+    url: `${baseUrl}/bo-suu-tap/${encodeURIComponent(occ.slug)}`,
     lastModified: now,
     changeFrequency: 'weekly',
     priority: 0.8,
   }));
 
   const seasonRoutes: MetadataRoute.Sitemap = seasons.map((season) => ({
-    url: `${baseUrl}/bo-suu-tap/${season.slug}`,
+    url: `${baseUrl}/bo-suu-tap/${encodeURIComponent(season.slug)}`,
     lastModified: now,
     changeFrequency: 'weekly',
     priority: 0.8,
   }));
 
-  const productRoutes: MetadataRoute.Sitemap = productsRes.products.map(
-    (product) => ({
-      url: `${baseUrl}/san-pham/${product.slug}`,
-      lastModified: product.updatedAt ? new Date(product.updatedAt) : now,
+  const productRoutes: MetadataRoute.Sitemap = products
+    .filter((product) => Boolean(product.slug))
+    .map((product) => ({
+      url: `${baseUrl}/san-pham/${encodeURIComponent(product.slug)}`,
+      lastModified: parseSafeDate(product.updatedAt, now),
       changeFrequency: 'daily',
       priority: 0.9,
-    }),
-  );
+    }));
 
   const seen = new Set<string>();
   return [

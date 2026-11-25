@@ -36,6 +36,7 @@ const OrderConfirmedPayloadSchema = z.object({
   trackingCode: z.string().trim().max(80).optional().nullable(),
   shippingMethod: z.string().trim().max(40).optional().nullable(),
   paymentMethod: z.string().trim().max(40).optional().nullable(),
+  simulateZnsFailure: z.boolean().optional(),
   items: z
     .array(
       z.object({
@@ -58,6 +59,7 @@ const OrderPackedPayloadSchema = z.object({
   customerName: z.string().trim().max(140).optional().nullable(),
   packPhotoUrl: z.string().trim().min(1),
   trackingCode: z.string().trim().max(80).optional().nullable(),
+  simulateZnsFailure: z.boolean().optional(),
 });
 
 const PoSubmittedPayloadSchema = z.object({
@@ -69,6 +71,7 @@ const PoSubmittedPayloadSchema = z.object({
   expectedDeliveryDate: z.string().trim().max(40).optional().nullable(),
   totalAmountVnd: z.coerce.number().nonnegative().optional(),
   notes: z.string().trim().max(500).optional().nullable(),
+  simulateZnsFailure: z.boolean().optional(),
   items: z
     .array(
       z.object({
@@ -79,6 +82,30 @@ const PoSubmittedPayloadSchema = z.object({
       }),
     )
     .optional(),
+});
+
+const RmaRejectedPayloadSchema = z.object({
+  eventId: z.string().trim().min(1).max(128).optional(),
+  rmaId: z.string().trim().min(1).max(64),
+  rmaCode: z.string().trim().min(1).max(64),
+  orderCode: z.string().trim().min(1).max(64),
+  customerEmail: z.string().trim().email(),
+  customerPhone: z.string().trim().max(40).optional().nullable(),
+  customerName: z.string().trim().max(140).optional().nullable(),
+  reason: z.string().trim().min(1).max(500),
+  rejectedBy: z.string().trim().max(140).optional().nullable(),
+  simulateZnsFailure: z.boolean().optional(),
+});
+
+const DirectZnsPayloadSchema = z.object({
+  eventId: z.string().trim().min(1).max(128).optional(),
+  phone: z.string().trim().min(8).max(40),
+  templateCode: z.string().trim().min(1).max(64).default('ORDER_CONFIRMED_VI'),
+  subject: z.string().trim().max(200).optional(),
+  templateData: z
+    .record(z.union([z.string(), z.number(), z.boolean(), z.null()]))
+    .default({}),
+  simulateZnsFailure: z.boolean().optional(),
 });
 
 @Controller('internal/notify')
@@ -119,6 +146,7 @@ export class InternalNotifyController {
         trackingCode: d.trackingCode ?? undefined,
         shippingMethod: d.shippingMethod ?? undefined,
         paymentMethod: d.paymentMethod ?? undefined,
+        simulateZnsFailure: d.simulateZnsFailure,
         items: d.items,
       },
       correlationId,
@@ -160,6 +188,7 @@ export class InternalNotifyController {
         customerName: d.customerName ?? undefined,
         packPhotoUrl: d.packPhotoUrl,
         trackingCode: d.trackingCode ?? undefined,
+        simulateZnsFailure: d.simulateZnsFailure,
       },
       correlationId,
       traceparent,
@@ -201,7 +230,90 @@ export class InternalNotifyController {
         expectedDeliveryDate: d.expectedDeliveryDate ?? undefined,
         totalAmountVnd: d.totalAmountVnd,
         notes: d.notes ?? undefined,
+        simulateZnsFailure: d.simulateZnsFailure,
         items: d.items,
+      },
+      correlationId,
+      traceparent,
+    );
+
+    return createApiResponse(result, {
+      correlationId,
+      service: this.config.serviceName,
+    });
+  }
+
+  @Post('rma-rejected')
+  @HttpCode(HttpStatus.OK)
+  async notifyRmaRejected(
+    @Body() rawBody: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<NotificationDispatchResult>> {
+    assertInternalSecret(headers, this.config.internalServiceSecret);
+    const correlationId = getOrCreateCorrelationId(headers);
+    const traceparent = getOrCreateTraceparent(headers);
+
+    const parsed = RmaRejectedPayloadSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid rma-rejected notification payload.',
+        details: { issues: parsed.error.flatten() },
+      });
+    }
+
+    const d = parsed.data;
+    const result = await this.notifications.sendRmaRejected(
+      {
+        eventId: d.eventId,
+        rmaId: d.rmaId,
+        rmaCode: d.rmaCode,
+        orderCode: d.orderCode,
+        customerEmail: d.customerEmail,
+        customerPhone: d.customerPhone ?? undefined,
+        customerName: d.customerName ?? undefined,
+        reason: d.reason,
+        rejectedBy: d.rejectedBy ?? undefined,
+        simulateZnsFailure: d.simulateZnsFailure,
+      },
+      correlationId,
+      traceparent,
+    );
+
+    return createApiResponse(result, {
+      correlationId,
+      service: this.config.serviceName,
+    });
+  }
+
+  @Post('zns')
+  @HttpCode(HttpStatus.OK)
+  async notifyDirectZns(
+    @Body() rawBody: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<NotificationDispatchResult>> {
+    assertInternalSecret(headers, this.config.internalServiceSecret);
+    const correlationId = getOrCreateCorrelationId(headers);
+    const traceparent = getOrCreateTraceparent(headers);
+
+    const parsed = DirectZnsPayloadSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Invalid ZNS notification payload.',
+        details: { issues: parsed.error.flatten() },
+      });
+    }
+
+    const d = parsed.data;
+    const result = await this.notifications.sendDirectZns(
+      {
+        eventId: d.eventId,
+        phone: d.phone,
+        templateCode: d.templateCode,
+        subject: d.subject,
+        templateData: d.templateData,
+        simulateZnsFailure: d.simulateZnsFailure,
       },
       correlationId,
       traceparent,

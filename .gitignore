@@ -43,3 +43,7 @@ pnpm-debug.log*
 Thumbs.db
 .idea/
 *.swp
+
+# Office temp files
+~\$*
+~WR*.tmp

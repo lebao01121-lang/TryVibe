@@ -22,6 +22,8 @@ export interface ProxyRequestOptions {
   extraHeaders?: Record<string, string | undefined>;
   timeoutMs?: number;
   correlationId?: string;
+  redirect?: 'follow' | 'manual' | 'error';
+  disableRetry?: boolean;
 }
 
 export interface ProxyResponseResult<T = unknown> {
@@ -31,6 +33,7 @@ export interface ProxyResponseResult<T = unknown> {
   rawText: string;
   contentType: string;
   setCookies: string[];
+  location?: string | null;
 }
 
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
@@ -136,72 +139,138 @@ export class HttpProxyService {
         typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
     }
 
-    const controller = new AbortController();
     const timeoutMs = options.timeoutMs ?? 15_000;
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const redirectMode = options.redirect ?? 'follow';
+    const canRetryConnectionFailure =
+      !options.disableRetry &&
+      redirectMode !== 'manual' &&
+      this.isRetryableSafeRequest(method, options.url);
+    const maxAttempts = canRetryConnectionFailure ? 2 : 1;
 
-    try {
-      const response = await fetch(options.url, {
-        method,
-        headers,
-        body: fetchBody,
-        signal: controller.signal,
-      });
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-      const contentType = response.headers.get('content-type') ?? 'application/json';
-      const setCookies = this.extractSetCookies(response.headers);
-      const rawText = await response.text();
-
-      let parsedBody: unknown = null;
-      if (rawText.length > 0) {
-        try {
-          parsedBody = JSON.parse(rawText);
-        } catch {
-          parsedBody = rawText;
-        }
-      }
-
-      return {
-        status: response.status,
-        ok: response.ok,
-        body: parsedBody as T,
-        rawText,
-        contentType,
-        setCookies,
-      };
-    } catch (error) {
-      const isTimeout = error instanceof Error && error.name === 'AbortError';
-      this.logger.warn(
-        {
-          url: options.url,
+      try {
+        const response = await fetch(options.url, {
           method,
-          correlationId,
-          timeout: isTimeout,
-          err: error instanceof Error ? error.message : String(error),
-        },
-        'Downstream proxy request failed',
-      );
+          headers,
+          body: fetchBody,
+          redirect: redirectMode,
+          signal: controller.signal,
+        });
 
-      const errPayload = createApiErrorResponse(
-        ErrorCode.DEPENDENCY_UNAVAILABLE,
-        isTimeout
-          ? `Downstream service timed out (${method} ${options.url}).`
-          : `Downstream service unavailable (${method} ${options.url}).`,
-        undefined,
-        { correlationId, service: this.config.serviceName },
-      );
+        const contentType = response.headers.get('content-type') ?? 'application/json';
+        const setCookies = this.extractSetCookies(response.headers);
+        const location = response.headers.get('location');
+        const rawText = await response.text();
 
-      return {
-        status: 503,
-        ok: false,
-        body: errPayload as T,
-        rawText: JSON.stringify(errPayload),
-        contentType: 'application/json',
-        setCookies: [],
-      };
-    } finally {
-      clearTimeout(timer);
+        let parsedBody: unknown = null;
+        if (rawText.length > 0) {
+          try {
+            parsedBody = JSON.parse(rawText);
+          } catch {
+            parsedBody = rawText;
+          }
+        }
+
+        return {
+          status: response.status,
+          ok: response.ok,
+          body: parsedBody as T,
+          rawText,
+          contentType,
+          setCookies,
+          location,
+        };
+      } catch (error) {
+        const isTimeout = error instanceof Error && error.name === 'AbortError';
+        const shouldRetry = !isTimeout && attempt < maxAttempts;
+
+        if (shouldRetry) {
+          this.logger.warn(
+            {
+              url: options.url,
+              method,
+              correlationId,
+              attempt,
+              err: error instanceof Error ? error.message : String(error),
+            },
+            'Transient downstream network error on safe read call; retrying once after 250ms',
+          );
+          await new Promise<void>((resolve) => setTimeout(resolve, 250));
+          continue;
+        }
+
+        this.logger.warn(
+          {
+            url: options.url,
+            method,
+            correlationId,
+            timeout: isTimeout,
+            attempt,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          'Downstream proxy request failed',
+        );
+
+        const errPayload = createApiErrorResponse(
+          ErrorCode.DEPENDENCY_UNAVAILABLE,
+          isTimeout
+            ? `Downstream service timed out (${method} ${options.url}).`
+            : `Downstream service unavailable (${method} ${options.url}).`,
+          undefined,
+          { correlationId, service: this.config.serviceName },
+        );
+
+        return {
+          status: 503,
+          ok: false,
+          body: errPayload as T,
+          rawText: JSON.stringify(errPayload),
+          contentType: 'application/json',
+          setCookies: [],
+        };
+      } finally {
+        clearTimeout(timer);
+      }
     }
+
+    // Unreachable defensively; satisfies TypeScript return type
+    const fallbackErr = createApiErrorResponse(
+      ErrorCode.DEPENDENCY_UNAVAILABLE,
+      `Downstream service unavailable (${method} ${options.url}).`,
+      undefined,
+      { correlationId, service: this.config.serviceName },
+    );
+    return {
+      status: 503,
+      ok: false,
+      body: fallbackErr as T,
+      rawText: JSON.stringify(fallbackErr),
+      contentType: 'application/json',
+      setCookies: [],
+    };
+  }
+
+  private isRetryableSafeRequest(method: string, rawUrl: string): boolean {
+    if (method === 'GET' || method === 'HEAD') {
+      return true;
+    }
+    if (method === 'POST') {
+      try {
+        const pathname = new URL(rawUrl).pathname.replace(/\/+$/, '');
+        return (
+          pathname.endsWith('/inventory/availability/batch') ||
+          pathname.endsWith('/inventory/batch-availability') ||
+          pathname.endsWith('/outfits/preview') ||
+          pathname.endsWith('/outfit-studio/preview')
+        );
+      } catch {
+        return false;
+      }
+    }
+    return false;
   }
 
   sendProxyResponse(
@@ -211,6 +280,13 @@ export class HttpProxyService {
   ): void {
     if (upstream.setCookies.length > 0) {
       res.setHeader('Set-Cookie', upstream.setCookies);
+    }
+
+    if (upstream.location && upstream.status >= 300 && upstream.status < 400) {
+      res.setHeader('Location', upstream.location);
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(upstream.status).send();
+      return;
     }
 
     const finalBody = transformBody ? transformBody(upstream.body) : upstream.body;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib.util
 import io
 import logging
 import math
@@ -44,16 +45,34 @@ YUNET_MODEL_PATH = (
 
 _MODEL_LOCK = threading.Lock()
 _REMBG_SESSION: Any | None = None
+_REMBG_FAILED = False
 _YUNET_DETECTOR: Any | None = None
 _HAAR_CLASSIFIER: Any | None = None
 _MEDIAPIPE_POSE: Any | None = None
 _MEDIAPIPE_CHECKED = False
 
 
-def _get_rembg_session() -> Any:
-    global _REMBG_SESSION
+def _is_onnxruntime_available() -> bool:
+    try:
+        return importlib.util.find_spec("onnxruntime") is not None
+    except Exception:
+        return False
+
+
+def _get_rembg_session() -> Any | None:
+    global _REMBG_SESSION, _REMBG_FAILED
     with _MODEL_LOCK:
-        if _REMBG_SESSION is None:
+        if _REMBG_SESSION is not None:
+            return _REMBG_SESSION
+        if _REMBG_FAILED:
+            return None
+        if not _is_onnxruntime_available():
+            logger.warning(
+                "onnxruntime backend not installed; skipping rembg import to avoid SystemExit and using GrabCut fallback"
+            )
+            _REMBG_FAILED = True
+            return None
+        try:
             from rembg import new_session
 
             t0 = time.perf_counter()
@@ -62,6 +81,10 @@ def _get_rembg_session() -> Any:
                 "Loaded rembg isnet-general-use session in %.2fs",
                 time.perf_counter() - t0,
             )
+        except (Exception, SystemExit) as exc:
+            logger.warning("rembg isnet-general-use unavailable (%s); using GrabCut fallback", exc)
+            _REMBG_FAILED = True
+            _REMBG_SESSION = None
         return _REMBG_SESSION
 
 
@@ -160,18 +183,48 @@ def _parse_point(
 
 
 def _extract_person_silhouette(rgb_img: Image.Image) -> np.ndarray:
-    """Extract clean binary person silhouette mask via cached rembg isnet-general-use."""
-    from rembg import remove
-
+    """Extract clean binary person silhouette mask via cached rembg (with GrabCut fallback)."""
     w, h = rgb_img.size
-    small = rgb_img.resize((384, 512), Image.Resampling.BILINEAR)
     sess = _get_rembg_session()
-    rgba_small = remove(small, session=sess, post_process_mask=True).convert("RGBA")
-    alpha_small = np.array(rgba_small.split()[3], dtype=np.uint8)
-    alpha_full = cv2.resize(alpha_small, (w, h), interpolation=cv2.INTER_LINEAR)
-    mask = alpha_full > 40
-    mask = ndimage.binary_fill_holes(mask)
-    return mask
+    if sess is not None:
+        try:
+            from rembg import remove
+
+            small = rgb_img.resize((384, 512), Image.Resampling.BILINEAR)
+            rgba_small = remove(small, session=sess, post_process_mask=True).convert("RGBA")
+            alpha_small = np.array(rgba_small.split()[3], dtype=np.uint8)
+            alpha_full = cv2.resize(alpha_small, (w, h), interpolation=cv2.INTER_LINEAR)
+            mask = ndimage.binary_fill_holes(alpha_full > 40)
+            if int(np.count_nonzero(mask)) > 500:
+                return mask
+        except (Exception, SystemExit) as exc:
+            logger.warning("rembg silhouette failed (%s); falling back to GrabCut", exc)
+
+    # Fast GrabCut fallback on downscaled 192x256
+    rgb_np = np.array(rgb_img, dtype=np.uint8)
+    bgr_small = cv2.cvtColor(cv2.resize(rgb_np, (192, 256)), cv2.COLOR_RGB2BGR)
+    gc_mask = np.zeros((256, 192), dtype=np.uint8)
+    rect = (18, 10, 156, 242)
+    bgd = np.zeros((1, 65), np.float64)
+    fgd = np.zeros((1, 65), np.float64)
+    try:
+        cv2.grabCut(bgr_small, gc_mask, rect, bgd, fgd, 3, cv2.GC_INIT_WITH_RECT)
+        fg_small = ((gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD)).astype(np.uint8) * 255
+        fg_full = cv2.resize(fg_small, (w, h), interpolation=cv2.INTER_LINEAR) > 127
+        return ndimage.binary_fill_holes(fg_full)
+    except Exception:
+        fallback = np.zeros((h, w), dtype=bool)
+        cv2.ellipse(
+            fallback.view(np.uint8),
+            (w // 2, int(h * 0.56)),
+            (int(w * 0.34), int(h * 0.48)),
+            0,
+            0,
+            360,
+            1,
+            -1,
+        )
+        return fallback
 
 
 def _detect_primary_face(
@@ -616,12 +669,16 @@ def _prepare_clean_garment_rgba(garment_bytes: bytes) -> np.ndarray:
     ]
 
     if not has_alpha_band or any(c > 8 for c in corners):
-        # Run rembg neural background removal to isolate pure garment RGBA
-        from rembg import remove
-
+        # Run rembg neural background removal to isolate pure garment RGBA (when onnxruntime available)
         sess = _get_rembg_session()
-        cut = remove(rgba.convert("RGB"), session=sess, post_process_mask=True).convert("RGBA")
-        arr = np.array(cut, dtype=np.uint8)
+        if sess is not None:
+            try:
+                from rembg import remove
+
+                cut = remove(rgba.convert("RGB"), session=sess, post_process_mask=True).convert("RGBA")
+                arr = np.array(cut, dtype=np.uint8)
+            except (Exception, SystemExit) as exc:
+                logger.warning("rembg garment cutout failed (%s); using border floodfill", exc)
 
     # Strip any stray border-connected white background pixels
     arr = _strip_outer_white_halo(arr)

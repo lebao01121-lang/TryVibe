@@ -6,11 +6,13 @@ import {
   ALL_PERMISSIONS,
   ALL_ROLES,
   AuditActorType,
+  AuthProvider,
   ErrorCode,
   isMfaRequiredForRoles,
   LoyaltyTier,
   Role,
   UserStatus,
+  type AuthProvider as AuthProviderValue,
   type JwtAccessPayload,
   type LoginRequest,
   type LoginResponse,
@@ -69,6 +71,7 @@ export interface UserDbRow {
   password_hash: string;
   full_name: string;
   avatar_url: string | null;
+  auth_provider?: AuthProviderValue | string | null;
   status: UserStatusValue;
   is_active?: boolean | null;
   deleted_at?: Date | string | null;
@@ -296,11 +299,21 @@ export class AuthService {
       user.status === UserStatus.ACTIVE &&
       !user.deleted_at;
 
+    const rawAuthProvider = (user.auth_provider ?? AuthProvider.LOCAL).toUpperCase();
+    const authProvider: AuthProviderValue =
+      rawAuthProvider === AuthProvider.GOOGLE
+        ? AuthProvider.GOOGLE
+        : rawAuthProvider === AuthProvider.GITHUB
+          ? AuthProvider.GITHUB
+          : AuthProvider.LOCAL;
+
     return {
       id: user.id,
       email: user.email,
       fullName: user.full_name,
       phone: user.phone,
+      avatarUrl: user.avatar_url ?? null,
+      authProvider,
       status: user.status,
       isActive,
       deletedAt: user.deleted_at ? toIso(user.deleted_at) : null,
@@ -457,11 +470,20 @@ export class AuthService {
     const correlationId = getCorrelationIdFromRequest(req);
     const ipAddress = extractClientIp(req);
 
-    const existingEmail = await this.db.query<{ id: string }>(
-      'SELECT id FROM users WHERE LOWER(email) = LOWER($1)',
+    const existingEmail = await this.db.query<{ id: string; auth_provider?: string | null }>(
+      'SELECT id, auth_provider FROM users WHERE LOWER(email) = LOWER($1)',
       [email],
     );
     if (existingEmail.rows.length > 0) {
+      const existingProvider = (existingEmail.rows[0].auth_provider ?? AuthProvider.LOCAL).toUpperCase();
+      if (existingProvider !== AuthProvider.LOCAL) {
+        throw new ApiDomainException(
+          HttpStatus.CONFLICT,
+          ErrorCode.EMAIL_BOUND_TO_OAUTH,
+          'Email này đã được tạo qua đăng nhập nhanh bằng Google/GitHub nên không thể đăng ký tài khoản mới. Vui lòng tiếp tục đăng nhập bằng Google/GitHub.',
+          { authProvider: existingProvider },
+        );
+      }
       throw new ApiDomainException(
         HttpStatus.CONFLICT,
         ErrorCode.CONFLICT,
@@ -579,6 +601,16 @@ export class AuthService {
     }
 
     const userRow = userRes.rows[0];
+    const authProvider = (userRow.auth_provider ?? AuthProvider.LOCAL).toUpperCase();
+    if (authProvider !== AuthProvider.LOCAL) {
+      throw new ApiDomainException(
+        HttpStatus.FORBIDDEN,
+        ErrorCode.OAUTH_ONLY_ACCOUNT,
+        'Tài khoản này sử dụng đăng nhập nhanh Google/GitHub và không có mật khẩu. Vui lòng bấm Đăng nhập bằng Google/GitHub.',
+        { authProvider },
+      );
+    }
+
     if (!verifyPassword(input.password, userRow.password_hash)) {
       throw new ApiDomainException(
         HttpStatus.UNAUTHORIZED,
@@ -800,16 +832,26 @@ export class AuthService {
     };
 
     const userRes = await this.db.query<
-      Pick<UserDbRow, 'id' | 'email' | 'full_name' | 'status'>
-    >('SELECT id, email, full_name, status FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [
-      email,
-    ]);
+      Pick<UserDbRow, 'id' | 'email' | 'full_name' | 'status' | 'auth_provider'>
+    >(
+      'SELECT id, email, full_name, status, auth_provider FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1',
+      [email],
+    );
 
     if (userRes.rows.length === 0) {
       return uniformResponse;
     }
 
     const user = userRes.rows[0];
+    const authProvider = (user.auth_provider ?? AuthProvider.LOCAL).toUpperCase();
+    if (authProvider !== AuthProvider.LOCAL) {
+      throw new ApiDomainException(
+        HttpStatus.FORBIDDEN,
+        ErrorCode.OAUTH_ONLY_ACCOUNT,
+        'Tài khoản này sử dụng đăng nhập nhanh Google/GitHub và không có mật khẩu. Vui lòng bấm Đăng nhập bằng Google/GitHub.',
+        { authProvider },
+      );
+    }
     if (user.status !== UserStatus.ACTIVE) {
       return uniformResponse;
     }
@@ -1017,6 +1059,29 @@ export class AuthService {
     const ipAddress = extractClientIp(req);
 
     const txResult = await this.db.transaction(async (tx) => {
+      const existingUserRes = await tx.query<Pick<UserDbRow, 'id' | 'auth_provider'>>(
+        'SELECT id, auth_provider FROM users WHERE id = $1 LIMIT 1',
+        [stored.userId],
+      );
+      if (existingUserRes.rows.length === 0) {
+        throw new ApiDomainException(
+          HttpStatus.NOT_FOUND,
+          ErrorCode.NOT_FOUND,
+          'Không tìm thấy tài khoản người dùng.',
+        );
+      }
+      const existingProvider = (
+        existingUserRes.rows[0].auth_provider ?? AuthProvider.LOCAL
+      ).toUpperCase();
+      if (existingProvider !== AuthProvider.LOCAL) {
+        throw new ApiDomainException(
+          HttpStatus.FORBIDDEN,
+          ErrorCode.OAUTH_ONLY_ACCOUNT,
+          'Tài khoản đăng nhập nhanh Google/GitHub không sử dụng mật khẩu nội bộ nên không thể đặt lại mật khẩu.',
+          { authProvider: existingProvider },
+        );
+      }
+
       const updatedUser = await tx.query<Pick<UserDbRow, 'id' | 'email' | 'permission_version'>>(
         `UPDATE users
          SET password_hash = $1,
@@ -1119,6 +1184,16 @@ export class AuthService {
     }
 
     const userRow = userRes.rows[0];
+    const authProvider = (userRow.auth_provider ?? AuthProvider.LOCAL).toUpperCase();
+    if (authProvider !== AuthProvider.LOCAL) {
+      throw new ApiDomainException(
+        HttpStatus.FORBIDDEN,
+        ErrorCode.OAUTH_ONLY_ACCOUNT,
+        'Tài khoản đăng nhập nhanh Google/GitHub không sử dụng mật khẩu nội bộ nên không thể đổi mật khẩu.',
+        { authProvider },
+      );
+    }
+
     if (!verifyPassword(input.currentPassword, userRow.password_hash)) {
       throw new ApiDomainException(
         HttpStatus.BAD_REQUEST,
@@ -1685,6 +1760,79 @@ export class AuthService {
 
     this.setAuthCookies(req, res, refreshToken, csrfToken);
     return { accessToken, csrfToken };
+  }
+
+  async createOAuthSessionPayload(params: {
+    user: UserSummaryDto;
+    mfaVerified: boolean;
+    mfaRequired: boolean;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+  }): Promise<{
+    sessionId: string;
+    refreshToken: string;
+    csrfToken: string;
+    loginResponse: LoginResponse;
+  }> {
+    const { user, mfaVerified, mfaRequired, ipAddress, userAgent } = params;
+    const sessionId = crypto.randomUUID();
+    const refreshToken = generateOpaqueToken(48);
+    const refreshTokenHash = sha256Hex(refreshToken);
+    const tokenFamilyId = crypto.randomUUID();
+    const csrfToken = generateCsrfToken();
+
+    const { token: accessToken, payload } = this.jwks.signAccessToken({
+      sub: user.id,
+      email: user.email,
+      roles: user.roles,
+      permissions: user.permissions,
+      permissionVersion: user.permissionVersion,
+      mfaVerified,
+      supplierId: user.supplierId,
+      loyaltyTier: user.loyaltyTier,
+    });
+
+    const expiresAt = new Date(Date.now() + this.config.jwt.refreshTtlSeconds * 1000);
+
+    await this.db.query(
+      `INSERT INTO auth_sessions (
+        id, user_id, refresh_token_hash, token_family_id, csrf_token, last_access_jti,
+        device_info, ip_address, mfa_verified, expires_at, revoked, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, FALSE, NOW())`,
+      [
+        sessionId,
+        user.id,
+        refreshTokenHash,
+        tokenFamilyId,
+        csrfToken,
+        payload.jti,
+        userAgent ? userAgent.slice(0, 255) : null,
+        ipAddress ? ipAddress.slice(0, 64) : '127.0.0.1',
+        mfaVerified,
+        expiresAt.toISOString(),
+      ],
+    );
+
+    const userWithMfa: UserSummaryDto = {
+      ...user,
+      mfaVerified,
+    };
+
+    return {
+      sessionId,
+      refreshToken,
+      csrfToken,
+      loginResponse: {
+        accessToken,
+        csrfToken,
+        mfaRequired,
+        user: userWithMfa,
+      },
+    };
+  }
+
+  applyOAuthCookies(req: Request, res: Response, refreshToken: string, csrfToken: string): void {
+    this.setAuthCookies(req, res, refreshToken, csrfToken);
   }
 
   private async rotateSessionAtomic(params: {

@@ -298,6 +298,15 @@ export const CreatePaymentIntentDtoSchema = z.object({
 export type CreatePaymentIntentDTO = z.infer<typeof CreatePaymentIntentDtoSchema>;
 export type CreatePaymentIntentDto = CreatePaymentIntentDTO;
 
+export const PaymentBankInfoSchema = z.object({
+  bankBin: z.string(),
+  bankCode: z.string().optional(),
+  bankName: z.string().optional(),
+  accountNo: z.string(),
+  accountName: z.string(),
+});
+export type PaymentBankInfoDTO = z.infer<typeof PaymentBankInfoSchema>;
+
 export const PaymentIntentResponseDtoSchema = z.object({
   transactionId: z.string().min(1),
   orderId: z.string().min(1),
@@ -306,6 +315,11 @@ export const PaymentIntentResponseDtoSchema = z.object({
   paymentUrl: z.string().nullable(),
   vietQrPayload: z.string().nullable(),
   vietQrImageUrl: z.string().nullable(),
+  sepayQrImageUrl: z.string().nullable().optional(),
+  transferContent: z.string().nullable().optional(),
+  vietqrProvider: z.enum(['SEPAY', 'PAYOS', 'LOCAL']).optional(),
+  providerMode: z.enum(['LIVE', 'SANDBOX_LOCAL']).optional(),
+  bankInfo: PaymentBankInfoSchema.nullable().optional(),
   amountVnd: z.number().int().nonnegative(),
   expiresAt: z.string(),
 });
@@ -439,3 +453,69 @@ export const AdminPaymentWebhooksQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
 });
 export type AdminPaymentWebhooksQuery = z.infer<typeof AdminPaymentWebhooksQuerySchema>;
+
+export const SePayWebhookPayloadSchema = z.object({
+  id: z.union([z.number().int(), z.string().min(1)]),
+  gateway: z.string().default(''),
+  transactionDate: z.string().optional().default(''),
+  accountNumber: z.string().default(''),
+  subAccount: z.string().nullable().optional(),
+  code: z.string().nullable().optional(),
+  content: z.string().default(''),
+  transferType: z.enum(['in', 'out']),
+  description: z.string().nullable().optional(),
+  transferAmount: z.coerce.number().nonnegative(),
+  accumulated: z.coerce.number().optional(),
+  referenceCode: z.string().nullable().optional(),
+});
+export type SePayWebhookPayloadDTO = z.infer<typeof SePayWebhookPayloadSchema>;
+
+export const SePayConfigStatusSchema = z.object({
+  enabled: z.boolean(),
+  activeVietQrProvider: z.enum(['SEPAY', 'PAYOS', 'LOCAL']),
+  mode: z.enum(['LIVE', 'SANDBOX_LOCAL']),
+  bankCode: z.string(),
+  bankBin: z.string(),
+  bankName: z.string(),
+  accountNoMasked: z.string(),
+  accountName: z.string(),
+  orderPrefix: z.string(),
+  qrTemplate: z.string(),
+  webhookUrl: z.string(),
+  webhookAuthHeaderExample: z.string(),
+  webhookApiKeyConfigured: z.boolean(),
+  apiTokenConfigured: z.boolean(),
+  autoPollEnabled: z.boolean(),
+  pollIntervalMs: z.number().int().positive(),
+  lastPollAt: z.string().nullable(),
+  lastPollError: z.string().nullable(),
+  pendingVietQrCount: z.number().int().nonnegative(),
+});
+export type SePayConfigStatusDTO = z.infer<typeof SePayConfigStatusSchema>;
+
+export const SePaySyncResultSchema = z.object({
+  ok: z.boolean(),
+  mode: z.enum(['LIVE', 'SANDBOX_LOCAL']),
+  checkedPendingCount: z.number().int().nonnegative(),
+  fetchedTransactionsCount: z.number().int().nonnegative(),
+  settledOrderCodes: z.array(z.string()),
+  skippedReason: z.string().nullable(),
+  syncedAt: z.string(),
+});
+export type SePaySyncResultDTO = z.infer<typeof SePaySyncResultSchema>;
+
+export const SePayOrderStatusSchema = z.object({
+  orderCode: z.string(),
+  paid: z.boolean(),
+  status: z.string(),
+  amountVnd: z.number().int().nonnegative(),
+  provider: PaymentProviderSchema,
+  providerMode: z.enum(['LIVE', 'SANDBOX_LOCAL']),
+  vietqrProvider: z.enum(['SEPAY', 'PAYOS', 'LOCAL']),
+  sepaySyncedNow: z.boolean(),
+  providerTxId: z.string().nullable(),
+  paidAt: z.string().nullable(),
+  orderStatus: z.string().nullable().optional(),
+  message: z.string(),
+});
+export type SePayOrderStatusDTO = z.infer<typeof SePayOrderStatusSchema>;

@@ -93,6 +93,8 @@ const EXTERNAL_WEBHOOK_PATH_PREFIXES: readonly string[] = [
   '/bff/v1/payments/vnpay/ipn',
   '/bff/v1/payments/momo/ipn',
   '/bff/v1/payments/payos/webhook',
+  '/bff/v1/payments/sepay/webhook',
+  '/api/v1/payments/sepay/webhook',
   '/bff/v1/webhooks/shipping/',
 ];
 

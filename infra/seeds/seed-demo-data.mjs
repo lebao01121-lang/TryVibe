@@ -359,7 +359,7 @@ async function main() {
       const flagshipSku = allSkusForSync.find((s) => s.skuCode === 'AT-AOBLLI-C1-M');
       let lowStockFlagshipVerified = false;
       if (flagshipSku) {
-        const availRes = await fetchJson('http://127.0.0.1:4004/v1/inventory/batch-availability', {
+        const availRes = await fetchJson('http://127.0.0.1:4004/v1/inventory/availability/batch', {
           method: 'POST',
           body: { skuIds: [flagshipSku.skuId] },
         });
@@ -376,7 +376,7 @@ async function main() {
       let accessorySkusHealthy = 0;
       if (accessorySkus.length > 0) {
         const accAvailRes = await fetchJson(
-          'http://127.0.0.1:4004/v1/inventory/batch-availability',
+          'http://127.0.0.1:4004/v1/inventory/availability/batch',
           {
             method: 'POST',
             body: { skuIds: accessorySkus.map((s) => s.skuId) },

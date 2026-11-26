@@ -79,7 +79,7 @@ export const ADMIN_NAV_GROUPS: readonly AdminNavGroup[] = [
         group: 'operations',
         pathSlug: '/admin/payments',
         subtitle:
-          'Sổ cái giao dịch VietQR/VNPay/MoMo/COD, hoàn tiền một phần & đối soát Webhook HMAC',
+          'Sổ cái giao dịch VietQR (SePay / PayOS) / VNPay / MoMo / COD, hoàn tiền một phần & đối soát Webhook',
       },
       {
         key: 'inventory',

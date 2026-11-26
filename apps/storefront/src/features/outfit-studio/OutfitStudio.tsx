@@ -13,7 +13,11 @@ import {
   type SavedOutfitDto,
   type SkuAvailabilityDto,
 } from '@atelier/contracts';
-import { triggerParticleBurst } from '@atelier/motion-kit';
+import {
+  AnimatedTelemetryNumber,
+  LiveStreamProgressBar,
+  triggerParticleBurst,
+} from '@atelier/motion-kit';
 import { showAtelierToast } from '@/components/AtelierToastProvider';
 import { apiFetch } from '@/lib/api-client';
 import { FORMAT_VND, getPrimaryVariantImage } from '@/lib/catalog-data';
@@ -83,6 +87,63 @@ type PackagingWithOptionalImage = PackagingOptionDto & {
 const GUEST_STORAGE_KEY = 'atelier_guest_session_id';
 const LOCAL_SAVED_OUTFITS_KEY = 'atelier_saved_outfits_local_v1';
 const DEFAULT_PRESET_ID: OutfitPresetId = 'evening-burgundy';
+const TRANSIENT_RETRY_DELAYS_MS = [500, 1200] as const;
+
+function isTransientRetryableStatus(status: number): boolean {
+  return status === 0 || status === 502 || status === 503 || status === 504;
+}
+
+function waitAbortable(ms: number, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      resolve(false);
+    };
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve(true);
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function apiFetchWithTransientRetry<T>(
+  path: string,
+  options: Parameters<typeof apiFetch<T>>[1],
+  abortSignal: AbortSignal,
+) {
+  const attemptTimeoutMs = options?.timeoutMs ?? 8000;
+  const runAttempt = async () => {
+    const attemptController = new AbortController();
+    const onParentAbort = () => attemptController.abort();
+    if (abortSignal.aborted) {
+      attemptController.abort();
+    } else {
+      abortSignal.addEventListener('abort', onParentAbort, { once: true });
+    }
+    const timer = window.setTimeout(() => attemptController.abort(), attemptTimeoutMs);
+    try {
+      return await apiFetch<T>(path, { ...options, signal: attemptController.signal });
+    } finally {
+      window.clearTimeout(timer);
+      abortSignal.removeEventListener('abort', onParentAbort);
+    }
+  };
+
+  let result = await runAttempt();
+  for (const delayMs of TRANSIENT_RETRY_DELAYS_MS) {
+    if (abortSignal.aborted || result.ok || !isTransientRetryableStatus(result.status)) {
+      return result;
+    }
+    const waited = await waitAbortable(delayMs, abortSignal);
+    if (!waited || abortSignal.aborted) {
+      return result;
+    }
+    result = await runAttempt();
+  }
+  return result;
+}
 
 function getGuestHeader(): Record<string, string> {
   if (typeof window === 'undefined') return {};
@@ -463,10 +524,11 @@ export function OutfitStudio({
 
     if (skuIds.size === 0) return;
     let cancelled = false;
+    const abortController = new AbortController();
 
     const loadStock = async () => {
       try {
-        const res = await apiFetch<BatchAvailabilityResponse>(
+        const res = await apiFetchWithTransientRetry<BatchAvailabilityResponse>(
           '/bff/v1/storefront/inventory/batch-availability',
           {
             method: 'POST',
@@ -474,6 +536,7 @@ export function OutfitStudio({
             skipAuthRefresh: true,
             body: JSON.stringify({ skuIds: Array.from(skuIds) }),
           },
+          abortController.signal,
         );
         if (cancelled || !res.ok || !res.data?.items) return;
         setAvailabilityMap((prev) => ({ ...prev, ...res.data!.items }));
@@ -485,6 +548,7 @@ export function OutfitStudio({
     void loadStock();
     return () => {
       cancelled = true;
+      abortController.abort();
     };
   }, [orderedSelections, productById]);
 
@@ -497,12 +561,13 @@ export function OutfitStudio({
     }
 
     let cancelled = false;
+    const abortController = new AbortController();
     setIsPreviewLoading(true);
 
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
-          const res = await apiFetch<OutfitStudioPreviewResponse>(
+          const res = await apiFetchWithTransientRetry<OutfitStudioPreviewResponse>(
             '/bff/v1/storefront/outfit-studio/preview',
             {
               method: 'POST',
@@ -527,6 +592,7 @@ export function OutfitStudio({
                 giftNote: giftNote.trim() || null,
               }),
             },
+            abortController.signal,
           );
 
           if (cancelled) return;
@@ -550,6 +616,7 @@ export function OutfitStudio({
 
     return () => {
       cancelled = true;
+      abortController.abort();
       window.clearTimeout(timer);
     };
   }, [orderedSelections, activePackaging?.id, giftNote]);
@@ -1485,17 +1552,18 @@ export function OutfitStudio({
                   {comboProgress.label}
                 </span>
                 <span className="shrink-0 font-mono text-[10.5px] font-semibold text-[#8A672C]">
-                  {comboProgress.pct}%
+                  <AnimatedTelemetryNumber
+                    value={comboProgress.pct}
+                    format="percent"
+                  />
                 </span>
               </div>
-              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#E5D7BF]">
-                <div
-                  className={`h-full rounded-full ${
-                    comboProgress.unlockedMax
-                      ? styles.comboFillUnlocked
-                      : styles.comboFillBase
-                  }`}
-                  style={{ width: `${comboProgress.pct}%` }}
+              <div className="mt-2">
+                <LiveStreamProgressBar
+                  percent={comboProgress.pct}
+                  tone={comboProgress.unlockedMax ? 'emerald' : 'gold'}
+                  height="xs"
+                  ariaLabel={comboProgress.label}
                 />
               </div>
             </div>

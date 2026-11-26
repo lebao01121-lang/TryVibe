@@ -1,4 +1,5 @@
 import { loadRootEnv } from '@atelier/db-client';
+import { resolveSePayBankMeta } from '../payments/adapters/sepay-banks';
 
 export const SERVICE_NAME = '@atelier/payment-promo';
 export const BOUNDED_CONTEXT = 'payment-promo';
@@ -6,6 +7,8 @@ export const DEFAULT_PORT = 4007;
 export const DATABASE_ENV_VAR = 'PAYMENT_DATABASE_URL';
 export const EXPECTED_DATABASE_NAME = 'payment_db';
 export const FREE_SHIP_THRESHOLD_VND = 2_000_000;
+
+export type VietQrProviderPreference = 'sepay' | 'payos' | 'auto';
 
 const DEFAULT_CORS_ORIGINS = [
   'http://localhost:3000',
@@ -52,10 +55,28 @@ export interface PaymentPromoConfig {
     VNPAY: string;
     MOMO: string;
   };
+  vietqrProvider: VietQrProviderPreference;
   vietqr: {
     bankBin: string;
     accountNo: string;
     accountName: string;
+  };
+  sepay: {
+    bankCode: string;
+    bankBin: string;
+    bankName: string;
+    accountNo: string;
+    accountName: string;
+    orderPrefix: string;
+    qrTemplate: string;
+    webhookApiKey: string;
+    webhookApiKeyConfigured: boolean;
+    apiToken: string;
+    apiTokenConfigured: boolean;
+    apiBaseUrl: string;
+    autoPollEnabled: boolean;
+    pollIntervalMs: number;
+    isLiveConfigured: boolean;
   };
   payos: {
     clientId: string;
@@ -153,6 +174,42 @@ function parseIsolatedDatabaseTarget(rawUrl: string | undefined): PaymentPromoCo
   };
 }
 
+function parseVietQrProvider(raw: string | undefined): VietQrProviderPreference {
+  const normalized = raw?.trim().toLowerCase();
+  if (normalized === 'payos') {
+    return 'payos';
+  }
+  if (normalized === 'auto') {
+    return 'auto';
+  }
+  return 'sepay';
+}
+
+function parseBooleanEnv(raw: string | undefined, fallback: boolean): boolean {
+  if (!raw || raw.trim() === '') {
+    return fallback;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (['false', '0', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  if (['true', '1', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  return fallback;
+}
+
+function parsePollIntervalMs(raw: string | undefined, fallback: number): number {
+  if (!raw || raw.trim() === '') {
+    return fallback;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 3000) {
+    return fallback;
+  }
+  return Math.min(300_000, parsed);
+}
+
 export function loadPaymentPromoConfig(): PaymentPromoConfig {
   loadRootEnv();
 
@@ -182,6 +239,39 @@ export function loadPaymentPromoConfig(): PaymentPromoConfig {
     process.env.VNPAY_WEBHOOK_SECRET?.trim() || 'Atelier_VNPay_Hmac_2026!';
   const momoWebhookSecret =
     process.env.MOMO_WEBHOOK_SECRET?.trim() || 'Atelier_MoMo_Hmac_2026!';
+
+  const vietqrProvider = parseVietQrProvider(process.env.VIETQR_PROVIDER);
+  const rawSePayBankCode = process.env.SEPAY_BANK_CODE?.trim() || '';
+  const rawSePayBankBin =
+    process.env.SEPAY_BANK_BIN?.trim() || process.env.VIETQR_BANK_BIN?.trim() || '';
+  const resolvedSePayBank = resolveSePayBankMeta(rawSePayBankCode, rawSePayBankBin);
+  const sepayAccountNo =
+    process.env.SEPAY_ACCOUNT_NO?.trim() ||
+    process.env.VIETQR_ACCOUNT_NO?.trim() ||
+    '088820269999';
+  const sepayAccountName =
+    process.env.SEPAY_ACCOUNT_NAME?.trim() ||
+    process.env.VIETQR_ACCOUNT_NAME?.trim() ||
+    'TRYVIBE ATELIER';
+  const sepayOrderPrefix =
+    (process.env.SEPAY_ORDER_PREFIX?.trim() || 'TRYVIBE')
+      .replace(/[^A-Za-z0-9]/g, '')
+      .toUpperCase() || 'TRYVIBE';
+  const sepayQrTemplate = process.env.SEPAY_QR_TEMPLATE?.trim() || 'compact';
+  const rawSePayWebhookApiKey = process.env.SEPAY_WEBHOOK_API_KEY?.trim() || '';
+  const sepayWebhookApiKey = rawSePayWebhookApiKey || 'Atelier_SePay_ApiKey_2026!';
+  const sepayWebhookApiKeyConfigured = Boolean(rawSePayWebhookApiKey);
+  const sepayApiToken = process.env.SEPAY_API_TOKEN?.trim() || '';
+  const sepayApiTokenConfigured = Boolean(sepayApiToken);
+  const sepayApiBaseUrl = (
+    process.env.SEPAY_API_BASE_URL?.trim() || 'https://my.sepay.vn/userapi'
+  ).replace(/\/+$/, '');
+  const sepayAutoPollEnabled = parseBooleanEnv(process.env.SEPAY_AUTO_POLL_ENABLED, true);
+  const sepayPollIntervalMs = parsePollIntervalMs(process.env.SEPAY_POLL_INTERVAL_MS, 15_000);
+  const sepayIsLiveConfigured = Boolean(
+    sepayApiTokenConfigured ||
+      (sepayWebhookApiKeyConfigured && sepayAccountNo !== '088820269999'),
+  );
 
   const payosClientId = process.env.PAYOS_CLIENT_ID?.trim() || '';
   const payosApiKey = process.env.PAYOS_API_KEY?.trim() || '';
@@ -233,10 +323,28 @@ export function loadPaymentPromoConfig(): PaymentPromoConfig {
       VNPAY: vnpayWebhookSecret,
       MOMO: momoWebhookSecret,
     },
+    vietqrProvider,
     vietqr: {
-      bankBin: process.env.VIETQR_BANK_BIN?.trim() || '970422',
-      accountNo: process.env.VIETQR_ACCOUNT_NO?.trim() || '088820269999',
-      accountName: process.env.VIETQR_ACCOUNT_NAME?.trim() || 'TRYVIBE ATELIER',
+      bankBin: process.env.VIETQR_BANK_BIN?.trim() || resolvedSePayBank.bankBin,
+      accountNo: process.env.VIETQR_ACCOUNT_NO?.trim() || sepayAccountNo,
+      accountName: process.env.VIETQR_ACCOUNT_NAME?.trim() || sepayAccountName,
+    },
+    sepay: {
+      bankCode: resolvedSePayBank.bankCode,
+      bankBin: resolvedSePayBank.bankBin,
+      bankName: resolvedSePayBank.bankName,
+      accountNo: sepayAccountNo,
+      accountName: sepayAccountName,
+      orderPrefix: sepayOrderPrefix,
+      qrTemplate: sepayQrTemplate,
+      webhookApiKey: sepayWebhookApiKey,
+      webhookApiKeyConfigured: sepayWebhookApiKeyConfigured,
+      apiToken: sepayApiToken,
+      apiTokenConfigured: sepayApiTokenConfigured,
+      apiBaseUrl: sepayApiBaseUrl,
+      autoPollEnabled: sepayAutoPollEnabled,
+      pollIntervalMs: sepayPollIntervalMs,
+      isLiveConfigured: sepayIsLiveConfigured,
     },
     payos: {
       clientId: payosClientId,

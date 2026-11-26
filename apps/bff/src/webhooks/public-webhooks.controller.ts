@@ -20,6 +20,10 @@ import { BFF_CONFIG_TOKEN, type BffConfig } from '../config/env';
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 
 const FORWARDED_WEBHOOK_HEADERS: readonly string[] = [
+  'authorization',
+  'x-sepay-apikey',
+  'x-api-key',
+  'x-sepay-signature',
   'x-signature',
   'x-hmac-signature',
   'x-webhook-signature',
@@ -206,6 +210,20 @@ export class PublicWebhooksController {
     );
   }
 
+  @Post('payments/sepay/webhook')
+  @HttpCode(HttpStatus.OK)
+  async sepayWebhookPost(
+    @Req() req: RequestWithRawBody,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.proxyWebhook(
+      'POST',
+      `${this.config.paymentPromoServiceUrl}/v1/payments/sepay/webhook`,
+      req,
+      res,
+    );
+  }
+
   @Post('webhooks/shipping/:provider')
   @HttpCode(HttpStatus.OK)
   async shippingWebhookPost(
@@ -250,6 +268,44 @@ export class PublicWebhooksController {
     const upstream = await this.proxy.request({
       method: 'POST',
       url: `${baseTargetUrl}${rawQs}`,
+      req,
+      rawBody: payload.rawBody,
+      body: payload.body,
+      contentType: payload.contentType,
+      correlationId,
+      extraHeaders,
+      timeoutMs: 20_000,
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    this.proxy.sendProxyResponse(res, upstream);
+  }
+}
+
+/**
+ * `/api/v1` public webhook alias so SePay dashboard configurations using either
+ * `/api/v1/payments/sepay/webhook` or `/bff/v1/payments/sepay/webhook` both work.
+ */
+@Controller('api/v1')
+export class ApiPublicWebhooksController {
+  constructor(
+    @Inject(BFF_CONFIG_TOKEN) private readonly config: BffConfig,
+    @Inject(HttpProxyService) private readonly proxy: HttpProxyService,
+  ) {}
+
+  @Post('payments/sepay/webhook')
+  @HttpCode(HttpStatus.OK)
+  async sepayWebhookAliasPost(
+    @Req() req: RequestWithRawBody,
+    @Res() res: Response,
+  ): Promise<void> {
+    const correlationId = getOrCreateCorrelationId(req.headers as HeaderBag);
+    const clientIp = this.proxy.extractClientIp(req);
+    const rawQs = extractRawQueryString(req);
+    const extraHeaders = extractWebhookForwardHeaders(req, correlationId, clientIp);
+    const payload = await resolveWebhookRawBody(req);
+    const upstream = await this.proxy.request({
+      method: 'POST',
+      url: `${this.config.paymentPromoServiceUrl}/v1/payments/sepay/webhook${rawQs}`,
       req,
       rawBody: payload.rawBody,
       body: payload.body,

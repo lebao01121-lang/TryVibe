@@ -30,6 +30,19 @@ import {
   verifyPayOsWebhookSignature,
 } from './adapters/payos.adapter';
 import {
+  SEPAY_BANK_DIRECTORY,
+  SePayAdapter,
+  buildSePayQrImageUrl,
+  buildSePayTransferContent,
+  extractOrderCodeCandidatesFromSePay,
+  extractSePayApiKey,
+  maskAccountNumber,
+  normalizeCompactOrderCode,
+  normalizeSePayApiTransaction,
+  resolveSePayBankMeta,
+  verifySePayApiKey,
+} from './adapters/sepay.adapter';
+import {
   VnpayAdapter,
   buildVnpayPaymentUrl,
   buildVnpaySignData,
@@ -61,11 +74,26 @@ const ORDER_ID_3 = '60000000-0000-4000-8000-000000000003';
 const ORDER_ID_4 = '60000000-0000-4000-8000-000000000004';
 
 function createPaymentConfig(overrides?: {
+  vietqrProvider?: 'sepay' | 'payos' | 'auto';
+  sepayLive?: boolean;
+  sepayApiToken?: string;
+  sepayApiBaseUrl?: string;
+  sepayAccountNo?: string;
+  sepayWebhookApiKey?: string;
+  sepayAutoPollEnabled?: boolean;
   payosLive?: boolean;
   vnpayLive?: boolean;
   momoLive?: boolean;
   nodeEnv?: string;
 }): PaymentPromoConfig {
+  const sepayApiToken = overrides?.sepayApiToken ?? '';
+  const sepayAccountNo = overrides?.sepayAccountNo ?? '0826055232';
+  const sepayWebhookApiKey = overrides?.sepayWebhookApiKey ?? 'Atelier_SePay_ApiKey_2026!';
+  const sepayIsLive =
+    overrides?.sepayLive !== undefined
+      ? overrides.sepayLive
+      : Boolean(sepayApiToken || sepayAccountNo !== '0826055232');
+
   return {
     serviceName: '@atelier/payment-promo',
     boundedContext: 'payment-promo',
@@ -95,10 +123,28 @@ function createPaymentConfig(overrides?: {
       VNPAY: 'vnpay-secret-2026',
       MOMO: 'momo-secret-2026',
     },
+    vietqrProvider: overrides?.vietqrProvider ?? 'sepay',
     vietqr: {
       bankBin: '970422',
-      accountNo: '088820269999',
+      accountNo: '0826055232',
       accountName: 'TRYVIBE ATELIER',
+    },
+    sepay: {
+      bankCode: 'MB',
+      bankBin: '970422',
+      bankName: 'MB Bank (Ngân hàng TMCP Quân đội)',
+      accountNo: sepayAccountNo,
+      accountName: 'TRYVIBE ATELIER',
+      orderPrefix: 'TRYVIBE',
+      qrTemplate: 'compact',
+      webhookApiKey: sepayWebhookApiKey,
+      webhookApiKeyConfigured: Boolean(sepayWebhookApiKey),
+      apiToken: sepayApiToken,
+      apiTokenConfigured: Boolean(sepayApiToken),
+      apiBaseUrl: overrides?.sepayApiBaseUrl ?? 'https://my.sepay.vn/userapi',
+      autoPollEnabled: overrides?.sepayAutoPollEnabled ?? true,
+      pollIntervalMs: 15_000,
+      isLiveConfigured: sepayIsLive,
     },
     payos: {
       clientId: overrides?.payosLive ? 'payos-client' : '',
@@ -135,7 +181,7 @@ describe('VietQR EMVCo NAPAS 247, CRC16-CCITT & ISO/IEC 18004 QR Artifacts', () 
 
     const payload = buildVietQrPayload('TX-2026QR01', 1_850_000, {
       bankBin: '970422',
-      accountNo: '088820269999',
+      accountNo: '0826055232',
       accountName: 'TryVibe Atelier',
     });
 
@@ -189,6 +235,7 @@ describe('VietQR EMVCo NAPAS 247, CRC16-CCITT & ISO/IEC 18004 QR Artifacts', () 
     expect(verifyHmacSha256Signature(raw, null, 'secret-1')).toBe(false);
 
     expect(normalizeWebhookProviderParam('payos')).toBe(PaymentProvider.VIETQR);
+    expect(normalizeWebhookProviderParam('sepay')).toBe(PaymentProvider.VIETQR);
     expect(normalizeWebhookProviderParam('vietqr')).toBe(PaymentProvider.VIETQR);
     expect(normalizeWebhookProviderParam('vnpay')).toBe(PaymentProvider.VNPAY);
     expect(normalizeWebhookProviderParam('momo')).toBe(PaymentProvider.MOMO);
@@ -363,7 +410,7 @@ describe('VNPay v2.1.0, MoMo v2 & PayOS Signature Adapters', () => {
             qrCode: intent.qrPayload,
             paymentLinkId: 'pl_live_001',
             bin: '970422',
-            accountNumber: '088820269999',
+            accountNumber: '0826055232',
             accountName: 'TRYVIBE ATELIER',
           },
         }),
@@ -535,6 +582,38 @@ class InMemoryPaymentPromoDb {
       const rows = this.txs.filter((t) => t.order_code === params[0] && t.tx_type === 'CHARGE');
       return { rows: rows as unknown as T[], rowCount: rows.length };
     }
+    if (norm.includes("REPLACE(UPPER(order_code), '-', '') = $1")) {
+      const targetCompact = String(params[0]).toUpperCase();
+      const rows = this.txs.filter((t) => {
+        if (t.tx_type !== 'CHARGE') return false;
+        if (t.order_code.replace(/-/g, '').toUpperCase() === targetCompact) return true;
+        try {
+          const meta = JSON.parse(t.raw_payload_jsonb ?? '{}') as Record<string, unknown>;
+          return String(meta.compactOrderCode ?? '').toUpperCase() === targetCompact;
+        } catch {
+          return false;
+        }
+      });
+      return { rows: rows as unknown as T[], rowCount: rows.length };
+    }
+    if (norm.startsWith("SELECT COUNT(*)::int AS cnt FROM payment_transactions WHERE provider = 'VIETQR'")) {
+      const cnt = this.txs.filter(
+        (t) =>
+          t.provider === PaymentProvider.VIETQR &&
+          t.tx_type === 'CHARGE' &&
+          t.status === PaymentTransactionStatus.PENDING,
+      ).length;
+      return { rows: [{ cnt }] as unknown as T[], rowCount: 1 };
+    }
+    if (norm.startsWith("SELECT * FROM payment_transactions WHERE provider = 'VIETQR' AND tx_type = 'CHARGE' AND status = 'PENDING'")) {
+      const rows = this.txs.filter(
+        (t) =>
+          t.provider === PaymentProvider.VIETQR &&
+          t.tx_type === 'CHARGE' &&
+          t.status === PaymentTransactionStatus.PENDING,
+      );
+      return { rows: rows as unknown as T[], rowCount: rows.length };
+    }
     if (norm.startsWith("SELECT * FROM payment_transactions WHERE order_id = $1 ORDER BY")) {
       const rows = this.txs.filter((t) => t.order_id === params[0]);
       return { rows: rows as unknown as T[], rowCount: rows.length };
@@ -592,41 +671,41 @@ class InMemoryPaymentPromoDb {
       const isRefund = norm.includes("'REFUND'");
       const row: FakeTxRow = isRefund
         ? {
-            id: String(params[0]),
-            order_id: String(params[1]),
-            order_code: String(params[2]),
-            provider: params[3] as PaymentProvider,
-            tx_type: 'REFUND',
-            amount_vnd: Number(params[4]),
-            status: norm.includes("'FAILED'") ? PaymentTransactionStatus.FAILED : PaymentTransactionStatus.SUCCEEDED,
-            provider_tx_id: norm.includes("'FAILED'") ? null : String(params[5]),
-            idempotency_key: norm.includes("'FAILED'") ? String(params[5]) : String(params[6]),
-            qr_payload: null,
-            payment_url: null,
-            signature_verified: !norm.includes("'FAILED'"),
-            raw_payload_jsonb: norm.includes("'FAILED'") ? String(params[6]) : String(params[7]),
-            expires_at: null,
-            created_at: now,
-            paid_at: norm.includes("'FAILED'") ? null : String(params[8]),
-          }
+          id: String(params[0]),
+          order_id: String(params[1]),
+          order_code: String(params[2]),
+          provider: params[3] as PaymentProvider,
+          tx_type: 'REFUND',
+          amount_vnd: Number(params[4]),
+          status: norm.includes("'FAILED'") ? PaymentTransactionStatus.FAILED : PaymentTransactionStatus.SUCCEEDED,
+          provider_tx_id: norm.includes("'FAILED'") ? null : String(params[5]),
+          idempotency_key: norm.includes("'FAILED'") ? String(params[5]) : String(params[6]),
+          qr_payload: null,
+          payment_url: null,
+          signature_verified: !norm.includes("'FAILED'"),
+          raw_payload_jsonb: norm.includes("'FAILED'") ? String(params[6]) : String(params[7]),
+          expires_at: null,
+          created_at: now,
+          paid_at: norm.includes("'FAILED'") ? null : String(params[8]),
+        }
         : {
-            id: String(params[0]),
-            order_id: String(params[1]),
-            order_code: String(params[2]),
-            provider: params[3] as PaymentProvider,
-            tx_type: 'CHARGE',
-            amount_vnd: Number(params[4]),
-            status: PaymentTransactionStatus.PENDING,
-            provider_tx_id: (params[5] as string | null) ?? null,
-            idempotency_key: String(params[6]),
-            qr_payload: (params[7] as string | null) ?? null,
-            payment_url: (params[8] as string | null) ?? null,
-            signature_verified: false,
-            raw_payload_jsonb: String(params[9]),
-            expires_at: String(params[10]),
-            created_at: now,
-            paid_at: null,
-          };
+          id: String(params[0]),
+          order_id: String(params[1]),
+          order_code: String(params[2]),
+          provider: params[3] as PaymentProvider,
+          tx_type: 'CHARGE',
+          amount_vnd: Number(params[4]),
+          status: PaymentTransactionStatus.PENDING,
+          provider_tx_id: (params[5] as string | null) ?? null,
+          idempotency_key: String(params[6]),
+          qr_payload: (params[7] as string | null) ?? null,
+          payment_url: (params[8] as string | null) ?? null,
+          signature_verified: false,
+          raw_payload_jsonb: String(params[9]),
+          expires_at: String(params[10]),
+          created_at: now,
+          paid_at: null,
+        };
       if (this.txs.some((t) => t.idempotency_key === row.idempotency_key)) {
         return { rows: [], rowCount: 0 };
       }
@@ -717,55 +796,55 @@ class InMemoryPaymentPromoDb {
       }
       const row: FakePromoRow = isClearance
         ? {
-            id: String(params[0]),
-            code,
-            name: String(params[2]),
-            description: (params[3] as string | null) ?? null,
-            promo_type: PromoType.CLEARANCE_ODD_SIZE,
-            discount_value: Number(params[4]),
-            max_discount_vnd: Number(params[5]),
-            min_order_vnd: Number(params[6]),
-            target_sizes_jsonb: JSON.parse(String(params[7])) as string[],
-            target_product_ids_jsonb: JSON.parse(String(params[8])) as string[],
-            target_sku_codes_jsonb: JSON.parse(String(params[9])) as string[],
-            bonus_tryon_credits: 0,
-            usage_limit: Number(params[10]),
-            used_count: 0,
-            per_user_limit: 5,
-            status: PromoStatus.NHAP_AI,
-            created_by_actor_type: 'AI_COPILOT',
-            approved_by: null,
-            approved_at: null,
-            start_at: String(params[11]),
-            end_at: String(params[12]),
-            created_at: now,
-            updated_at: now,
-          }
+          id: String(params[0]),
+          code,
+          name: String(params[2]),
+          description: (params[3] as string | null) ?? null,
+          promo_type: PromoType.CLEARANCE_ODD_SIZE,
+          discount_value: Number(params[4]),
+          max_discount_vnd: Number(params[5]),
+          min_order_vnd: Number(params[6]),
+          target_sizes_jsonb: JSON.parse(String(params[7])) as string[],
+          target_product_ids_jsonb: JSON.parse(String(params[8])) as string[],
+          target_sku_codes_jsonb: JSON.parse(String(params[9])) as string[],
+          bonus_tryon_credits: 0,
+          usage_limit: Number(params[10]),
+          used_count: 0,
+          per_user_limit: 5,
+          status: PromoStatus.NHAP_AI,
+          created_by_actor_type: 'AI_COPILOT',
+          approved_by: null,
+          approved_at: null,
+          start_at: String(params[11]),
+          end_at: String(params[12]),
+          created_at: now,
+          updated_at: now,
+        }
         : {
-            id: String(params[0]),
-            code,
-            name: String(params[2]),
-            description: (params[3] as string | null) ?? null,
-            promo_type: params[4] as PromoType,
-            discount_value: Number(params[5]),
-            max_discount_vnd: Number(params[6]),
-            min_order_vnd: Number(params[7]),
-            target_sizes_jsonb: JSON.parse(String(params[8])) as string[],
-            target_product_ids_jsonb: JSON.parse(String(params[9])) as string[],
-            target_sku_codes_jsonb: JSON.parse(String(params[10])) as string[],
-            bonus_tryon_credits: Number(params[11]),
-            usage_limit: Number(params[12]),
-            used_count: 0,
-            per_user_limit: Number(params[13]),
-            status: params[14] as PromoStatus,
-            created_by_actor_type: params[15] as 'USER' | 'AI_COPILOT' | 'SYSTEM',
-            approved_by: null,
-            approved_at: null,
-            start_at: String(params[16]),
-            end_at: String(params[17]),
-            created_at: now,
-            updated_at: now,
-          };
+          id: String(params[0]),
+          code,
+          name: String(params[2]),
+          description: (params[3] as string | null) ?? null,
+          promo_type: params[4] as PromoType,
+          discount_value: Number(params[5]),
+          max_discount_vnd: Number(params[6]),
+          min_order_vnd: Number(params[7]),
+          target_sizes_jsonb: JSON.parse(String(params[8])) as string[],
+          target_product_ids_jsonb: JSON.parse(String(params[9])) as string[],
+          target_sku_codes_jsonb: JSON.parse(String(params[10])) as string[],
+          bonus_tryon_credits: Number(params[11]),
+          usage_limit: Number(params[12]),
+          used_count: 0,
+          per_user_limit: Number(params[13]),
+          status: params[14] as PromoStatus,
+          created_by_actor_type: params[15] as 'USER' | 'AI_COPILOT' | 'SYSTEM',
+          approved_by: null,
+          approved_at: null,
+          start_at: String(params[16]),
+          end_at: String(params[17]),
+          created_at: now,
+          updated_at: now,
+        };
       this.promos.push(row);
       return { rows: [row] as unknown as T[], rowCount: 1 };
     }
@@ -850,8 +929,8 @@ describe('PaymentsService — Intents, Webhooks/IPNs & netRefundableVnd REFUND_E
     vi.restoreAllMocks();
   });
 
-  function createPaymentsHarness() {
-    const config = createPaymentConfig();
+  function createPaymentsHarness(configOverrides?: Parameters<typeof createPaymentConfig>[0]) {
+    const config = createPaymentConfig(configOverrides);
     const db = new InMemoryPaymentPromoDb();
     const publisher = {
       publishPaymentSucceeded: vi.fn(async () => undefined),
@@ -865,6 +944,7 @@ describe('PaymentsService — Intents, Webhooks/IPNs & netRefundableVnd REFUND_E
       new PayOsAdapter(config),
       new VnpayAdapter(config),
       new MomoAdapter(config),
+      new SePayAdapter(config),
     );
     return { service, db, config, publisher };
   }
@@ -1093,10 +1173,369 @@ describe('PaymentsService — Intents, Webhooks/IPNs & netRefundableVnd REFUND_E
       new PayOsAdapter(prodConfig),
       new VnpayAdapter(prodConfig),
       new MomoAdapter(prodConfig),
+      new SePayAdapter(prodConfig),
     );
     await expect(
       prodService.devSimulateWebhook({ orderCode: 'TX-GEN-WH' }, 'c-prod'),
     ).rejects.toMatchObject({ errorCode: ErrorCode.FORBIDDEN });
+  });
+
+  it('integrates SePay VietQR intents, webhook auth/matching/dedup/underpay/overpay, simulator, config, status, and API polling', async () => {
+    // 1. Default VIETQR uses SePay with valid EMVCo QR + dynamic SePay QR URL + bankInfo
+    const { service, db, config } = createPaymentsHarness();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ data: { status: 'CONFIRMED' } }), { status: 200 }),
+    );
+
+    const intent = await service.createPaymentIntent(
+      { orderId: ORDER_ID_1, orderCode: 'TX-SEPAY-01', provider: PaymentProvider.VIETQR, amountVnd: 1_250_000 },
+      'idem-sepay-1',
+    );
+    expect(intent.vietqrProvider).toBe('SEPAY');
+    expect(intent.transferContent).toBe('TRYVIBE TXSEPAY01');
+    expect(intent.sepayQrImageUrl).toContain('https://qr.sepay.vn/img?');
+    expect(intent.sepayQrImageUrl).toContain('bank=MB');
+    expect(intent.sepayQrImageUrl).toContain('amount=1250000');
+    expect(intent.bankInfo?.bankCode).toBe('MB');
+    expect(intent.bankInfo?.bankName).toContain('MB Bank');
+    expect(verifyVietQrEmvCoCrc16(intent.qrPayload!)).toBe(true);
+
+    // 2. Config status reflects pending VIETQR order and masked account
+    const cfgStatus = await service.getSePayConfigStatus();
+    expect(cfgStatus.enabled).toBe(true);
+    expect(cfgStatus.activeVietQrProvider).toBe('SEPAY');
+    expect(cfgStatus.mode).toBe('SANDBOX_LOCAL');
+    expect(cfgStatus.accountNoMasked).toBe('0888****9999');
+    expect(cfgStatus.pendingVietQrCount).toBe(1);
+    expect(cfgStatus.webhookUrl).toBe('http://localhost:4000/bff/v1/payments/sepay/webhook');
+
+    // 3. Invalid API Key -> 401 PAYMENT_SIGNATURE_INVALID + logged in processed_webhooks
+    await expect(
+      service.handleSePayWebhook(
+        { id: 1001, gateway: 'MBBank', accountNumber: '0826055232', content: 'TRYVIBE TXSEPAY01', transferType: 'in', transferAmount: 1_250_000 },
+        { authorization: 'Apikey wrong-key' },
+        'c-sp-bad-key',
+      ),
+    ).rejects.toMatchObject({ errorCode: ErrorCode.PAYMENT_SIGNATURE_INVALID });
+    expect(db.webhooks.some((w) => w.status === 'SIGNATURE_INVALID' && !w.signature_valid)).toBe(true);
+
+    const validHeaders = { authorization: `Apikey ${config.sepay.webhookApiKey}` };
+
+    // 4. Outgoing transfer ignored cleanly with 200
+    const outRes = await service.handleSePayWebhook(
+      { id: 1002, gateway: 'MBBank', accountNumber: '0826055232', content: 'TRYVIBE TXSEPAY01', transferType: 'out', transferAmount: 1_250_000 },
+      validHeaders,
+      'c-sp-out',
+    );
+    expect(outRes).toMatchObject({ success: true, ok: true, ignored: true, reason: 'OUTGOING_TRANSFER' });
+
+    // 5. Unmatched transfer returns 200 ORDER_NOT_FOUND
+    const unmatchedRes = await service.handleSePayWebhook(
+      { id: 1003, gateway: 'MBBank', accountNumber: '0826055232', content: 'chuyen tien cafe 50k', transferType: 'in', transferAmount: 50_000 },
+      validHeaders,
+      'c-sp-unmatched',
+    );
+    expect(unmatchedRes).toMatchObject({ success: true, ok: true, matched: false, processed: false, reason: 'ORDER_NOT_FOUND' });
+
+    // 6. Underpayment -> logs AMOUNT_MISMATCH (signature_valid = TRUE) & returns 200 without settling
+    const underpayRes = await service.handleSePayWebhook(
+      { id: 1004, gateway: 'MBBank', accountNumber: '0826055232', content: 'MBVCB.881.TRYVIBE TXSEPAY01.CT tu 999', transferType: 'in', transferAmount: 1_000_000 },
+      validHeaders,
+      'c-sp-under',
+    );
+    expect(underpayRes).toMatchObject({
+      success: true,
+      ok: true,
+      matched: true,
+      processed: false,
+      status: 'AMOUNT_MISMATCH',
+      expectedAmountVnd: 1_250_000,
+      receivedAmountVnd: 1_000_000,
+      orderCode: 'TX-SEPAY-01',
+    });
+    expect(db.webhooks.some((w) => w.status === 'AMOUNT_MISMATCH' && w.signature_valid)).toBe(true);
+
+    // 7. Exact/Overpaid bank narrative with hyphen-stripped order code -> settles SUCCEEDED + records overpaidVnd
+    const paidRes = await service.handleSePayWebhook(
+      {
+        id: 1005,
+        gateway: 'MBBank',
+        transactionDate: '2026-11-26 19:30:00',
+        accountNumber: '0826055232',
+        content: 'MBVCB.9999.TRYVIBE TXSEPAY01.CT tu 0123456',
+        transferType: 'in',
+        transferAmount: 1_260_000,
+        referenceCode: 'FT263300012345',
+      },
+      validHeaders,
+      'c-sp-paid',
+    );
+    expect(paidRes).toMatchObject({
+      success: true,
+      matched: true,
+      processed: true,
+      deduplicated: false,
+      orderCode: 'TX-SEPAY-01',
+      amountVnd: 1_250_000,
+      overpaidVnd: 10_000,
+      status: PaymentTransactionStatus.SUCCEEDED,
+    });
+
+    // 8. Duplicate SePay webhook idempotently deduplicated
+    const dupRes = await service.handleSePayWebhook(
+      {
+        id: 1005,
+        gateway: 'MBBank',
+        accountNumber: '0826055232',
+        content: 'TRYVIBE TXSEPAY01',
+        transferType: 'in',
+        transferAmount: 1_260_000,
+      },
+      validHeaders,
+      'c-sp-dup',
+    );
+    expect(dupRes).toMatchObject({ success: true, deduplicated: true, processed: false });
+
+    // 9. SePay refund delegates cleanly to SePayAdapter
+    const sepayRefund = await service.createRefund(
+      { orderCode: 'TX-SEPAY-01', amountVnd: 250_000, reason: 'Partial SePay refund' },
+      'sepay-ref-1',
+    );
+    expect(sepayRefund.providerRefundId).toMatch(/^SEPAY-REF-/);
+    expect(sepayRefund.netRefundableVnd).toBe(1_000_000);
+
+    // 10. Status check on already paid order
+    const paidStatus = await service.checkSePayOrderStatus('TX-SEPAY-01', 'c-sp-stat');
+    expect(paidStatus.paid).toBe(true);
+    expect(paidStatus.vietqrProvider).toBe('SEPAY');
+
+    // 11. Dev simulator settles a fresh pending order via real handleSePayWebhook
+    await service.createPaymentIntent(
+      { orderId: ORDER_ID_2, orderCode: 'TX-SEPAY-SIM', provider: PaymentProvider.VIETQR, amountVnd: 680_000 },
+      'idem-sepay-sim',
+    );
+    const simRes = await service.simulateSePayWebhook({ orderCode: 'TX-SEPAY-SIM' }, 'c-sp-sim');
+    expect(simRes.simulated).toBe(true);
+    expect(simRes.success).toBe(true);
+    expect(simRes.processed).toBe(true);
+    expect(simRes.sepayPayload.content).toBe('TRYVIBE TXSEPAYSIM');
+
+    // 12. Production guard blocks simulateSePayWebhook
+    const prodHarness = createPaymentsHarness({ nodeEnv: 'production' });
+    await expect(
+      prodHarness.service.simulateSePayWebhook({ orderCode: 'TX-SEPAY-SIM' }, 'c-sp-prod'),
+    ).rejects.toMatchObject({ errorCode: ErrorCode.FORBIDDEN });
+  });
+
+  it('supports LIVE account mismatch guard, PayOS provider selection override, and SePay User API polling sync', async () => {
+    // 1. LIVE mode account mismatch guard + API polling sync
+    const { service, config } = createPaymentsHarness({
+      sepayLive: true,
+      sepayApiToken: 'live-sepay-token-2026',
+      sepayAccountNo: '099988887777',
+    });
+
+    await service.createPaymentIntent(
+      { orderId: ORDER_ID_3, orderCode: 'TX-POLL-01', provider: PaymentProvider.VIETQR, amountVnd: 1_500_000 },
+      'idem-poll-1',
+    );
+
+    const accMismatch = await service.handleSePayWebhook(
+      {
+        id: 2001,
+        gateway: 'MBBank',
+        accountNumber: '111122223333',
+        content: 'TRYVIBE TXPOLL01',
+        transferType: 'in',
+        transferAmount: 1_500_000,
+      },
+      { authorization: `Apikey ${config.sepay.webhookApiKey}` },
+      'c-sp-acc',
+    );
+    expect(accMismatch).toMatchObject({ success: true, ignored: true, reason: 'ACCOUNT_MISMATCH' });
+
+    // Mock SePay User API v1 response + order-rma callback
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/transactions/list')) {
+        return new Response(
+          JSON.stringify({
+            status: 200,
+            transactions: [
+              {
+                id: '88001',
+                bank_brand_name: 'MBBank',
+                account_number: '099988887777',
+                transaction_date: '2026-11-26 19:45:00',
+                amount_in: '1500000.00',
+                amount_out: '0.00',
+                accumulated: '15000000.00',
+                transaction_content: 'MBVCB.555.TRYVIBE TXPOLL01.CT tu 777',
+                reference_number: 'FT26330999999',
+                code: null,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ data: { status: 'CONFIRMED' } }), { status: 200 });
+    });
+
+    const statusAfterPoll = await service.checkSePayOrderStatus('TX-POLL-01', 'c-sp-poll-status');
+    expect(statusAfterPoll.paid).toBe(true);
+    expect(statusAfterPoll.sepaySyncedNow).toBe(true);
+    expect(statusAfterPoll.providerMode).toBe('LIVE');
+    expect(statusAfterPoll.providerTxId).toBe('FT26330999999');
+
+    // Sync again with no remaining pending orders -> skipped cleanly
+    const secondSync = await service.syncPendingSePayTransactions('c-sp-sync-empty');
+    expect(secondSync.ok).toBe(true);
+    expect(secondSync.skippedReason).toBe('NO_PENDING_VIETQR_ORDERS');
+
+    // 2. PayOS override via vietqrProvider='payos' and 'auto' (when PayOS live & SePay sandbox)
+    const payosHarness = createPaymentsHarness({ vietqrProvider: 'payos' });
+    const payosIntent = await payosHarness.service.createPaymentIntent(
+      { orderId: ORDER_ID_4, orderCode: 'TX-PAYOS-OVR', provider: PaymentProvider.VIETQR, amountVnd: 500_000 },
+      'idem-payos-ovr',
+    );
+    expect(payosIntent.vietqrProvider).toBe('PAYOS');
+    expect(payosIntent.sepayQrImageUrl).toBeNull();
+  });
+});
+
+describe('SePayAdapter Helpers, Bank Directory & API Normalization', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('resolves NAPAS banks, builds transfer content / QR URLs, masks account numbers, and extracts order candidates', () => {
+    expect(SEPAY_BANK_DIRECTORY.length).toBeGreaterThanOrEqual(20);
+    expect(resolveSePayBankMeta('VCB')).toMatchObject({ bankCode: 'VCB', bankBin: '970436' });
+    expect(resolveSePayBankMeta('Timo')).toMatchObject({ bankCode: 'VCCB', bankBin: '970454' });
+    expect(resolveSePayBankMeta(undefined, '970407')).toMatchObject({ bankCode: 'TCB', bankBin: '970407' });
+    expect(resolveSePayBankMeta('CUSTOMBANK', '970499')).toMatchObject({ bankCode: 'CUSTOMBANK', bankBin: '970499' });
+
+    expect(normalizeCompactOrderCode('TX-2026-abCD12')).toBe('TX2026ABCD12');
+    expect(buildSePayTransferContent('TX-2026-ABCD12', 'TRYVIBE')).toBe('TRYVIBE TX2026ABCD12');
+    expect(buildSePayTransferContent('TRYVIBE-001', 'TRYVIBE')).toBe('TRYVIBE001');
+
+    const qrUrl = buildSePayQrImageUrl({
+      accountNo: '0826055232',
+      bankCode: 'MB',
+      amountVnd: 1_850_000,
+      transferContent: 'TRYVIBE TX2026ABCD12',
+      template: 'compact',
+    });
+    expect(qrUrl).toBe(
+      'https://qr.sepay.vn/img?acc=0826055232&bank=MB&amount=1850000&des=TRYVIBE+TX2026ABCD12&template=compact',
+    );
+
+    expect(maskAccountNumber('0826055232')).toBe('0888****9999');
+    expect(maskAccountNumber('123456')).toBe('12***56');
+    expect(maskAccountNumber('1234')).toBe('****');
+
+    // API key extraction & timing-safe check
+    expect(extractSePayApiKey({ Authorization: 'Apikey my-secret-123' }).apiKey).toBe('my-secret-123');
+    expect(extractSePayApiKey({ authorization: 'Bearer tok-456' }).apiKey).toBe('tok-456');
+    expect(extractSePayApiKey({ 'x-sepay-apikey': 'hdr-789' }).apiKey).toBe('hdr-789');
+    expect(extractSePayApiKey({ 'X-API-Key': 'hdr-000' }).apiKey).toBe('hdr-000');
+    expect(extractSePayApiKey({}).apiKey).toBeNull();
+    expect(verifySePayApiKey('my-secret-123', 'my-secret-123')).toBe(true);
+    expect(verifySePayApiKey('my-secret-124', 'my-secret-123')).toBe(false);
+    expect(verifySePayApiKey('short', 'my-secret-123')).toBe(false);
+    expect(verifySePayApiKey(null, 'my-secret-123')).toBe(false);
+
+    // Order code extraction across bank formats
+    expect(
+      extractOrderCodeCandidatesFromSePay({ content: 'MBVCB.1234.TRYVIBE TX2026ABCD12.CT tu 098' }),
+    ).toContain('TX2026ABCD12');
+    expect(
+      extractOrderCodeCandidatesFromSePay({ content: 'TRYVIBETX2026XYZ99' }),
+    ).toContain('TX2026XYZ99');
+    expect(
+      extractOrderCodeCandidatesFromSePay({ content: 'thanh toan don TX-2026-5555' }),
+    ).toEqual(expect.arrayContaining(['TX-2026-5555', 'TX20265555']));
+    expect(
+      extractOrderCodeCandidatesFromSePay({ code: 'TX2026CODE1', content: 'other' }),
+    ).toContain('TX2026CODE1');
+    expect(
+      extractOrderCodeCandidatesFromSePay({ content: 'chuyen tien an trua' }),
+    ).toEqual([]);
+  });
+
+  it('normalizes SePay API v1 and v2 transaction payloads and fetches via /transactions/list or /v2/transactions', async () => {
+    const v1 = normalizeSePayApiTransaction({
+      id: '901',
+      bank_brand_name: 'VCB',
+      account_number: '0123456789',
+      transaction_date: '2026-11-26 10:00:00',
+      amount_in: '950000.00',
+      amount_out: '0.00',
+      transaction_content: 'TRYVIBE TXV1001',
+      reference_number: 'FTV1001',
+    });
+    expect(v1).toMatchObject({
+      id: '901',
+      gateway: 'VCB',
+      transferAmount: 950_000,
+      content: 'TRYVIBE TXV1001',
+      referenceCode: 'FTV1001',
+      transferType: 'in',
+    });
+
+    const v2 = normalizeSePayApiTransaction({
+      id: 902,
+      gateway: 'MBBank',
+      accountNumber: '0123456789',
+      transferAmount: 1_200_000,
+      transferType: 'in',
+      content: 'TRYVIBE TXV2001',
+      referenceCode: 'FTV2001',
+    });
+    expect(v2).toMatchObject({
+      id: '902',
+      gateway: 'MBBank',
+      transferAmount: 1_200_000,
+      content: 'TRYVIBE TXV2001',
+      referenceCode: 'FTV2001',
+    });
+
+    // Outgoing or zero-amount skipped
+    expect(normalizeSePayApiTransaction({ id: 903, transferType: 'out', transferAmount: 500_000 })).toBeNull();
+    expect(normalizeSePayApiTransaction({ id: 904, amount_in: '0.00', amount_out: '500000.00' })).toBeNull();
+
+    // v2 URL endpoint dispatch
+    const v2Config = createPaymentConfig({
+      sepayApiToken: 'tok-v2',
+      sepayApiBaseUrl: 'https://my.sepay.vn/userapi/v2',
+    });
+    const v2Adapter = new SePayAdapter(v2Config);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 777,
+              gateway: 'TCB',
+              accountNumber: '0826055232',
+              transferAmount: 420_000,
+              transferType: 'in',
+              content: 'TRYVIBE TXV2FETCH',
+              referenceCode: 'FT777',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const res = await v2Adapter.fetchRecentIncomingTransactions({ limit: 10 });
+    expect(res.ok).toBe(true);
+    expect(res.transactions).toHaveLength(1);
+    expect(res.transactions[0]?.referenceCode).toBe('FT777');
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('/userapi/v2/transactions?');
   });
 });
 

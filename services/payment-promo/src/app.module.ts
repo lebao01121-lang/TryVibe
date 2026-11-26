@@ -7,6 +7,7 @@ import { PaymentDbService } from './db/payment-db.service';
 import { PaymentEventPublisherService } from './messaging/payment-event-publisher.service';
 import { MomoAdapter } from './payments/adapters/momo.adapter';
 import { PayOsAdapter } from './payments/adapters/payos.adapter';
+import { SePayAdapter } from './payments/adapters/sepay.adapter';
 import { VnpayAdapter } from './payments/adapters/vnpay.adapter';
 import { PaymentsController } from './payments/payments.controller';
 import { PaymentsService } from './payments/payments.service';
@@ -29,6 +30,7 @@ import { PaymentPromoController } from './service.controller';
     PaymentRedisService,
     PaymentEventPublisherService,
     PayOsAdapter,
+    SePayAdapter,
     VnpayAdapter,
     MomoAdapter,
     PromotionsService,

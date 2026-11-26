@@ -8,6 +8,10 @@ import {
   type ProductSpuDto,
 } from '@atelier/contracts';
 import {
+  AnimatedTelemetryNumber,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
+import {
   adminFetch,
   getAdminSession,
   type AdminStoredSession,
@@ -787,19 +791,19 @@ export function PromotionsTab({
         ) : null}
 
         <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}>
               Tổng chiến dịch &amp; mã
             </p>
             <p className="adm-tabular mt-1.5 font-mono text-3xl font-semibold">
-              {kpis.total}
+              <AnimatedTelemetryNumber value={kpis.total} />
             </p>
             <p className={`mt-1 text-[11px] ${secondaryCls}`}>
               Sổ cái payment-promo (:4007)
             </p>
           </div>
 
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}>
               Đang kích hoạt (ACTIVE)
             </p>
@@ -808,7 +812,7 @@ export function PromotionsTab({
                 darkMode ? 'text-emerald-300' : 'text-[#1E4B32]'
               }`}
             >
-              {kpis.active}
+              <AnimatedTelemetryNumber value={kpis.active} />
             </p>
             <p className={`mt-1 text-[11px] ${secondaryCls}`}>
               Khả dụng ngay trên Storefront
@@ -816,7 +820,7 @@ export function PromotionsTab({
           </div>
 
           <div
-            className={`rounded-2xl border p-4 ${
+            className={`telemetry-spotlight-card rounded-2xl border p-4 ${
               kpis.drafts > 0
                 ? darkMode
                   ? 'border-[#EBCF8F]/60 bg-[#2E2012] text-[#FBF7EF]'
@@ -828,19 +832,19 @@ export function PromotionsTab({
               Nháp AI chờ phê duyệt (NHAP_AI)
             </p>
             <p className={`adm-tabular mt-1.5 font-mono text-3xl font-semibold ${goldTextCls}`}>
-              {kpis.drafts}
+              <AnimatedTelemetryNumber value={kpis.drafts} />
             </p>
             <p className={`mt-1 text-[11px] ${secondaryCls}`}>
               Khóa HITL — chưa hiển thị công khai
             </p>
           </div>
 
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}>
               Tổng lượt áp dụng
             </p>
             <p className="adm-tabular mt-1.5 font-mono text-3xl font-semibold">
-              {kpis.totalUsed}
+              <AnimatedTelemetryNumber value={kpis.totalUsed} />
             </p>
             <p className={`mt-1 text-[11px] ${secondaryCls}`}>
               Lượt khóa &amp; thanh toán thành công
@@ -1119,14 +1123,23 @@ export function PromotionsTab({
                           </strong>
                         </p>
                         <div className="mt-1.5 flex items-center gap-2 font-mono text-[10.5px]">
-                          <span className="adm-tabular">
+                          <span className="adm-tabular shrink-0">
                             {item.usedCount} / {item.usageLimit ?? '∞'}
                           </span>
                           {item.usageLimit ? (
-                            <div className="h-1.5 w-20 overflow-hidden rounded-full bg-[#B08A4A]/20">
-                              <div
-                                className="h-full rounded-full bg-[#B08A4A]"
-                                style={{ width: `${usagePct}%` }}
+                            <div className="w-24">
+                              <LiveStreamProgressBar
+                                percent={usagePct}
+                                tone={
+                                  usagePct >= 90
+                                    ? 'crimson'
+                                    : usagePct >= 70
+                                      ? 'amber'
+                                      : 'gold'
+                                }
+                                height="xs"
+                                isDark={darkMode}
+                                ariaLabel={`Hạn mức voucher ${item.code}: ${usagePct}%`}
                               />
                             </div>
                           ) : null}

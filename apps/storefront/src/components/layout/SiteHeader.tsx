@@ -581,6 +581,10 @@ export function SiteHeader({
     [lenis, pathname, reducedMotion],
   );
 
+  const handleCloseSearch = useCallback(() => {
+    setSearchOpen(false);
+  }, []);
+
   const isScrolledDark = activeIndex >= 0 && !isLight;
 
   if (pathname === '/thu-do-ai' || pathname.startsWith('/thu-do-ai/')) {
@@ -734,7 +738,7 @@ export function SiteHeader({
         />
       </header>
 
-      <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <SearchOverlay open={searchOpen} onClose={handleCloseSearch} />
     </>
   );
 }

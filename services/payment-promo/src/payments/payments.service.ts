@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import {
+  HttpStatus,
+  Inject,
+  Injectable,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { z } from 'zod';
 import {
   AdminPaymentTransactionsQuerySchema,
@@ -7,12 +13,18 @@ import {
   ErrorCode,
   PaymentProvider,
   PaymentTransactionStatus,
+  SePayWebhookPayloadSchema,
   type PagePagination,
+  type PaymentBankInfoDTO,
   type PaymentIntentResponseDTO,
   type PaymentRefundRecordDTO,
   type PaymentTransactionAdminDTO,
   type PaymentWebhookLogDTO,
   type RefundResponseDTO,
+  type SePayConfigStatusDTO,
+  type SePayOrderStatusDTO,
+  type SePaySyncResultDTO,
+  type SePayWebhookPayloadDTO,
 } from '@atelier/contracts';
 import {
   createChildTraceparent,
@@ -35,6 +47,15 @@ import {
 } from './adapters/adapter-types';
 import { MomoAdapter } from './adapters/momo.adapter';
 import { PayOsAdapter } from './adapters/payos.adapter';
+import {
+  SePayAdapter,
+  buildSePayTransferContent,
+  extractOrderCodeCandidatesFromSePay,
+  maskAccountNumber,
+  normalizeCompactOrderCode,
+  resolveSePayBankMeta,
+  type SePayHeaderBag,
+} from './adapters/sepay.adapter';
 import { VnpayAdapter } from './adapters/vnpay.adapter';
 import {
   buildRawVietQrSvgDataUrl,
@@ -87,6 +108,17 @@ const FlexibleDevSimulateSchema = z.object({
   simulateLate: z.boolean().optional(),
 });
 
+const SimulateSePayWebhookSchema = z.object({
+  orderId: z.string().min(1).optional(),
+  orderCode: z.string().min(1).optional(),
+  amountVnd: z.coerce.number().int().positive().optional(),
+  gateway: z.string().trim().min(1).optional(),
+  transferType: z.enum(['in', 'out']).optional(),
+  content: z.string().trim().min(1).optional(),
+  referenceCode: z.string().trim().min(1).optional(),
+  id: z.union([z.number().int(), z.string().min(1)]).optional(),
+});
+
 const FlexibleRefundRequestSchema = z
   .object({
     transactionId: z.string().trim().min(1).optional(),
@@ -108,13 +140,36 @@ export interface RichPaymentIntentResponseDTO extends PaymentIntentResponseDTO {
   rawQrSvgDataUrl: string | null;
   rawQrPngDataUrl: string | null;
   qrStandard: typeof VIETQR_STANDARD | null;
+  sepayQrImageUrl: string | null;
+  transferContent: string | null;
+  vietqrProvider?: 'SEPAY' | 'PAYOS' | 'LOCAL';
   providerMode: PaymentProviderMode;
-  bankInfo?: {
-    bankBin: string;
-    accountNo: string;
-    accountName: string;
-  } | null;
+  bankInfo?: PaymentBankInfoDTO | null;
 }
+
+export type SePayWebhookResponseDTO =
+  | (WebhookProcessResult & {
+      success: true;
+      matched: true;
+      overpaidVnd?: number;
+    })
+  | {
+      success: true;
+      ok: true;
+      ignored?: boolean;
+      matched?: boolean;
+      processed: false;
+      reason?: string;
+      status?: string;
+      orderCode?: string;
+      expectedAmountVnd?: number;
+      receivedAmountVnd?: number;
+    };
+
+export type SimulateSePayWebhookResult = SePayWebhookResponseDTO & {
+  simulated: true;
+  sepayPayload: SePayWebhookPayloadDTO;
+};
 
 export interface PaymentReturnVerificationDTO {
   verified: boolean;
@@ -328,9 +383,29 @@ function describeMomoResultCode(code: string, fallbackMsg?: string): string {
   return `Giao dịch MoMo chưa thành công (mã kết quả ${code || 'UNKNOWN'}).`;
 }
 
+function parseSePayTransactionDate(raw: string | null | undefined): string {
+  if (!raw || raw.trim().length === 0) {
+    return new Date().toISOString();
+  }
+  const trimmed = raw.trim();
+  const normalized = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(trimmed)
+    ? `${trimmed.replace(' ', 'T')}+07:00`
+    : trimmed;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+}
+
+function normalizeAccountForCompare(raw: string | null | undefined): string {
+  return (raw ?? '').trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+}
+
 @Injectable()
-export class PaymentsService {
+export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = createLogger(SERVICE_NAME);
+  private sepayPollTimer: ReturnType<typeof setInterval> | null = null;
+  private sepaySyncInFlight = false;
+  private lastSePayPollAt: string | null = null;
+  private lastSePayPollError: string | null = null;
 
   constructor(
     @Inject(PAYMENT_CONFIG_TOKEN) private readonly config: PaymentPromoConfig,
@@ -339,7 +414,74 @@ export class PaymentsService {
     private readonly payosAdapter: PayOsAdapter,
     private readonly vnpayAdapter: VnpayAdapter,
     private readonly momoAdapter: MomoAdapter,
+    private readonly sepayAdapter: SePayAdapter,
   ) {}
+
+  onModuleInit(): void {
+    if (
+      this.sepayAdapter.apiTokenConfigured &&
+      this.config.sepay.autoPollEnabled &&
+      this.config.nodeEnv !== 'test'
+    ) {
+      const intervalMs = this.config.sepay.pollIntervalMs;
+      this.logger.info(
+        { intervalMs, bankCode: this.config.sepay.bankCode },
+        'SePay background auto-poller enabled for pending VIETQR transactions',
+      );
+      this.sepayPollTimer = setInterval(() => {
+        void this.runScheduledSePayPoll();
+      }, intervalMs);
+      this.sepayPollTimer.unref?.();
+    }
+  }
+
+  onModuleDestroy(): void {
+    if (this.sepayPollTimer) {
+      clearInterval(this.sepayPollTimer);
+      this.sepayPollTimer = null;
+    }
+  }
+
+  private async runScheduledSePayPoll(): Promise<void> {
+    if (this.sepaySyncInFlight || !this.sepayAdapter.apiTokenConfigured) {
+      return;
+    }
+    try {
+      const countRes = await this.db.query<{ cnt: string | number }>(
+        `
+        SELECT COUNT(*)::int AS cnt FROM payment_transactions
+        WHERE provider = 'VIETQR' AND tx_type = 'CHARGE' AND status = 'PENDING'
+          AND (expires_at IS NULL OR expires_at > NOW() - INTERVAL '2 hours')
+        `,
+      );
+      const pendingCount = Number(countRes.rows[0]?.cnt ?? 0);
+      if (pendingCount <= 0) {
+        return;
+      }
+      await this.syncPendingSePayTransactions(`sepay-poll-${Date.now()}`);
+    } catch (error: unknown) {
+      this.lastSePayPollError =
+        error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        { err: this.lastSePayPollError },
+        'SePay scheduled background poll failed',
+      );
+    }
+  }
+
+  private resolveActiveVietQrProvider(): 'SEPAY' | 'PAYOS' {
+    if (this.config.vietqrProvider === 'payos') {
+      return 'PAYOS';
+    }
+    if (
+      this.config.vietqrProvider === 'auto' &&
+      this.payosAdapter.isLiveConfigured &&
+      !this.sepayAdapter.isLiveConfigured
+    ) {
+      return 'PAYOS';
+    }
+    return 'SEPAY';
+  }
 
   private mapTransactionToIntentDto(
     row: PaymentTransactionRow,
@@ -357,6 +499,14 @@ export class PaymentsService {
       typeof rawMeta?.rawQrSvgDataUrl === 'string' ? rawMeta.rawQrSvgDataUrl : null;
     const rawQrPngDataUrl =
       typeof rawMeta?.rawQrPngDataUrl === 'string' ? rawMeta.rawQrPngDataUrl : null;
+    const sepayQrImageUrl =
+      typeof rawMeta?.sepayQrImageUrl === 'string' ? rawMeta.sepayQrImageUrl : null;
+    const transferContent =
+      typeof rawMeta?.transferContent === 'string'
+        ? rawMeta.transferContent
+        : row.provider === PaymentProvider.VIETQR
+          ? buildSePayTransferContent(row.order_code, this.config.sepay.orderPrefix)
+          : null;
 
     if (row.provider === PaymentProvider.VIETQR && qrPayload) {
       if (!qrSvgDataUrl) {
@@ -373,6 +523,16 @@ export class PaymentsService {
 
     const providerMode: PaymentProviderMode =
       rawMeta?.providerMode === 'LIVE' ? 'LIVE' : 'SANDBOX_LOCAL';
+    const vietqrProvider: 'SEPAY' | 'PAYOS' | 'LOCAL' | undefined =
+      rawMeta?.vietqrProvider === 'SEPAY' ||
+      rawMeta?.vietqrProvider === 'PAYOS' ||
+      rawMeta?.vietqrProvider === 'LOCAL'
+        ? rawMeta.vietqrProvider
+        : row.provider === PaymentProvider.VIETQR
+          ? sepayQrImageUrl
+            ? 'SEPAY'
+            : 'LOCAL'
+          : undefined;
     const qrStandard =
       rawMeta?.qrStandard === VIETQR_STANDARD ||
       (row.provider === PaymentProvider.VIETQR && Boolean(qrPayload))
@@ -383,19 +543,39 @@ export class PaymentsService {
       rawMeta?.bankInfo && typeof rawMeta.bankInfo === 'object'
         ? (rawMeta.bankInfo as Record<string, unknown>)
         : null;
-    const bankInfo =
+    let bankInfo: PaymentBankInfoDTO | null = null;
+    if (
       bankInfoRaw &&
       typeof bankInfoRaw.bankBin === 'string' &&
       typeof bankInfoRaw.accountNo === 'string' &&
       typeof bankInfoRaw.accountName === 'string'
-        ? {
-            bankBin: bankInfoRaw.bankBin,
-            accountNo: bankInfoRaw.accountNo,
-            accountName: bankInfoRaw.accountName,
-          }
-        : row.provider === PaymentProvider.VIETQR
-          ? { ...this.config.vietqr }
-          : null;
+    ) {
+      const resolvedMeta = resolveSePayBankMeta(
+        typeof bankInfoRaw.bankCode === 'string' ? bankInfoRaw.bankCode : undefined,
+        bankInfoRaw.bankBin,
+      );
+      bankInfo = {
+        bankBin: bankInfoRaw.bankBin,
+        bankCode:
+          typeof bankInfoRaw.bankCode === 'string'
+            ? bankInfoRaw.bankCode
+            : resolvedMeta.bankCode,
+        bankName:
+          typeof bankInfoRaw.bankName === 'string'
+            ? bankInfoRaw.bankName
+            : resolvedMeta.bankName,
+        accountNo: bankInfoRaw.accountNo,
+        accountName: bankInfoRaw.accountName,
+      };
+    } else if (row.provider === PaymentProvider.VIETQR) {
+      bankInfo = {
+        bankBin: this.config.sepay.bankBin,
+        bankCode: this.config.sepay.bankCode,
+        bankName: this.config.sepay.bankName,
+        accountNo: this.config.sepay.accountNo,
+        accountName: this.config.sepay.accountName,
+      };
+    }
 
     return {
       transactionId: row.id,
@@ -405,6 +585,9 @@ export class PaymentsService {
       paymentUrl: row.payment_url ?? null,
       vietQrPayload: qrPayload,
       vietQrImageUrl: qrSvgDataUrl,
+      sepayQrImageUrl,
+      transferContent,
+      ...(vietqrProvider ? { vietqrProvider } : {}),
       qrPayload,
       qrImageUrl: qrSvgDataUrl,
       qrSvgDataUrl,
@@ -491,28 +674,66 @@ export class PaymentsService {
     const providerMeta: Record<string, unknown> = {};
 
     if (input.provider === PaymentProvider.VIETQR) {
-      returnUrl =
-        input.returnUrl ??
-        `${defaultStorefrontReturnUrl}?provider=PAYOS&orderCode=${encodeURIComponent(input.orderCode)}`;
-      const payosResult = await this.payosAdapter.createPaymentIntent({
-        orderCode: input.orderCode,
-        amountVnd: input.amountVnd,
-        returnUrl,
-        expiresAt,
-      });
-      qrPayload = payosResult.qrPayload;
-      qrSvgDataUrl = payosResult.qrSvgDataUrl;
-      rawQrSvgDataUrl = payosResult.rawQrSvgDataUrl;
-      rawQrPngDataUrl = payosResult.rawQrPngDataUrl;
-      qrStandard = payosResult.qrStandard;
-      paymentUrl = payosResult.paymentUrl;
-      providerTxId = payosResult.providerTxId;
-      providerMode = payosResult.mode;
-      providerMeta.payosOrderCode = payosResult.payosOrderCode;
-      providerMeta.checkoutUrl = payosResult.checkoutUrl;
-      providerMeta.bankInfo = payosResult.bankInfo;
-      providerMeta.qrModuleCount = payosResult.qrModuleCount;
-      providerMeta.qrQuietZoneModules = payosResult.qrQuietZoneModules;
+      const activeVietQrProvider = this.resolveActiveVietQrProvider();
+      if (activeVietQrProvider === 'SEPAY') {
+        returnUrl =
+          input.returnUrl ??
+          `${defaultStorefrontReturnUrl}?provider=VIETQR&orderCode=${encodeURIComponent(input.orderCode)}`;
+        const sepayResult = await this.sepayAdapter.createPaymentIntent({
+          orderCode: input.orderCode,
+          amountVnd: input.amountVnd,
+          expiresAt,
+        });
+        qrPayload = sepayResult.qrPayload;
+        qrSvgDataUrl = sepayResult.qrSvgDataUrl;
+        rawQrSvgDataUrl = sepayResult.rawQrSvgDataUrl;
+        rawQrPngDataUrl = sepayResult.rawQrPngDataUrl;
+        qrStandard = sepayResult.qrStandard;
+        paymentUrl = sepayResult.paymentUrl;
+        providerTxId = sepayResult.providerTxId;
+        providerMode = sepayResult.mode;
+        providerMeta.vietqrProvider = 'SEPAY';
+        providerMeta.sepayQrImageUrl = sepayResult.sepayQrImageUrl;
+        providerMeta.transferContent = sepayResult.transferContent;
+        providerMeta.compactOrderCode = sepayResult.compactOrderCode;
+        providerMeta.bankInfo = sepayResult.bankInfo;
+        providerMeta.qrModuleCount = sepayResult.qrModuleCount;
+        providerMeta.qrQuietZoneModules = sepayResult.qrQuietZoneModules;
+      } else {
+        returnUrl =
+          input.returnUrl ??
+          `${defaultStorefrontReturnUrl}?provider=PAYOS&orderCode=${encodeURIComponent(input.orderCode)}`;
+        const payosResult = await this.payosAdapter.createPaymentIntent({
+          orderCode: input.orderCode,
+          amountVnd: input.amountVnd,
+          returnUrl,
+          expiresAt,
+        });
+        const bankMeta = resolveSePayBankMeta(undefined, payosResult.bankInfo.bankBin);
+        qrPayload = payosResult.qrPayload;
+        qrSvgDataUrl = payosResult.qrSvgDataUrl;
+        rawQrSvgDataUrl = payosResult.rawQrSvgDataUrl;
+        rawQrPngDataUrl = payosResult.rawQrPngDataUrl;
+        qrStandard = payosResult.qrStandard;
+        paymentUrl = payosResult.paymentUrl;
+        providerTxId = payosResult.providerTxId;
+        providerMode = payosResult.mode;
+        providerMeta.vietqrProvider = 'PAYOS';
+        providerMeta.transferContent = buildSePayTransferContent(
+          input.orderCode,
+          this.config.sepay.orderPrefix,
+        );
+        providerMeta.compactOrderCode = normalizeCompactOrderCode(input.orderCode);
+        providerMeta.payosOrderCode = payosResult.payosOrderCode;
+        providerMeta.checkoutUrl = payosResult.checkoutUrl;
+        providerMeta.bankInfo = {
+          ...payosResult.bankInfo,
+          bankCode: bankMeta.bankCode,
+          bankName: bankMeta.bankName,
+        };
+        providerMeta.qrModuleCount = payosResult.qrModuleCount;
+        providerMeta.qrQuietZoneModules = payosResult.qrQuietZoneModules;
+      }
     } else if (input.provider === PaymentProvider.VNPAY) {
       returnUrl = input.returnUrl ?? this.config.vnpay.returnUrl;
       const vnpayResult = this.vnpayAdapter.createPayment({
@@ -636,6 +857,7 @@ export class PaymentsService {
 
   private async findChargeTransaction(lookup: {
     orderCode?: string | null;
+    compactOrderCode?: string | null;
     orderId?: string | null;
     payosOrderCode?: string | null;
     providerTxId?: string | null;
@@ -652,6 +874,28 @@ export class PaymentsService {
       );
       if (res.rows[0]) {
         return res.rows[0];
+      }
+    }
+
+    if (lookup.compactOrderCode && lookup.compactOrderCode.trim()) {
+      const compact = normalizeCompactOrderCode(lookup.compactOrderCode);
+      if (compact.length >= 4) {
+        const res = await this.db.query<PaymentTransactionRow>(
+          `
+          SELECT * FROM payment_transactions
+          WHERE (
+            REPLACE(UPPER(order_code), '-', '') = $1
+            OR UPPER(COALESCE(raw_payload_jsonb->>'compactOrderCode', '')) = $1
+          )
+          AND tx_type = 'CHARGE'
+          ORDER BY created_at DESC
+          LIMIT 1
+          `,
+          [compact],
+        );
+        if (res.rows[0]) {
+          return res.rows[0];
+        }
       }
     }
 
@@ -1454,6 +1698,614 @@ export class PaymentsService {
     });
   }
 
+  private async logSePayAmountMismatchWebhook(params: {
+    sepayTxId: string;
+    orderCode: string;
+    expectedAmountVnd: number;
+    receivedAmountVnd: number;
+    signatureHeader: string | null;
+    rawPayload: Record<string, unknown>;
+  }): Promise<void> {
+    const providerEventId = `sepay:mismatch:${params.sepayTxId}`;
+    const summary = `SePay AMOUNT_MISMATCH · ${params.orderCode} · nhận ${params.receivedAmountVnd.toLocaleString('vi-VN')}₫ / yêu cầu ${params.expectedAmountVnd.toLocaleString('vi-VN')}₫`;
+    await this.db
+      .query(
+        `
+        INSERT INTO processed_webhooks (
+          provider, provider_event_id, order_code, signature_valid,
+          signature_header, status, payload_summary, raw_payload_jsonb
+        )
+        VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7::jsonb)
+        ON CONFLICT (provider, provider_event_id) DO NOTHING
+        `,
+        [
+          PaymentProvider.VIETQR,
+          providerEventId,
+          params.orderCode.slice(0, 32),
+          maskSignature(params.signatureHeader),
+          'AMOUNT_MISMATCH',
+          summary,
+          JSON.stringify({
+            ...params.rawPayload,
+            expectedAmountVnd: params.expectedAmountVnd,
+            receivedAmountVnd: params.receivedAmountVnd,
+          }),
+        ],
+      )
+      .catch(() => undefined);
+  }
+
+  /**
+   * Official SePay Webhook handler (`Authorization: Apikey <SEPAY_WEBHOOK_API_KEY>`).
+   * Matches Vietnamese bank transfers (both hyphenated and hyphen-stripped order codes),
+   * guards underpayment, deduplicates atomically, and settles orders automatically.
+   */
+  async handleSePayWebhook(
+    rawBody: unknown,
+    headers: SePayHeaderBag,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<SePayWebhookResponseDTO> {
+    const rawObj =
+      rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
+        ? (rawBody as Record<string, unknown>)
+        : {};
+
+    const auth = this.sepayAdapter.verifyWebhookAuth(headers);
+    if (!auth.valid) {
+      const candidateHint =
+        extractOrderCodeCandidatesFromSePay(
+          {
+            code: typeof rawObj.code === 'string' ? rawObj.code : null,
+            content: typeof rawObj.content === 'string' ? rawObj.content : null,
+            description:
+              typeof rawObj.description === 'string' ? rawObj.description : null,
+          },
+          this.config.sepay.orderPrefix,
+        )[0] ?? null;
+
+      await this.logInvalidSignatureWebhook({
+        provider: PaymentProvider.VIETQR,
+        orderCode: candidateHint,
+        eventIdHint: String(rawObj.id ?? rawObj.referenceCode ?? 'sepay-webhook'),
+        signatureHeader: auth.providedHeader,
+        summary: `SePay API Key verification failed${candidateHint ? ` (${candidateHint})` : ''}`,
+        rawPayload: rawObj,
+      });
+
+      throw new PaymentApiException(
+        HttpStatus.UNAUTHORIZED,
+        ErrorCode.PAYMENT_SIGNATURE_INVALID,
+        'API Key xác thực webhook SePay không hợp lệ hoặc bị thiếu. / Invalid or missing SePay webhook API Key.',
+        { provider: PaymentProvider.VIETQR },
+      );
+    }
+
+    const parsed = SePayWebhookPayloadSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      throw new PaymentApiException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Nội dung webhook SePay không hợp lệ. / Invalid SePay webhook payload.',
+        { issues: parsed.error.issues },
+      );
+    }
+
+    const payload = parsed.data;
+
+    if (payload.transferType !== 'in') {
+      return {
+        success: true,
+        ok: true,
+        ignored: true,
+        processed: false,
+        reason: 'OUTGOING_TRANSFER',
+      };
+    }
+
+    if (this.sepayAdapter.isLiveConfigured) {
+      const configuredAcc = normalizeAccountForCompare(this.config.sepay.accountNo);
+      const payloadAcc = normalizeAccountForCompare(payload.accountNumber);
+      const payloadSubAcc = normalizeAccountForCompare(payload.subAccount);
+      if (
+        configuredAcc &&
+        payloadAcc &&
+        payloadAcc !== configuredAcc &&
+        payloadSubAcc !== configuredAcc
+      ) {
+        return {
+          success: true,
+          ok: true,
+          ignored: true,
+          processed: false,
+          reason: 'ACCOUNT_MISMATCH',
+        };
+      }
+    }
+
+    const candidates = extractOrderCodeCandidatesFromSePay(
+      payload,
+      this.config.sepay.orderPrefix,
+    );
+
+    let chargeTx: PaymentTransactionRow | null = null;
+    for (const candidate of candidates) {
+      chargeTx = await this.findChargeTransaction({
+        orderCode: candidate,
+        compactOrderCode: candidate,
+      });
+      if (chargeTx) {
+        break;
+      }
+    }
+
+    if (!chargeTx) {
+      return {
+        success: true,
+        ok: true,
+        matched: false,
+        processed: false,
+        reason: 'ORDER_NOT_FOUND',
+      };
+    }
+
+    const expectedAmountVnd = Number(chargeTx.amount_vnd);
+    const receivedAmountVnd = Math.round(payload.transferAmount);
+
+    if (receivedAmountVnd < expectedAmountVnd) {
+      await this.logSePayAmountMismatchWebhook({
+        sepayTxId: String(payload.id),
+        orderCode: chargeTx.order_code,
+        expectedAmountVnd,
+        receivedAmountVnd,
+        signatureHeader: auth.providedHeader,
+        rawPayload: payload as unknown as Record<string, unknown>,
+      });
+
+      return {
+        success: true,
+        ok: true,
+        matched: true,
+        processed: false,
+        status: 'AMOUNT_MISMATCH',
+        expectedAmountVnd,
+        receivedAmountVnd,
+        orderCode: chargeTx.order_code,
+      };
+    }
+
+    const overpaidVnd = Math.max(0, receivedAmountVnd - expectedAmountVnd);
+    const providerEventId = `sepay:${String(payload.id)}`;
+    const providerTxId = payload.referenceCode?.trim() || `SEPAY-${String(payload.id)}`;
+    const paidAt = parseSePayTransactionDate(payload.transactionDate);
+
+    const settled = await this.settleVerifiedProviderCallback({
+      provider: PaymentProvider.VIETQR,
+      providerEventId,
+      chargeTx,
+      providerTxId,
+      amountVnd: expectedAmountVnd,
+      nextTxStatus: PaymentTransactionStatus.SUCCEEDED,
+      paidAt,
+      signatureHeader: auth.providedHeader,
+      rawPayloadObj: {
+        ...payload,
+        sepayMatchedBy: 'webhook',
+        receivedAmountVnd,
+        ...(overpaidVnd > 0 ? { overpaidVnd } : {}),
+      },
+      correlationId,
+      traceparent,
+    });
+
+    return {
+      ...settled,
+      success: true,
+      matched: true,
+      ...(overpaidVnd > 0 ? { overpaidVnd } : {}),
+    };
+  }
+
+  /**
+   * Synchronizes all pending VIETQR charge transactions against SePay User API
+   * (`GET /transactions/list` or `/v2/transactions`). Safe to call from both
+   * background auto-poller and manual admin trigger.
+   */
+  async syncPendingSePayTransactions(
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<SePaySyncResultDTO> {
+    const mode: PaymentProviderMode = this.sepayAdapter.isLiveConfigured
+      ? 'LIVE'
+      : 'SANDBOX_LOCAL';
+
+    if (this.sepaySyncInFlight) {
+      return {
+        ok: true,
+        mode,
+        checkedPendingCount: 0,
+        fetchedTransactionsCount: 0,
+        settledOrderCodes: [],
+        skippedReason: 'SYNC_IN_PROGRESS',
+        syncedAt: new Date().toISOString(),
+      };
+    }
+
+    this.sepaySyncInFlight = true;
+    try {
+      const syncedAt = new Date().toISOString();
+      const pendingRes = await this.db.query<PaymentTransactionRow>(
+        `
+        SELECT * FROM payment_transactions
+        WHERE provider = 'VIETQR' AND tx_type = 'CHARGE' AND status = 'PENDING'
+          AND (expires_at IS NULL OR expires_at > NOW() - INTERVAL '2 hours')
+        ORDER BY created_at DESC
+        LIMIT 100
+        `,
+      );
+      const pendingRows = pendingRes.rows;
+
+      if (!this.sepayAdapter.apiTokenConfigured) {
+        this.lastSePayPollAt = syncedAt;
+        this.lastSePayPollError = null;
+        return {
+          ok: true,
+          mode,
+          checkedPendingCount: pendingRows.length,
+          fetchedTransactionsCount: 0,
+          settledOrderCodes: [],
+          skippedReason: 'SEPAY_API_TOKEN_NOT_CONFIGURED',
+          syncedAt,
+        };
+      }
+
+      if (pendingRows.length === 0) {
+        this.lastSePayPollAt = syncedAt;
+        this.lastSePayPollError = null;
+        return {
+          ok: true,
+          mode,
+          checkedPendingCount: 0,
+          fetchedTransactionsCount: 0,
+          settledOrderCodes: [],
+          skippedReason: 'NO_PENDING_VIETQR_ORDERS',
+          syncedAt,
+        };
+      }
+
+      const fetchResult = await this.sepayAdapter.fetchRecentIncomingTransactions({
+        limit: 50,
+      });
+
+      if (!fetchResult.ok) {
+        this.lastSePayPollAt = syncedAt;
+        this.lastSePayPollError = fetchResult.error ?? `SePay API HTTP ${fetchResult.status}`;
+        return {
+          ok: false,
+          mode,
+          checkedPendingCount: pendingRows.length,
+          fetchedTransactionsCount: 0,
+          settledOrderCodes: [],
+          skippedReason: this.lastSePayPollError,
+          syncedAt,
+        };
+      }
+
+      const pendingByKey = new Map<string, PaymentTransactionRow>();
+      for (const row of pendingRows) {
+        const upperCode = row.order_code.trim().toUpperCase();
+        const compactCode = normalizeCompactOrderCode(row.order_code);
+        pendingByKey.set(upperCode, row);
+        if (compactCode) {
+          pendingByKey.set(compactCode, row);
+        }
+        const rawMeta = parseJsonRecord(row.raw_payload_jsonb);
+        if (typeof rawMeta?.compactOrderCode === 'string' && rawMeta.compactOrderCode.trim()) {
+          pendingByKey.set(rawMeta.compactOrderCode.trim().toUpperCase(), row);
+        }
+      }
+
+      const settledOrderCodes: string[] = [];
+      const settledTxIds = new Set<string>();
+
+      for (const tx of fetchResult.transactions) {
+        const candidates = extractOrderCodeCandidatesFromSePay(
+          tx,
+          this.config.sepay.orderPrefix,
+        );
+        let matchedRow: PaymentTransactionRow | null = null;
+        for (const candidate of candidates) {
+          const found = pendingByKey.get(candidate.toUpperCase());
+          if (found && !settledTxIds.has(found.id)) {
+            matchedRow = found;
+            break;
+          }
+        }
+        if (!matchedRow) {
+          continue;
+        }
+
+        const expectedAmountVnd = Number(matchedRow.amount_vnd);
+        const receivedAmountVnd = Math.round(tx.transferAmount);
+
+        if (receivedAmountVnd < expectedAmountVnd) {
+          await this.logSePayAmountMismatchWebhook({
+            sepayTxId: tx.id,
+            orderCode: matchedRow.order_code,
+            expectedAmountVnd,
+            receivedAmountVnd,
+            signatureHeader: 'sepay-api-poll',
+            rawPayload: tx.raw,
+          });
+          continue;
+        }
+
+        const overpaidVnd = Math.max(0, receivedAmountVnd - expectedAmountVnd);
+        const providerEventId = `sepay:${tx.id}`;
+        const providerTxId = tx.referenceCode?.trim() || `SEPAY-${tx.id}`;
+        const paidAt = parseSePayTransactionDate(tx.transactionDate);
+
+        const settled = await this.settleVerifiedProviderCallback({
+          provider: PaymentProvider.VIETQR,
+          providerEventId,
+          chargeTx: matchedRow,
+          providerTxId,
+          amountVnd: expectedAmountVnd,
+          nextTxStatus: PaymentTransactionStatus.SUCCEEDED,
+          paidAt,
+          signatureHeader: 'sepay-api-poll',
+          rawPayloadObj: {
+            ...tx.raw,
+            sepayMatchedBy: 'api_poll',
+            receivedAmountVnd,
+            ...(overpaidVnd > 0 ? { overpaidVnd } : {}),
+          },
+          correlationId,
+          traceparent,
+        });
+
+        settledTxIds.add(matchedRow.id);
+        if (settled.processed) {
+          settledOrderCodes.push(matchedRow.order_code);
+        }
+      }
+
+      this.lastSePayPollAt = syncedAt;
+      this.lastSePayPollError = null;
+
+      return {
+        ok: true,
+        mode,
+        checkedPendingCount: pendingRows.length,
+        fetchedTransactionsCount: fetchResult.transactions.length,
+        settledOrderCodes,
+        skippedReason: null,
+        syncedAt,
+      };
+    } finally {
+      this.sepaySyncInFlight = false;
+    }
+  }
+
+  /**
+   * Checks SePay payment status for a single order. When still PENDING and
+   * `SEPAY_API_TOKEN` is configured, performs an immediate on-demand SePay sync.
+   */
+  async checkSePayOrderStatus(
+    orderCode: string,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<SePayOrderStatusDTO> {
+    const trimmed = orderCode.trim();
+    let chargeTx = await this.findChargeTransaction({
+      orderCode: trimmed,
+      compactOrderCode: trimmed,
+    });
+
+    if (!chargeTx) {
+      throw new PaymentApiException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy giao dịch thanh toán cho đơn hàng "${trimmed}". / Payment transaction not found.`,
+      );
+    }
+
+    const extractMetaInfo = (row: PaymentTransactionRow) => {
+      const rawMeta = parseJsonRecord(row.raw_payload_jsonb);
+      const providerMode: PaymentProviderMode =
+        rawMeta?.providerMode === 'LIVE'
+          ? 'LIVE'
+          : this.sepayAdapter.isLiveConfigured
+            ? 'LIVE'
+            : 'SANDBOX_LOCAL';
+      const vietqrProvider: 'SEPAY' | 'PAYOS' | 'LOCAL' =
+        rawMeta?.vietqrProvider === 'SEPAY' ||
+        rawMeta?.vietqrProvider === 'PAYOS' ||
+        rawMeta?.vietqrProvider === 'LOCAL'
+          ? rawMeta.vietqrProvider
+          : this.resolveActiveVietQrProvider();
+      return { providerMode, vietqrProvider };
+    };
+
+    const isSettledStatus = (status: PaymentTransactionStatus): boolean =>
+      status === PaymentTransactionStatus.SUCCEEDED ||
+      status === PaymentTransactionStatus.LATE_SUCCEEDED ||
+      status === PaymentTransactionStatus.REFUNDED;
+
+    let sepaySyncedNow = false;
+    if (
+      chargeTx.status === PaymentTransactionStatus.PENDING &&
+      chargeTx.provider === PaymentProvider.VIETQR &&
+      this.sepayAdapter.apiTokenConfigured
+    ) {
+      await this.syncPendingSePayTransactions(correlationId, traceparent);
+      sepaySyncedNow = true;
+      const refreshed = await this.findChargeTransaction({
+        orderCode: chargeTx.order_code,
+      });
+      if (refreshed) {
+        chargeTx = refreshed;
+      }
+    }
+
+    const { providerMode, vietqrProvider } = extractMetaInfo(chargeTx);
+    const paid = isSettledStatus(chargeTx.status);
+
+    const message = paid
+      ? sepaySyncedNow
+        ? 'SePay đã đối soát thành công giao dịch chuyển khoản của bạn!'
+        : 'Giao dịch VietQR · SePay đã được xác nhận thanh toán thành công.'
+      : chargeTx.status === PaymentTransactionStatus.PENDING
+        ? sepaySyncedNow
+          ? 'Chưa ghi nhận giao dịch chuyển khoản khớp mã đơn trên SePay. Vui lòng đợi 5–15 giây sau khi chuyển khoản và thử lại.'
+          : 'Đang chờ SePay xác nhận giao dịch chuyển khoản ngân hàng.'
+        : `Trạng thái giao dịch hiện tại: ${chargeTx.status}.`;
+
+    return {
+      orderCode: chargeTx.order_code,
+      paid,
+      status: chargeTx.status,
+      amountVnd: Number(chargeTx.amount_vnd),
+      provider: chargeTx.provider,
+      providerMode,
+      vietqrProvider,
+      sepaySyncedNow,
+      providerTxId: chargeTx.provider_tx_id ?? null,
+      paidAt: chargeTx.paid_at ? toIso(chargeTx.paid_at) : null,
+      orderStatus: null,
+      message,
+    };
+  }
+
+  /**
+   * Returns current SePay integration configuration and operational health
+   * for the Admin Payment Ledger SePay panel.
+   */
+  async getSePayConfigStatus(): Promise<SePayConfigStatusDTO> {
+    const countRes = await this.db.query<{ cnt: string | number }>(
+      `
+      SELECT COUNT(*)::int AS cnt FROM payment_transactions
+      WHERE provider = 'VIETQR' AND tx_type = 'CHARGE' AND status = 'PENDING'
+      `,
+    );
+    const pendingVietQrCount = Number(countRes.rows[0]?.cnt ?? 0);
+    const activeVietQrProvider = this.resolveActiveVietQrProvider();
+
+    return {
+      enabled: activeVietQrProvider === 'SEPAY',
+      activeVietQrProvider,
+      mode: this.sepayAdapter.isLiveConfigured ? 'LIVE' : 'SANDBOX_LOCAL',
+      bankCode: this.config.sepay.bankCode,
+      bankBin: this.config.sepay.bankBin,
+      bankName: this.config.sepay.bankName,
+      accountNoMasked: maskAccountNumber(this.config.sepay.accountNo),
+      accountName: this.config.sepay.accountName,
+      orderPrefix: this.config.sepay.orderPrefix,
+      qrTemplate: this.config.sepay.qrTemplate,
+      webhookUrl: `${this.config.bffPublicUrl}/bff/v1/payments/sepay/webhook`,
+      webhookAuthHeaderExample: 'Authorization: Apikey <SEPAY_WEBHOOK_API_KEY>',
+      webhookApiKeyConfigured: this.sepayAdapter.webhookApiKeyConfigured,
+      apiTokenConfigured: this.sepayAdapter.apiTokenConfigured,
+      autoPollEnabled: this.config.sepay.autoPollEnabled,
+      pollIntervalMs: this.config.sepay.pollIntervalMs,
+      lastPollAt: this.lastSePayPollAt,
+      lastPollError: this.lastSePayPollError,
+      pendingVietQrCount,
+    };
+  }
+
+  /**
+   * Dev/Sandbox simulator that builds an authentic SePay webhook payload and
+   * dispatches it through `handleSePayWebhook` with the real `Authorization: Apikey` header.
+   * Disabled in production.
+   */
+  async simulateSePayWebhook(
+    rawBody: unknown,
+    correlationId: string,
+    traceparent?: string,
+  ): Promise<SimulateSePayWebhookResult> {
+    if (this.config.nodeEnv === 'production') {
+      throw new PaymentApiException(
+        HttpStatus.FORBIDDEN,
+        ErrorCode.FORBIDDEN,
+        'Endpoint mô phỏng webhook SePay bị vô hiệu hóa ở môi trường production. / SePay simulator is disabled in production.',
+      );
+    }
+
+    const parsed = SimulateSePayWebhookSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      throw new PaymentApiException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Dữ liệu mô phỏng webhook SePay không hợp lệ. / Invalid SePay simulate payload.',
+        { issues: parsed.error.issues },
+      );
+    }
+
+    const input = parsed.data;
+    if (!input.orderCode && !input.orderId) {
+      throw new PaymentApiException(
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR,
+        'Cần cung cấp orderCode hoặc orderId để mô phỏng chuyển khoản SePay. / Either orderCode or orderId is required.',
+      );
+    }
+
+    const chargeTx = await this.findChargeTransaction({
+      orderCode: input.orderCode,
+      compactOrderCode: input.orderCode,
+      orderId: input.orderId,
+    });
+    if (!chargeTx) {
+      throw new PaymentApiException(
+        HttpStatus.NOT_FOUND,
+        ErrorCode.NOT_FOUND,
+        `Không tìm thấy phiên thanh toán cho đơn "${input.orderCode ?? input.orderId}". / Payment transaction not found.`,
+      );
+    }
+
+    const rawMeta = parseJsonRecord(chargeTx.raw_payload_jsonb);
+    const transferContent =
+      input.content ??
+      (typeof rawMeta?.transferContent === 'string' && rawMeta.transferContent.trim()
+        ? rawMeta.transferContent.trim()
+        : buildSePayTransferContent(chargeTx.order_code, this.config.sepay.orderPrefix));
+    const amountVnd = input.amountVnd ?? Number(chargeTx.amount_vnd);
+    const vnTime = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const transactionDate = vnTime.toISOString().slice(0, 19).replace('T', ' ');
+    const simId = input.id ?? Math.floor(10_000_000 + Math.random() * 89_000_000);
+
+    const sepayPayload: SePayWebhookPayloadDTO = {
+      id: simId,
+      gateway: input.gateway ?? this.config.sepay.bankCode,
+      transactionDate,
+      accountNumber: this.config.sepay.accountNo,
+      subAccount: null,
+      code: normalizeCompactOrderCode(chargeTx.order_code),
+      content: transferContent,
+      transferType: input.transferType ?? 'in',
+      description: `BankAPINotify ${transferContent}`,
+      transferAmount: amountVnd,
+      accumulated: amountVnd,
+      referenceCode: input.referenceCode ?? `FT${Date.now().toString().slice(-10)}`,
+    };
+
+    const result = await this.handleSePayWebhook(
+      sepayPayload,
+      {
+        authorization: `Apikey ${this.sepayAdapter.webhookApiKey}`,
+      },
+      correlationId,
+      traceparent,
+    );
+
+    return {
+      ...result,
+      simulated: true,
+      sepayPayload,
+    };
+  }
+
   /**
    * Verifies Return URL query params from VNPay, MoMo, or PayOS/VietQR,
    * syncs verified payment status idempotently, and returns structured UI status.
@@ -1737,6 +2589,7 @@ export class PaymentsService {
 
     const chargeTx = await this.findChargeTransaction({
       orderCode: orderCodeParam || null,
+      compactOrderCode: orderCodeParam || null,
       payosOrderCode: orderCodeParam || null,
       providerTxId: linkIdParam || null,
     });
@@ -1812,6 +2665,35 @@ export class PaymentsService {
             orderStatus: settled.orderStatus ?? null,
           };
         }
+      }
+    }
+
+    // If SePay User API is configured and still PENDING, sync on-demand before returning
+    if (
+      this.sepayAdapter.apiTokenConfigured &&
+      chargeTx.status === PaymentTransactionStatus.PENDING
+    ) {
+      await this.syncPendingSePayTransactions(correlationId, traceparent);
+      const updatedTx = await this.findChargeTransaction({
+        orderCode: chargeTx.order_code,
+      });
+      if (
+        updatedTx &&
+        (updatedTx.status === PaymentTransactionStatus.SUCCEEDED ||
+          updatedTx.status === PaymentTransactionStatus.LATE_SUCCEEDED)
+      ) {
+        return {
+          verified: true,
+          paid: true,
+          status: updatedTx.status,
+          orderCode: updatedTx.order_code,
+          provider: PaymentProvider.VIETQR,
+          amountVnd,
+          message: 'Thanh toán VietQR · SePay đã được đối soát tự động thành công.',
+          responseCode: '00',
+          transactionId: updatedTx.id,
+          orderStatus: null,
+        };
       }
     }
 
@@ -1969,6 +2851,15 @@ export class PaymentsService {
     }
 
     if (originalCharge.provider === PaymentProvider.VIETQR) {
+      if (rawMeta?.vietqrProvider === 'SEPAY') {
+        return this.sepayAdapter.refundTransaction({
+          orderCode: originalCharge.order_code,
+          amountVnd,
+          reason,
+          chargeStatus: originalCharge.status,
+          providerTxId: originalCharge.provider_tx_id,
+        });
+      }
       return this.payosAdapter.refundTransaction({
         orderCode: originalCharge.order_code,
         amountVnd,

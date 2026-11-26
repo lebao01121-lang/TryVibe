@@ -584,10 +584,10 @@ export function AnatomicalFitVisualizer({
                   </span>
                 </div>
 
-                {/* Live Comfort Spectrum Rail */}
+                {/* Live Comfort Spectrum Rail with Luxury Atelier Liquid Shimmer */}
                 <div
                   className={`relative w-full overflow-hidden rounded-full bg-[#B08A4A]/20 ${
-                    compact ? 'mt-1 h-1' : 'mt-1.5 h-1.5'
+                    compact ? 'mt-1 h-1.5' : 'mt-1.5 h-2'
                   }`}
                 >
                   {/* Ideal comfort target zone indicator (approx 38%..72%) */}
@@ -597,12 +597,17 @@ export function AnatomicalFitVisualizer({
                     }`}
                   />
                   <div
-                    className="absolute top-0 bottom-0 left-0 rounded-full transition-all duration-300 ease-out"
+                    className="absolute top-0 bottom-0 left-0 overflow-hidden rounded-full transition-[width,background-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
                     style={{
                       width: `${gaugePct}%`,
                       backgroundColor: visual.barColor,
                     }}
-                  />
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="telemetry-anim telemetry-sheen opacity-65"
+                    />
+                  </div>
                 </div>
 
                 <div

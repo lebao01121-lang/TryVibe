@@ -508,7 +508,7 @@ const FALLBACK_SEASONS: StorefrontSeasonSummary[] = [
     name: 'Xuân Lụa Bảo Lộc',
     shortName: 'Xuân Lụa',
     materialHeadline: 'Lụa Tơ Tằm Bảo Lộc 22 Momme',
-    note: 'Lụa Tơ Tằm Bảo Lộc 22 Momme — ánh ngà ấm và phom dáng mềm rủ cho tiết xuân Hà Nội.',
+    note: 'Lụa Tơ Tằm Bảo Lộc 22 Momme — áo sơ mi lụa kem ngà phối chân váy xếp ly kem sữa và ví clutch champagne.',
     isCurrent: true,
     isCurrentSeason: true,
   },
@@ -518,7 +518,7 @@ const FALLBACK_SEASONS: StorefrontSeasonSummary[] = [
     name: 'Hạ Linen Hữu Cơ',
     shortName: 'Hạ Linen',
     materialHeadline: '100% Organic French Linen Thoáng Khí',
-    note: '100% Organic French Linen Thoáng Khí — đường cắt khoáng đạt và thoáng nhẹ dưới nắng hạ.',
+    note: '100% Organic French Linen Thoáng Khí — áo sơ mi ngà sữa phối quần culottes linen cát biển và khăn lụa hoa mai.',
     isCurrent: false,
     isCurrentSeason: false,
   },
@@ -527,8 +527,8 @@ const FALLBACK_SEASONS: StorefrontSeasonSummary[] = [
     months: 'T5–T6',
     name: 'Resort Biển & Lụa Bay',
     shortName: 'Resort Biển',
-    materialHeadline: 'Lụa Organza & Tơ Sống Dệt Nhẹ',
-    note: 'Lụa Organza & Tơ Sống Dệt Nhẹ — thiết kế nghỉ dưỡng bay bổng đón gió biển ban mai.',
+    materialHeadline: 'Linen Pháp & Len Merino 16 Gauge',
+    note: 'Linen Pháp & Len Merino 16 Gauge — đầm midi linen phối đai eo khoác hờ cardigan yến mạch và khăn lụa cổ.',
     isCurrent: false,
     isCurrentSeason: false,
   },
@@ -537,8 +537,8 @@ const FALLBACK_SEASONS: StorefrontSeasonSummary[] = [
     months: 'T7–T8',
     name: 'Thu Công Sở Thanh Lịch',
     shortName: 'Thu Công Sở',
-    materialHeadline: 'Wool Silk Blend & Crepe Đứng Phom',
-    note: 'Wool Silk Blend & Crepe Đứng Phom — blazer dựng vai chuẩn mực và quần âu xếp ly thanh lịch.',
+    materialHeadline: 'Lụa Organza & Wool Blend Đứng Phom',
+    note: 'Lụa Organza & Wool Blend Đứng Phom — áo kiểu lụa kem ngà phối quần tây xếp ly đôi xám than và thắt lưng da khóa đồng.',
     isCurrent: false,
     isCurrentSeason: false,
   },
@@ -547,8 +547,8 @@ const FALLBACK_SEASONS: StorefrontSeasonSummary[] = [
     months: 'T9–T10',
     name: 'Dạ Tweed & Cashmere',
     shortName: 'Dạ Tweed',
-    materialHeadline: 'Len Cashmere Mông Cổ & Dạ Tweed Dệt Nổi',
-    note: 'Len Cashmere Mông Cổ & Dạ Tweed Dệt Nổi — cấu trúc dệt thủ công ấm áp đầy khí chất.',
+    materialHeadline: 'Dạ Tweed Dệt Nổi Thủ Công',
+    note: 'Dạ Tweed Dệt Nổi Thủ Công — áo khoác tweed ngà ánh đồng khoác ngoài đầm midi cổ vuông trắng ngọc và clutch đen tuyền.',
     isCurrent: false,
     isCurrentSeason: false,
   },
@@ -558,7 +558,7 @@ const FALLBACK_SEASONS: StorefrontSeasonSummary[] = [
     name: 'Dạ Tiệc Cuối Năm',
     shortName: 'Dạ Tiệc',
     materialHeadline: 'Lụa Satin Ánh Ngọc & Nhung Couture',
-    note: 'Lụa Satin Ánh Ngọc & Nhung Couture — đầm cắt thiên bias-cut tôn vinh kỹ nghệ dạ tiệc cuối năm.',
+    note: 'Lụa Satin Ánh Ngọc & Nhung Couture — đầm dự tiệc lụa satin đỏ rượu vang khoác hờ blazer cát ngà và ví clutch champagne.',
     isCurrent: false,
     isCurrentSeason: false,
   },
@@ -867,6 +867,8 @@ export class StorefrontBffService {
         serializedEnvelope,
         BOOTSTRAP_TTL_SECONDS,
       );
+    } else {
+      res.setHeader('Cache-Control', 'no-store');
     }
 
     res.setHeader('X-Cache', 'MISS');

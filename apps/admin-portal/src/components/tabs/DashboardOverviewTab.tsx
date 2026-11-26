@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import {
   OrderStatus,
   Permission,
@@ -18,6 +25,15 @@ import {
   type StockLevelAdminDto,
   type UserSummaryDto,
 } from '@atelier/contracts';
+import {
+  AnimatedTelemetryNumber,
+  LiveComboAreaBarChart,
+  LiveDonutBreakdownChart,
+  LiveEcgIcon,
+  LiveKpiSparkCard,
+  LiveServiceClusterStrip,
+  LiveStackedHealthBar,
+} from '@atelier/motion-kit';
 import type { AdminLiveOverviewData } from '@/lib/admin-overview';
 import {
   canAccessAdminTab,
@@ -26,9 +42,7 @@ import {
 import { adminFetch } from '@/lib/api-client';
 import {
   AdminNavIcon,
-  AlertTriangleIcon,
   BoxIcon,
-  CheckCircleIcon,
   ChevronRightIcon,
   SparklesIcon,
 } from '@/components/AdminIcons';
@@ -50,6 +64,7 @@ export interface DashboardOverviewTabProps {
   onNavigateTab: (tab: AdminTabKey) => void;
   onOpenCopilot: () => void;
   refreshNonce: number;
+  syncTick?: number;
   darkMode?: boolean;
   onLiveBadgesChange?: (badges: DashboardLiveBadges) => void;
 }
@@ -196,16 +211,6 @@ function extractList<T>(data: unknown): T[] {
 
 function formatVnd(amount: number): string {
   return `${new Intl.NumberFormat('vi-VN').format(Math.round(amount))}₫`;
-}
-
-function formatVndCompact(amount: number): string {
-  if (amount >= 1_000_000_000) {
-    return `${(amount / 1_000_000_000).toFixed(2)} tỷ₫`;
-  }
-  if (amount >= 1_000_000) {
-    return `${(amount / 1_000_000).toFixed(1)} tr₫`;
-  }
-  return formatVnd(amount);
 }
 
 function formatClock(date: Date): string {
@@ -407,24 +412,6 @@ const CATEGORY_BUCKETS: ReadonlyArray<{
   },
 ];
 
-function buildSmoothCurvePath(
-  points: ReadonlyArray<{ x: number; y: number }>,
-): string {
-  if (points.length === 0) return '';
-  if (points.length === 1) {
-    return `M ${points[0]!.x.toFixed(1)} ${points[0]!.y.toFixed(1)}`;
-  }
-
-  let d = `M ${points[0]!.x.toFixed(1)} ${points[0]!.y.toFixed(1)}`;
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const p0 = points[i]!;
-    const p1 = points[i + 1]!;
-    const midX = (p0.x + p1.x) / 2;
-    d += ` C ${midX.toFixed(1)} ${p0.y.toFixed(1)}, ${midX.toFixed(1)} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
-  }
-  return d;
-}
-
 export function DashboardOverviewTab({
   roles,
   userEmail,
@@ -433,6 +420,7 @@ export function DashboardOverviewTab({
   onNavigateTab,
   onOpenCopilot,
   refreshNonce,
+  syncTick = 0,
   darkMode = false,
   onLiveBadgesChange,
 }: DashboardOverviewTabProps) {
@@ -457,9 +445,12 @@ export function DashboardOverviewTab({
     formatClock(new Date()),
   );
   const [timeframe, setTimeframe] = useState<TimeframeKey>('7d');
-  const [hoveredBarIdx, setHoveredBarIdx] = useState<number | null>(null);
-  const [hoveredDonutKey, setHoveredDonutKey] = useState<string | null>(null);
   const [approvingRmaId, setApprovingRmaId] = useState<string | null>(null);
+  const [freshQueueIds, setFreshQueueIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const prevQueueIdsRef = useRef<Set<string>>(new Set());
+  const hasLoadedOnceRef = useRef(false);
 
   const canReadOrders = hasPermission(roles, Permission.ORDER_READ);
   const canManageRma = hasPermission(roles, Permission.ORDER_RMA_MANAGE);
@@ -484,8 +475,11 @@ export function DashboardOverviewTab({
     roles.includes(Role.SUPER_ADMIN) &&
     hasPermission(roles, Permission.ADMIN_AUDIT_READ);
 
-  const loadDashboardData = useCallback(async () => {
-    setLoading(true);
+  const loadDashboardData = useCallback(
+    async (silent = false) => {
+      if (!silent) {
+        setLoading(true);
+      }
 
     const [
       ordersRes,
@@ -560,6 +554,7 @@ export function DashboardOverviewTab({
     }
 
     setLastUpdatedLabel(formatClock(new Date()));
+    hasLoadedOnceRef.current = true;
     setLoading(false);
   }, [
     canReadOrders,
@@ -574,8 +569,13 @@ export function DashboardOverviewTab({
   ]);
 
   useEffect(() => {
-    void loadDashboardData();
+    void loadDashboardData(false);
   }, [loadDashboardData, refreshNonce]);
+
+  useEffect(() => {
+    if (syncTick <= 0) return;
+    void loadDashboardData(true);
+  }, [loadDashboardData, syncTick]);
 
   // Derived operational KPIs
   const metrics = useMemo(() => {
@@ -1058,101 +1058,80 @@ export function DashboardOverviewTab({
     setApprovingRmaId(null);
   };
 
-  // Combo chart geometry
-  const chartGeom = useMemo(() => {
-    const width = 640;
-    const height = 236;
-    const padLeft = 36;
-    const padRight = 44;
-    const padTop = 20;
-    const padBottom = 30;
-    const plotW = width - padLeft - padRight;
-    const plotH = height - padTop - padBottom;
-    const baseY = padTop + plotH;
+  // Detect newly arrived queue items during live sync for 1.5s Champagne border flash
+  useEffect(() => {
+    const nextIds = new Set(recentQueue.map((item) => item.id));
+    if (prevQueueIdsRef.current.size > 0) {
+      const newlyAdded = new Set<string>();
+      for (const id of nextIds) {
+        if (!prevQueueIdsRef.current.has(id)) {
+          newlyAdded.add(id);
+        }
+      }
+      if (newlyAdded.size > 0) {
+        setFreshQueueIds(newlyAdded);
+        const timer = window.setTimeout(() => {
+          setFreshQueueIds(new Set());
+        }, 1600);
+        prevQueueIdsRef.current = nextIds;
+        return () => window.clearTimeout(timer);
+      }
+    }
+    prevQueueIdsRef.current = nextIds;
+    return undefined;
+  }, [recentQueue]);
 
-    const maxOrdersRaw = Math.max(...chartBuckets.map((b) => b.orderCount), 1);
-    const maxOrders = Math.max(4, Math.ceil(maxOrdersRaw / 2) * 2);
-    const maxAiRaw = Math.max(...chartBuckets.map((b) => b.aiActivity), 1);
-    const maxAi = Math.max(4, Math.ceil(maxAiRaw / 4) * 4);
+  // Derived data for LiveChartPrimitives (zero random jitter, 100% real API metrics)
+  const tryOnCurveValues = useMemo(() => {
+    const slice = chartBuckets.slice(-7).map((b) => b.aiActivity);
+    if (slice.some((v) => v > 0)) return slice;
+    return [0, 0, 0, 0, 0, 0, metrics.tryOnSessions];
+  }, [chartBuckets, metrics.tryOnSessions]);
 
-    const stepX =
-      chartBuckets.length > 0 ? plotW / chartBuckets.length : plotW;
-    const barWidth = Math.min(26, Math.max(10, stepX * 0.34));
+  const comboChartPoints = useMemo(
+    () =>
+      chartBuckets.map((b) => ({
+        label: b.label,
+        tooltipLabel: `Ngày ${b.label} (${b.fullDate})`,
+        barValue: b.orderCount,
+        lineValue: b.aiActivity,
+        metaLabel:
+          b.revenueVnd > 0 ? `Doanh thu: ${formatVnd(b.revenueVnd)}` : undefined,
+      })),
+    [chartBuckets],
+  );
 
-    const nodes = chartBuckets.map((bucket, idx) => {
-      const cx = padLeft + stepX * idx + stepX / 2;
-      const barH =
-        bucket.orderCount > 0
-          ? Math.max(8, (bucket.orderCount / maxOrders) * plotH)
-          : 4;
-      const barY = baseY - barH;
-      const lineY =
-        baseY -
-        (bucket.aiActivity > 0
-          ? Math.max(10, (bucket.aiActivity / maxAi) * plotH * 0.92)
-          : 6);
-      return {
-        idx,
-        bucket,
-        cx,
-        barX: cx - barWidth / 2,
-        barY,
-        barH,
-        barWidth,
-        lineY,
-      };
-    });
+  const donutChartSegments = useMemo(
+    () =>
+      categorySlices.map((s) => ({
+        id: s.key,
+        label: s.label,
+        value: s.count,
+        sharePct: s.pct,
+        color: s.color,
+        unitLabel: 'mẫu',
+      })),
+    [categorySlices],
+  );
 
-    const curvePoints = nodes.map((n) => ({ x: n.cx, y: n.lineY }));
-    const linePath = buildSmoothCurvePath(curvePoints);
-    const areaPath =
-      nodes.length > 0
-        ? `${linePath} L ${nodes[nodes.length - 1]!.cx.toFixed(1)} ${baseY} L ${nodes[0]!.cx.toFixed(1)} ${baseY} Z`
-        : '';
-
-    const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
-      y: baseY - ratio * plotH,
-      leftLabel: String(Math.round(ratio * maxOrders)),
-      rightLabel: String(Math.round(ratio * maxAi)),
+  const clusterServiceNodes = useMemo(() => {
+    const raw = healthCluster?.services ?? [];
+    if (raw.length > 0) {
+      return raw.slice(0, 11).map((svc, idx) => ({
+        id: `${svc.name}-${idx}`,
+        label: svc.name.replace(/^atelier-|^tryvibe-/i, ''),
+        online: normalizeNodeUp(svc.status),
+        latencyMs: svc.latencyMs ?? null,
+      }));
+    }
+    const fallbackMods = liveOverview?.ledger.modules ?? [];
+    return fallbackMods.slice(0, 11).map((m, idx) => ({
+      id: `${m.label}-${idx}`,
+      label: m.label,
+      online: m.status === 'active',
+      latencyMs: null,
     }));
-
-    return {
-      width,
-      height,
-      padLeft,
-      padRight,
-      padTop,
-      baseY,
-      nodes,
-      linePath,
-      areaPath,
-      yTicks,
-    };
-  }, [chartBuckets]);
-
-  // Donut SVG geometry
-  const donutSegments = useMemo(() => {
-    const r = 56;
-    const circumference = 2 * Math.PI * r;
-    const total = categorySlices.reduce((sum, s) => sum + s.count, 0);
-    let cumulative = 0;
-
-    return categorySlices
-      .filter((s) => s.count > 0)
-      .map((s) => {
-        const fraction = total > 0 ? s.count / total : 0;
-        const dash = fraction * circumference;
-        const offset = -cumulative * circumference;
-        cumulative += fraction;
-        return {
-          ...s,
-          r,
-          circumference,
-          dash: Math.max(2, dash - 2.5),
-          offset,
-        };
-      });
-  }, [categorySlices]);
+  }, [healthCluster?.services, liveOverview?.ledger.modules]);
 
   // Order status bar distribution for Row 4 Right
   const statusBar = useMemo(() => {
@@ -1269,24 +1248,8 @@ export function DashboardOverviewTab({
       ? `+ Quản lý Đơn & RMA (${primaryCtaCount})`
       : `+ Quản lý Danh mục (${primaryCtaCount})`;
 
-  const hoveredNode =
-    hoveredBarIdx !== null ? chartGeom.nodes[hoveredBarIdx] ?? null : null;
-
-  const kpiCompletionCircumference = 2 * Math.PI * 16;
-  const kpiCompletionDash =
-    (metrics.orderCompletionPct / 100) * kpiCompletionCircumference;
-
-  const kpiStockCircumference = 2 * Math.PI * 18;
-  const healthyRatio =
-    metrics.totalSkuRows > 0
-      ? metrics.healthyStockCount / metrics.totalSkuRows
-      : 1;
-  const lowRatio =
-    metrics.totalSkuRows > 0 ? metrics.lowStockCount / metrics.totalSkuRows : 0;
-  const outRatio =
-    metrics.totalSkuRows > 0
-      ? metrics.outOfStockCount / metrics.totalSkuRows
-      : 0;
+  const periodOrderTotal = chartBuckets.reduce((s, b) => s + b.orderCount, 0);
+  const periodRevenueTotal = chartBuckets.reduce((s, b) => s + b.revenueVnd, 0);
 
   return (
     <div data-testid="dashboard-overview-tab" className="space-y-5">
@@ -1308,17 +1271,25 @@ export function DashboardOverviewTab({
           <div className="min-w-0 space-y-1.5">
             <div className="flex flex-wrap items-center gap-2.5 text-[11px]">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-[#EBCF8F]/35 bg-[#2B1F17] px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#EBCF8F]">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    bffOnline ? 'bg-emerald-400' : 'bg-amber-400'
-                  }`}
-                />
+                <span className="relative flex h-2 w-2 items-center justify-center">
+                  {bffOnline ? (
+                    <span
+                      aria-hidden="true"
+                      className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-400/75"
+                    />
+                  ) : null}
+                  <span
+                    className={`relative h-1.5 w-1.5 rounded-full ${
+                      bffOnline ? 'bg-emerald-400' : 'bg-amber-400'
+                    }`}
+                  />
+                </span>
                 LIVE CONTROL CENTER
               </span>
               <span className="font-mono text-[11px] text-[#DECBB1]/85">
                 Cập nhật lúc {lastUpdatedLabel}
               </span>
-              {loading ? (
+              {loading && !hasLoadedOnceRef.current ? (
                 <span className="font-mono text-[10px] text-[#EBCF8F]/75">
                   · Đang đồng bộ dữ liệu...
                 </span>
@@ -1332,9 +1303,10 @@ export function DashboardOverviewTab({
 
             <p className="text-xs text-[#DFCDAE]/80">
               Phiên nội bộ <span className="font-mono text-[#EBCF8F]">{userEmail}</span>{' '}
-              · {metrics.totalOrders} đơn hàng · {metrics.totalSkuRows} SKU kho
-              · {metrics.servicesReady}/{metrics.servicesTotal} dịch vụ trực
-              tuyến
+              · <AnimatedTelemetryNumber value={metrics.totalOrders} format="integer" /> đơn hàng ·{' '}
+              <AnimatedTelemetryNumber value={metrics.totalSkuRows} format="integer" /> SKU kho ·{' '}
+              <AnimatedTelemetryNumber value={metrics.servicesReady} format="integer" />/
+              {metrics.servicesTotal} dịch vụ trực tuyến
             </p>
           </div>
 
@@ -1359,483 +1331,199 @@ export function DashboardOverviewTab({
         </div>
       </section>
 
-      {/* ROW 2 — 4 KPI Sparkline Cards */}
+      {/* ROW 2 — 4 Live GPU KPI Sparkline Cards (4 Variants) */}
       <section
         data-testid="dashboard-kpi-grid"
         className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"
       >
-        {/* KPI 1: Orders & Revenue */}
-        <article
-          onClick={() =>
-            canAccessAdminTab(roles, 'orders') && onNavigateTab('orders')
-          }
-          className={`flex cursor-pointer flex-col justify-between rounded-2xl border p-4 transition-all ${ui.cardInteractive}`}
-        >
-          <div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${ui.iconBox}`}
-              >
-                <AdminNavIcon tab="orders" size={15} />
-              </span>
-              <p className={`whitespace-nowrap text-xs font-medium ${ui.muted}`}>
-                Đơn hàng &amp; Doanh thu
-              </p>
-            </div>
-
-            <div className="mt-3 flex items-end justify-between gap-2">
-              <div className="min-w-0">
-                <p
-                  className={`font-mono text-[26px] font-bold leading-none tabular-nums ${ui.heading}`}
-                >
-                  {metrics.totalOrders}
-                </p>
-                <p
-                  className={`mt-1.5 whitespace-nowrap font-mono text-[11px] tabular-nums ${ui.goldText}`}
-                >
-                  {formatVndCompact(metrics.totalRevenueVnd)} GMV
-                </p>
-              </div>
-
-              {/* Mini 7-bar sparkline + Circular completion ring */}
-              <div className="flex shrink-0 items-center gap-2">
-                <svg
-                  width="58"
-                  height="38"
-                  viewBox="0 0 62 40"
-                  aria-hidden="true"
-                  className="overflow-visible"
-                >
-                  <defs>
-                    <linearGradient
-                      id="admMiniBarGrad"
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop offset="0%" stopColor="#EBCF8F" />
-                      <stop offset="100%" stopColor="#B08A4A" />
-                    </linearGradient>
-                  </defs>
-                  {miniBarHeights.map((pct, idx) => {
-                    const h = Math.max(5, (pct / 100) * 32);
-                    return (
-                      <rect
-                        key={`mb-${idx}`}
-                        x={idx * 9}
-                        y={38 - h}
-                        width="5.5"
-                        height={h}
-                        rx="2.5"
-                        fill="url(#admMiniBarGrad)"
-                        opacity={idx === miniBarHeights.length - 1 ? 1 : 0.72}
-                      />
-                    );
-                  })}
-                </svg>
-
-                <div className="relative flex h-10 w-10 items-center justify-center">
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 40 40"
-                    aria-hidden="true"
-                    className="-rotate-90"
-                  >
-                    <circle
-                      cx="20"
-                      cy="20"
-                      r="16"
-                      fill="none"
-                      stroke={ui.ringTrack}
-                      strokeWidth="3.2"
-                    />
-                    <circle
-                      cx="20"
-                      cy="20"
-                      r="16"
-                      fill="none"
-                      stroke={darkMode ? '#EBCF8F' : '#B08A4A'}
-                      strokeWidth="3.2"
-                      strokeLinecap="round"
-                      strokeDasharray={`${kpiCompletionDash} ${kpiCompletionCircumference}`}
-                    />
-                  </svg>
-                  <span
-                    className={`absolute font-mono text-[9px] font-bold tabular-nums ${ui.heading}`}
-                  >
-                    {metrics.orderCompletionPct}%
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className={`mt-3.5 flex items-center justify-between gap-2 border-t pt-2.5 text-[11px] ${ui.divider}`}
-          >
-            <span className={`truncate ${ui.muted}`}>
-              {metrics.completedOrders} hoàn tất · {metrics.pendingOrdersCount}{' '}
-              chờ xử lý
+        <LiveKpiSparkCard
+          testId="kpi-orders-revenue"
+          cardIndex={0}
+          isDark={darkMode}
+          title="Đơn hàng & Doanh thu"
+          icon={<AdminNavIcon tab="orders" size={14} />}
+          value={metrics.totalOrders}
+          valueFormat="integer"
+          subtitle={
+            <span className={`font-mono text-[11px] ${ui.goldText}`}>
+              <AnimatedTelemetryNumber
+                value={metrics.totalRevenueVnd}
+                format="compactVnd"
+              />{' '}
+              GMV
             </span>
+          }
+          variant="sparkBars"
+          sparkBars={{
+            values: miniBarHeights,
+            badgePercent: metrics.orderCompletionPct,
+            tone: 'gold',
+          }}
+          footerLeft={
+            <>
+              <AnimatedTelemetryNumber value={metrics.completedOrders} /> hoàn tất ·{' '}
+              <AnimatedTelemetryNumber value={metrics.pendingOrdersCount} /> chờ xử lý
+            </>
+          }
+          footerRight={
             <span
-              className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${ui.pillEmerald}`}
+              className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${ui.pillEmerald}`}
             >
               {metrics.orderCompletionPct}% hoàn tất
             </span>
-          </div>
-        </article>
-
-        {/* KPI 2: AI Try-On & Conversion */}
-        <article
-          onClick={() =>
-            canAccessAdminTab(roles, 'tryon-hub') && onNavigateTab('tryon-hub')
           }
-          className={`flex cursor-pointer flex-col justify-between rounded-2xl border p-4 transition-all ${ui.cardInteractive}`}
-        >
-          <div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${ui.iconBox}`}
-              >
-                <AdminNavIcon tab="tryon-hub" size={15} />
-              </span>
-              <p className={`whitespace-nowrap text-xs font-medium ${ui.muted}`}>
-                Phòng Thử Đồ AI
-              </p>
-            </div>
+          onClick={() =>
+            canAccessAdminTab(roles, 'orders') && onNavigateTab('orders')
+          }
+        />
 
-            <div className="mt-3 flex items-end justify-between gap-2">
-              <div className="min-w-0">
-                <p
-                  className={`font-mono text-[26px] font-bold leading-none tabular-nums ${ui.heading}`}
-                >
-                  {metrics.tryOnSessions}
-                  <span className={`ml-1.5 text-xs font-medium ${ui.muted}`}>
-                    lượt
-                  </span>
-                </p>
-                <p
-                  className={`mt-1.5 whitespace-nowrap font-mono text-[11px] tabular-nums ${ui.goldText}`}
-                >
-                  {metrics.tryOnToCartRatePct}% chuyển đổi giỏ
-                </p>
-              </div>
-
-              {/* Smooth SVG wave line sparkline */}
-              <svg
-                width="76"
-                height="42"
-                viewBox="0 0 78 44"
-                aria-hidden="true"
-                className="shrink-0"
-              >
-                <defs>
-                  <linearGradient id="admWaveFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#B08A4A" stopOpacity="0.35" />
-                    <stop offset="100%" stopColor="#B08A4A" stopOpacity="0.02" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d="M 4 32 C 16 32, 22 28, 30 22 C 38 14, 44 10, 50 18 C 56 26, 64 26, 74 22 L 74 40 L 4 40 Z"
-                  fill="url(#admWaveFill)"
-                />
-                <path
-                  d="M 4 32 C 16 32, 22 28, 30 22 C 38 14, 44 10, 50 18 C 56 26, 64 26, 74 22"
-                  fill="none"
-                  stroke={darkMode ? '#EBCF8F' : '#B08A4A'}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-                <circle
-                  cx="44"
-                  cy="13.5"
-                  r="3"
-                  fill={darkMode ? '#1B140F' : '#FFFDF9'}
-                  stroke={darkMode ? '#EBCF8F' : '#8A672C'}
-                  strokeWidth="2"
-                />
-              </svg>
-            </div>
-          </div>
-
-          <div
-            className={`mt-3.5 flex items-center justify-between gap-2 border-t pt-2.5 text-[11px] ${ui.divider}`}
-          >
-            <span className={`truncate ${ui.muted}`}>
-              Cache {metrics.cacheHitPct}% · {metrics.addToCartAfterTryOn} thêm
-              giỏ
+        <LiveKpiSparkCard
+          testId="kpi-ai-tryon"
+          cardIndex={1}
+          isDark={darkMode}
+          title="Phòng Thử Đồ AI"
+          icon={<AdminNavIcon tab="tryon-hub" size={14} />}
+          value={metrics.tryOnSessions}
+          valueFormat="integer"
+          unitLabel="lượt"
+          subtitle={
+            <span className={`font-mono text-[11px] ${ui.goldText}`}>
+              <AnimatedTelemetryNumber
+                value={metrics.tryOnToCartRatePct}
+                format="percent"
+              />{' '}
+              chuyển đổi giỏ
             </span>
+          }
+          variant="laserCurve"
+          laserCurve={{
+            values: tryOnCurveValues,
+            tone: 'gold',
+          }}
+          footerLeft={
+            <>
+              Cache <AnimatedTelemetryNumber value={metrics.cacheHitPct} format="percent" /> ·{' '}
+              <AnimatedTelemetryNumber value={metrics.addToCartAfterTryOn} /> thêm giỏ
+            </>
+          }
+          footerRight={
             <span
-              className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${ui.pillGold}`}
+              className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${ui.pillGold}`}
             >
               AI VTON &amp; RAG
             </span>
-          </div>
-        </article>
-
-        {/* KPI 3: Inventory SKU & Safety Stock Zones */}
-        <article
-          onClick={() =>
-            canAccessAdminTab(roles, 'inventory') && onNavigateTab('inventory')
           }
-          className={`flex cursor-pointer flex-col justify-between rounded-2xl border p-4 transition-all ${ui.cardInteractive}`}
-        >
-          <div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${ui.iconBox}`}
-              >
-                <BoxIcon size={15} />
-              </span>
-              <p className={`whitespace-nowrap text-xs font-medium ${ui.muted}`}>
-                Kho SKU &amp; Vùng tồn
-              </p>
-            </div>
+          onClick={() =>
+            canAccessAdminTab(roles, 'tryon-hub') && onNavigateTab('tryon-hub')
+          }
+        />
 
-            <div className="mt-3 flex items-end justify-between gap-2">
-              <div className="min-w-0">
-                <p
-                  className={`font-mono text-[26px] font-bold leading-none tabular-nums ${ui.heading}`}
-                >
-                  {metrics.totalSkuRows}
-                  <span className={`ml-1.5 text-xs font-medium ${ui.muted}`}>
-                    SKU
-                  </span>
-                </p>
-                <p
-                  className={`mt-1.5 whitespace-nowrap font-mono text-[11px] tabular-nums ${ui.goldText}`}
-                >
-                  {new Intl.NumberFormat('vi-VN').format(
-                    metrics.totalAvailableUnits,
-                  )}{' '}
-                  sp sẵn bán
-                </p>
-              </div>
-
-              {/* Ring gauge + 3-color stock legend */}
-              <div className="flex shrink-0 items-center gap-2">
-                <div className="relative flex h-10 w-10 items-center justify-center">
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 44 44"
-                    aria-hidden="true"
-                    className="-rotate-90"
-                  >
-                    <circle
-                      cx="22"
-                      cy="22"
-                      r="18"
-                      fill="none"
-                      stroke={ui.ringTrack}
-                      strokeWidth="3.5"
-                    />
-                    <circle
-                      cx="22"
-                      cy="22"
-                      r="18"
-                      fill="none"
-                      stroke="#2E6B47"
-                      strokeWidth="3.5"
-                      strokeDasharray={`${healthyRatio * kpiStockCircumference} ${kpiStockCircumference}`}
-                    />
-                    <circle
-                      cx="22"
-                      cy="22"
-                      r="18"
-                      fill="none"
-                      stroke="#D9822B"
-                      strokeWidth="3.5"
-                      strokeDasharray={`${lowRatio * kpiStockCircumference} ${kpiStockCircumference}`}
-                      strokeDashoffset={`${-healthyRatio * kpiStockCircumference}`}
-                    />
-                    <circle
-                      cx="22"
-                      cy="22"
-                      r="18"
-                      fill="none"
-                      stroke="#A63A3A"
-                      strokeWidth="3.5"
-                      strokeDasharray={`${outRatio * kpiStockCircumference} ${kpiStockCircumference}`}
-                      strokeDashoffset={`${-(healthyRatio + lowRatio) * kpiStockCircumference}`}
-                    />
-                  </svg>
-                  <span
-                    className={`absolute font-mono text-[8px] font-bold tabular-nums ${ui.heading}`}
-                  >
-                    {metrics.healthyStockCount}/{metrics.totalSkuRows}
-                  </span>
-                </div>
-
-                <div className="space-y-0.5 font-mono text-[9.5px] leading-tight">
-                  <div className="flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#A63A3A]" />
-                    <span className={ui.muted}>Hết:</span>
-                    <strong className={ui.heading}>
-                      {metrics.outOfStockCount}
-                    </strong>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#D9822B]" />
-                    <span className={ui.muted}>Thấp:</span>
-                    <strong className={ui.heading}>
-                      {metrics.lowStockCount}
-                    </strong>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#2E6B47]" />
-                    <span className={ui.muted}>Ổn:</span>
-                    <strong className={ui.heading}>
-                      {metrics.healthyStockCount}
-                    </strong>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className={`mt-3.5 flex items-center justify-between gap-2 border-t pt-2.5 text-[11px] ${ui.divider}`}
-          >
-            <span className={`truncate ${ui.muted}`}>
-              {metrics.warehouseCount} kho đồng bộ tồn thực
+        <LiveKpiSparkCard
+          testId="kpi-inventory-sku"
+          cardIndex={2}
+          isDark={darkMode}
+          title="Kho SKU & Vùng tồn"
+          icon={<BoxIcon size={14} />}
+          value={metrics.totalSkuRows}
+          valueFormat="integer"
+          unitLabel="SKU"
+          subtitle={
+            <span className={`font-mono text-[11px] ${ui.goldText}`}>
+              <AnimatedTelemetryNumber
+                value={metrics.totalAvailableUnits}
+                format="integer"
+              />{' '}
+              sp sẵn bán
             </span>
+          }
+          variant="radialGauge"
+          radialGauge={{
+            current: metrics.healthyStockCount,
+            total: Math.max(1, metrics.totalSkuRows),
+            centerText: `${metrics.healthyStockCount}/${metrics.totalSkuRows}`,
+            legendItems: [
+              { label: 'Hết', value: metrics.outOfStockCount, tone: 'crimson' },
+              { label: 'Thấp', value: metrics.lowStockCount, tone: 'amber' },
+              { label: 'Ổn', value: metrics.healthyStockCount, tone: 'emerald' },
+            ],
+          }}
+          footerLeft={<>{metrics.warehouseCount} kho đồng bộ tồn thực</>}
+          footerRight={
             <span
-              className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${
+              className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${
                 metrics.outOfStockCount > 0 ? ui.pillAmber : ui.pillGold
               }`}
             >
               Kho Trung Tâm
             </span>
-          </div>
-        </article>
+          }
+          onClick={() =>
+            canAccessAdminTab(roles, 'inventory') && onNavigateTab('inventory')
+          }
+        />
 
-        {/* KPI 4: B2B Procurement & IAM Staff */}
-        <article
+        <LiveKpiSparkCard
+          testId="kpi-procurement-iam"
+          cardIndex={3}
+          isDark={darkMode}
+          title="Thu mua B2B & IAM"
+          icon={<AdminNavIcon tab="procurement" size={14} />}
+          value={metrics.totalPos + metrics.totalUsers}
+          valueFormat="integer"
+          subtitle={
+            <span className={`font-mono text-[11px] ${ui.goldText}`}>
+              <AnimatedTelemetryNumber value={metrics.openPos} /> PO mở ·{' '}
+              <AnimatedTelemetryNumber
+                value={metrics.totalUsers || roles.length}
+              />{' '}
+              tài khoản
+            </span>
+          }
+          variant="dualStreamBars"
+          dualStreamBars={[
+            {
+              label: 'PO B2B',
+              value: metrics.totalPos > 0 ? metrics.totalPos - metrics.openPos + 1 : 0,
+              max: Math.max(1, metrics.totalPos + 1),
+              displayValue: metrics.totalPos,
+              tone: 'gold',
+            },
+            {
+              label: 'IAM',
+              value: Math.max(1, metrics.internalStaffCount),
+              max: Math.max(1, metrics.totalUsers || roles.length),
+              displayValue: metrics.totalUsers || roles.length,
+              tone: 'emerald',
+            },
+          ]}
+          footerLeft={
+            <>
+              <AnimatedTelemetryNumber value={metrics.aiDraftPos} /> nháp NHAP_AI ·{' '}
+              {roles.length} vai trò phiên
+            </>
+          }
+          footerRight={
+            <span
+              className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${ui.pillGold}`}
+            >
+              RBAC &amp; B2B
+            </span>
+          }
           onClick={() =>
             canAccessAdminTab(roles, 'procurement')
               ? onNavigateTab('procurement')
               : canAccessAdminTab(roles, 'iam') && onNavigateTab('iam')
           }
-          className={`flex cursor-pointer flex-col justify-between rounded-2xl border p-4 transition-all ${ui.cardInteractive}`}
-        >
-          <div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border ${ui.iconBox}`}
-              >
-                <AdminNavIcon tab="procurement" size={15} />
-              </span>
-              <p className={`whitespace-nowrap text-xs font-medium ${ui.muted}`}>
-                Thu mua B2B &amp; IAM
-              </p>
-            </div>
-
-            <div className="mt-3 flex items-end justify-between gap-2">
-              <div className="min-w-0">
-                <p
-                  className={`font-mono text-[26px] font-bold leading-none tabular-nums ${ui.heading}`}
-                >
-                  {metrics.totalPos + metrics.totalUsers}
-                </p>
-                <p
-                  className={`mt-1.5 whitespace-nowrap font-mono text-[11px] tabular-nums ${ui.goldText}`}
-                >
-                  {metrics.openPos} PO mở · {metrics.totalUsers || roles.length}{' '}
-                  tài khoản
-                </p>
-              </div>
-
-              {/* Dual horizontal mini progress bars */}
-              <div className="w-24 shrink-0 space-y-2">
-                <div>
-                  <div className="flex items-center justify-between font-mono text-[9.5px]">
-                    <span className={ui.muted}>PO B2B</span>
-                    <strong className={ui.heading}>{metrics.totalPos}</strong>
-                  </div>
-                  <div
-                    className={`mt-1 h-1.5 w-full overflow-hidden rounded-full ${
-                      darkMode ? 'bg-[#2E2219]' : 'bg-[#EDE3D2]'
-                    }`}
-                  >
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-[#B08A4A] to-[#EBCF8F]"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.max(
-                            18,
-                            metrics.totalPos > 0
-                              ? Math.round(
-                                  ((metrics.totalPos - metrics.openPos + 1) /
-                                    (metrics.totalPos + 1)) *
-                                    100,
-                                )
-                              : 24,
-                          ),
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between font-mono text-[9.5px]">
-                    <span className={ui.muted}>IAM</span>
-                    <strong className={ui.heading}>
-                      {metrics.totalUsers || roles.length}
-                    </strong>
-                  </div>
-                  <div
-                    className={`mt-1 h-1.5 w-full overflow-hidden rounded-full ${
-                      darkMode ? 'bg-[#2E2219]' : 'bg-[#EDE3D2]'
-                    }`}
-                  >
-                    <div
-                      className="h-full rounded-full bg-[#3A6B52]"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          Math.max(
-                            28,
-                            metrics.totalUsers > 0
-                              ? Math.round(
-                                  (Math.max(1, metrics.internalStaffCount) /
-                                    metrics.totalUsers) *
-                                    100,
-                                )
-                              : 65,
-                          ),
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className={`mt-3.5 flex items-center justify-between gap-2 border-t pt-2.5 text-[11px] ${ui.divider}`}
-          >
-            <span className={`truncate ${ui.muted}`}>
-              {metrics.aiDraftPos} nháp NHAP_AI · {roles.length} vai trò phiên
-            </span>
-            <span
-              className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${ui.pillGold}`}
-            >
-              RBAC &amp; B2B
-            </span>
-          </div>
-        </article>
+        />
       </section>
 
-      {/* ROW 3 — Asymmetric 2-Column Command Grid (Combo Growth Chart + Recent Orders & RMA Queue) */}
+      {/* ROW 3 — Asymmetric 2-Column Command Grid (Live Combo Growth Chart + Recent Orders & RMA Queue) */}
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.62fr_1fr]">
-        {/* Left: Combo Growth Chart */}
-        <div className={`rounded-2xl border p-5 ${ui.card}`}>
+        {/* Left: Live Combo Growth Chart */}
+        <div
+          data-testid="dashboard-timeframe-tabs"
+          className={`rounded-2xl border p-5 ${ui.card}`}
+        >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3
@@ -1858,7 +1546,7 @@ export function DashboardOverviewTab({
                 <span
                   className="h-0.5 w-3.5 rounded-full"
                   style={{
-                    backgroundColor: darkMode ? '#5EB286' : '#2E6B47',
+                    backgroundColor: darkMode ? '#34D399' : '#059669',
                   }}
                 />
                 Lượt thử AI &amp; Doanh thu (Miền)
@@ -1866,263 +1554,43 @@ export function DashboardOverviewTab({
             </div>
           </div>
 
-          {/* Timeframe Selector Pills */}
-          <div
-            data-testid="dashboard-timeframe-tabs"
-            className="mt-4 flex flex-wrap items-center justify-between gap-3"
-          >
-            <div className="inline-flex items-center gap-1.5">
-              {(
-                [
-                  ['7d', '7 ngày'],
-                  ['14d', '14 ngày'],
-                  ['all', 'Tất cả'],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  data-testid={`timeframe-${key}`}
-                  onClick={() => {
-                    setTimeframe(key);
-                    setHoveredBarIdx(null);
-                  }}
-                  className={`rounded-lg px-3 py-1 text-xs transition-colors ${
-                    timeframe === key ? ui.tabActive : ui.tabIdle
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div
-              className={`flex flex-wrap items-center gap-3 font-mono text-[11px] tabular-nums ${ui.muted}`}
-            >
-              <span>
-                Đơn kỳ:{' '}
-                <strong className={ui.heading}>
-                  {chartBuckets.reduce((s, b) => s + b.orderCount, 0)}
-                </strong>
-              </span>
-              <span>
-                GMV:{' '}
-                <strong className={ui.goldText}>
-                  {formatVndCompact(
-                    chartBuckets.reduce((s, b) => s + b.revenueVnd, 0),
-                  )}
-                </strong>
-              </span>
-            </div>
-          </div>
-
-          {/* Responsive SVG Combo Chart with Interactive Hover Tooltip */}
-          <div className="relative mt-4">
-            {hoveredNode ? (
+          <LiveComboAreaBarChart
+            className="mt-4"
+            points={comboChartPoints}
+            barLabel="Số đơn hàng (Cột)"
+            lineLabel="Tín hiệu AI / Kho (Miền)"
+            formatBarValue={(v) => `${Math.round(v)} đơn`}
+            formatLineValue={(v) => `${Math.round(v)} tín hiệu`}
+            timeframes={[
+              { id: '7d', label: '7 ngày' },
+              { id: '14d', label: '14 ngày' },
+              { id: 'all', label: 'Tất cả' },
+            ]}
+            activeTimeframe={timeframe}
+            onTimeframeChange={(id) => setTimeframe(id as TimeframeKey)}
+            isDark={darkMode}
+            summaryRight={
               <div
-                className={`pointer-events-none absolute right-2 top-0 z-10 rounded-xl border px-3 py-2 text-[11px] shadow-lg backdrop-blur-sm ${ui.tooltipBg}`}
+                className={`flex flex-wrap items-center gap-3 font-mono text-[11px] tabular-nums ${ui.muted}`}
               >
-                <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#EBCF8F]">
-                  Ngày {hoveredNode.bucket.label} ({hoveredNode.bucket.fullDate})
-                </p>
-                <div className="mt-1 space-y-0.5 font-mono tabular-nums">
-                  <p>
-                    Đơn hàng:{' '}
-                    <strong className="text-[#EBCF8F]">
-                      {hoveredNode.bucket.orderCount}
-                    </strong>
-                  </p>
-                  <p>
-                    Doanh thu:{' '}
-                    <strong>{formatVnd(hoveredNode.bucket.revenueVnd)}</strong>
-                  </p>
-                  <p>
-                    Tín hiệu AI / Kho:{' '}
-                    <strong className="text-emerald-300">
-                      {hoveredNode.bucket.aiActivity}
-                    </strong>
-                  </p>
-                </div>
+                <span>
+                  Đơn kỳ:{' '}
+                  <strong className={ui.heading}>
+                    <AnimatedTelemetryNumber value={periodOrderTotal} />
+                  </strong>
+                </span>
+                <span>
+                  GMV:{' '}
+                  <strong className={ui.goldText}>
+                    <AnimatedTelemetryNumber
+                      value={periodRevenueTotal}
+                      format="compactVnd"
+                    />
+                  </strong>
+                </span>
               </div>
-            ) : null}
-
-            <svg
-              viewBox={`0 0 ${chartGeom.width} ${chartGeom.height}`}
-              role="img"
-              aria-label="Biểu đồ Tăng trưởng Đơn hàng và Lượt Thử Đồ AI"
-              className="h-[245px] w-full select-none"
-              onMouseLeave={() => setHoveredBarIdx(null)}
-            >
-              <defs>
-                <linearGradient
-                  id="admComboBarGrad"
-                  x1="0"
-                  y1="0"
-                  x2="0"
-                  y2="1"
-                >
-                  <stop offset="0%" stopColor="#EBCF8F" />
-                  <stop offset="55%" stopColor="#C49A55" />
-                  <stop offset="100%" stopColor="#8A672C" stopOpacity="0.85" />
-                </linearGradient>
-                <linearGradient
-                  id="admComboAreaGrad"
-                  x1="0"
-                  y1="0"
-                  x2="0"
-                  y2="1"
-                >
-                  <stop
-                    offset="0%"
-                    stopColor={darkMode ? '#5EB286' : '#2E6B47'}
-                    stopOpacity="0.30"
-                  />
-                  <stop
-                    offset="100%"
-                    stopColor={darkMode ? '#5EB286' : '#2E6B47'}
-                    stopOpacity="0.02"
-                  />
-                </linearGradient>
-              </defs>
-
-              {/* Horizontal dashed gridlines & dual Y-axes */}
-              {chartGeom.yTicks.map((tick, idx) => (
-                <g key={`yt-${idx}`}>
-                  <line
-                    x1={chartGeom.padLeft}
-                    x2={chartGeom.width - chartGeom.padRight}
-                    y1={tick.y}
-                    y2={tick.y}
-                    stroke={ui.chartGrid}
-                    strokeDasharray={idx === 0 ? undefined : '3 4'}
-                  />
-                  <text
-                    x={chartGeom.padLeft - 8}
-                    y={tick.y + 3.5}
-                    textAnchor="end"
-                    fontSize="10"
-                    fill={ui.chartAxis}
-                    className="font-mono"
-                  >
-                    {tick.leftLabel}
-                  </text>
-                  <text
-                    x={chartGeom.width - chartGeom.padRight + 8}
-                    y={tick.y + 3.5}
-                    textAnchor="start"
-                    fontSize="10"
-                    fill={ui.chartAxis}
-                    className="font-mono"
-                  >
-                    {tick.rightLabel}
-                  </text>
-                </g>
-              ))}
-
-              {/* Smooth area fill under AI/Revenue trend */}
-              {chartGeom.areaPath ? (
-                <path d={chartGeom.areaPath} fill="url(#admComboAreaGrad)" />
-              ) : null}
-
-              {/* Vertical rounded gradient bars for Orders */}
-              {chartGeom.nodes.map((node) => {
-                const isHovered = hoveredBarIdx === node.idx;
-                return (
-                  <g
-                    key={node.bucket.key}
-                    onMouseEnter={() => setHoveredBarIdx(node.idx)}
-                    className="cursor-pointer"
-                  >
-                    {/* Invisible wide hit column for smooth hover */}
-                    <rect
-                      x={node.cx - Math.max(14, node.barWidth)}
-                      y={chartGeom.padTop}
-                      width={Math.max(28, node.barWidth * 2)}
-                      height={chartGeom.baseY - chartGeom.padTop}
-                      fill="transparent"
-                    />
-                    {isHovered ? (
-                      <line
-                        x1={node.cx}
-                        x2={node.cx}
-                        y1={chartGeom.padTop}
-                        y2={chartGeom.baseY}
-                        stroke={darkMode ? '#EBCF8F' : '#B08A4A'}
-                        strokeOpacity="0.45"
-                        strokeDasharray="3 3"
-                      />
-                    ) : null}
-                    <rect
-                      x={node.barX}
-                      y={node.barY}
-                      width={node.barWidth}
-                      height={node.barH}
-                      rx="5"
-                      fill="url(#admComboBarGrad)"
-                      opacity={
-                        hoveredBarIdx === null || isHovered
-                          ? node.bucket.orderCount > 0
-                            ? 0.96
-                            : 0.35
-                          : 0.45
-                      }
-                    />
-                  </g>
-                );
-              })}
-
-              {/* Smooth Cubic Bezier Trend Curve */}
-              {chartGeom.linePath ? (
-                <path
-                  d={chartGeom.linePath}
-                  fill="none"
-                  stroke={darkMode ? '#5EB286' : '#2E6B47'}
-                  strokeWidth="2.25"
-                  strokeLinecap="round"
-                />
-              ) : null}
-
-              {/* Trend Data Nodes & X-Axis Labels */}
-              {chartGeom.nodes.map((node) => {
-                const isHovered = hoveredBarIdx === node.idx;
-                const showLabel =
-                  chartGeom.nodes.length <= 10 ||
-                  node.idx % 2 === 0 ||
-                  node.idx === chartGeom.nodes.length - 1;
-                return (
-                  <g key={`pt-${node.bucket.key}`}>
-                    <circle
-                      cx={node.cx}
-                      cy={node.lineY}
-                      r={isHovered ? 5 : 3.4}
-                      fill={darkMode ? '#1B140F' : '#FFFDF9'}
-                      stroke={darkMode ? '#5EB286' : '#2E6B47'}
-                      strokeWidth={isHovered ? 2.5 : 2}
-                    />
-                    {showLabel ? (
-                      <text
-                        x={node.cx}
-                        y={chartGeom.height - 8}
-                        textAnchor="middle"
-                        fontSize="10"
-                        fill={
-                          isHovered
-                            ? darkMode
-                              ? '#EBCF8F'
-                              : '#1C1410'
-                            : ui.chartAxis
-                        }
-                        fontWeight={isHovered ? '700' : '400'}
-                        className="font-mono"
-                      >
-                        {node.bucket.label}
-                      </text>
-                    ) : null}
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
+            }
+          />
         </div>
 
         {/* Right: Recent Orders & RMA Quick Action Queue */}
@@ -2181,10 +1649,13 @@ export function DashboardOverviewTab({
                     : 'Chưa có đơn hàng hoặc phiếu RMA nào cần xử lý.'}
                 </div>
               ) : (
-                recentQueue.map((item) => (
+                recentQueue.map((item, idx) => (
                   <div
                     key={item.id}
-                    className={`flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 transition-colors ${ui.subCard}`}
+                    style={{ '--row-idx': idx } as CSSProperties}
+                    className={`telemetry-anim telemetry-row-stagger flex items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 transition-colors ${ui.subCard} ${
+                      freshQueueIds.has(item.id) ? 'telemetry-row-flash' : ''
+                    }`}
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-3">
                       <span
@@ -2235,11 +1706,20 @@ export function DashboardOverviewTab({
                                 item.rmaCode!,
                               )
                             }
-                            className="rounded-md bg-[#1C1410] px-2 py-0.5 text-[10px] font-semibold text-[#EBCF8F] transition-opacity hover:opacity-90 disabled:opacity-50"
+                            className="inline-flex items-center gap-1.5 rounded-md bg-[#1C1410] px-2.5 py-0.5 text-[10px] font-semibold text-[#EBCF8F] transition-opacity hover:opacity-90 disabled:opacity-50"
                           >
-                            {approvingRmaId === item.rmaId
-                              ? 'Đang duyệt...'
-                              : 'Duyệt nhanh'}
+                            <span className="relative flex h-1.5 w-1.5 items-center justify-center">
+                              <span
+                                aria-hidden="true"
+                                className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-amber-400/80"
+                              />
+                              <span className="relative h-1.5 w-1.5 rounded-full bg-amber-400" />
+                            </span>
+                            <span>
+                              {approvingRmaId === item.rmaId
+                                ? 'Đang duyệt...'
+                                : 'Duyệt nhanh'}
+                            </span>
                           </button>
                         ) : (
                           <span
@@ -2271,9 +1751,9 @@ export function DashboardOverviewTab({
         </div>
       </section>
 
-      {/* ROW 4 — Bottom 2-Column Analytical Grid (Category Donut + Order & Cluster Status) */}
+      {/* ROW 4 — Bottom 2-Column Analytical Grid (Live Orbital Category Donut + Live ECG Health Stack) */}
       <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {/* Bottom Left: Category Structure Donut Chart */}
+        {/* Bottom Left: Live Orbital Category Donut Chart */}
         <div className={`rounded-2xl border p-5 ${ui.card}`}>
           <div className="flex items-start justify-between gap-2">
             <div>
@@ -2297,94 +1777,17 @@ export function DashboardOverviewTab({
             ) : null}
           </div>
 
-          <div className="mt-5 flex flex-col items-center gap-6 sm:flex-row">
-            {/* SVG Donut */}
-            <div className="relative flex h-44 w-44 shrink-0 items-center justify-center">
-              <svg
-                viewBox="0 0 150 150"
-                className="h-44 w-44 -rotate-90"
-                role="img"
-                aria-label="Biểu đồ Donut cơ cấu danh mục thiết kế"
-              >
-                <circle
-                  cx="75"
-                  cy="75"
-                  r="56"
-                  fill="none"
-                  stroke={ui.ringTrack}
-                  strokeWidth="16"
-                />
-                {donutSegments.map((seg) => {
-                  const isActive =
-                    hoveredDonutKey === null || hoveredDonutKey === seg.key;
-                  return (
-                    <circle
-                      key={seg.key}
-                      cx="75"
-                      cy="75"
-                      r={seg.r}
-                      fill="none"
-                      stroke={seg.color}
-                      strokeWidth={hoveredDonutKey === seg.key ? 19 : 16}
-                      strokeLinecap="butt"
-                      strokeDasharray={`${seg.dash} ${seg.circumference}`}
-                      strokeDashoffset={seg.offset}
-                      opacity={isActive ? 1 : 0.35}
-                      className="cursor-pointer transition-all duration-200"
-                      onMouseEnter={() => setHoveredDonutKey(seg.key)}
-                      onMouseLeave={() => setHoveredDonutKey(null)}
-                    />
-                  );
-                })}
-              </svg>
-
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span
-                  className={`font-mono text-[10px] uppercase tracking-[0.16em] ${ui.muted}`}
-                >
-                  TỔNG
-                </span>
-                <span
-                  className={`font-mono text-2xl font-bold tabular-nums ${ui.heading}`}
-                >
-                  {products.length}
-                </span>
-                <span className={`text-[10px] ${ui.muted}`}>thiết kế</span>
-              </div>
-            </div>
-
-            {/* Category Breakdown List */}
-            <div className="w-full flex-1 space-y-2.5">
-              {categorySlices.map((slice) => (
-                <div
-                  key={slice.key}
-                  onMouseEnter={() => setHoveredDonutKey(slice.key)}
-                  onMouseLeave={() => setHoveredDonutKey(null)}
-                  className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs transition-colors ${
-                    hoveredDonutKey === slice.key
-                      ? darkMode
-                        ? 'border-[#EBCF8F]/45 bg-[#2A1F17]'
-                        : 'border-[#B08A4A]/50 bg-[#F4EBDA]/75'
-                      : ui.subCard
-                  }`}
-                >
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: slice.color }}
-                    />
-                    <span className={`truncate font-medium ${ui.heading}`}>
-                      {slice.label}
-                    </span>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2 font-mono text-[11px] tabular-nums">
-                    <strong className={ui.heading}>{slice.count} mẫu</strong>
-                    <span className={ui.muted}>({slice.pct}%)</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <LiveDonutBreakdownChart
+            className="mt-5"
+            segments={donutChartSegments}
+            centerLabel="TỔNG"
+            centerUnit="thiết kế"
+            totalOverride={products.length}
+            isDark={darkMode}
+            onSelectSegment={() =>
+              canAccessAdminTab(roles, 'catalog') && onNavigateTab('catalog')
+            }
+          />
         </div>
 
         {/* Bottom Right: Order Status Structure & System Microservices Health */}
@@ -2406,72 +1809,40 @@ export function DashboardOverviewTab({
               </div>
               <span
                 className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border ${ui.iconBox}`}
+                title="Live Telemetry Heartbeat ECG"
               >
-                <AdminNavIcon tab="ops" size={16} />
+                <LiveEcgIcon
+                  size={20}
+                  color={darkMode ? '#34D399' : '#059669'}
+                />
               </span>
             </div>
 
-            {/* Multi-segment Horizontal Status Bar */}
+            {/* Live Multi-segment Stacked Status Bar */}
             <div className={`mt-5 rounded-xl border p-4 ${ui.subCard}`}>
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-medium">
-                <span
-                  className={`inline-flex items-center gap-1.5 ${
-                    darkMode ? 'text-emerald-300' : 'text-[#2E6B47]'
-                  }`}
-                >
-                  <CheckCircleIcon size={14} />
-                  <span>
-                    Đã giao / Hoàn tất:{' '}
-                    <strong className="font-mono tabular-nums">
-                      {statusBar.done}
-                    </strong>
-                  </span>
-                </span>
-                <span className={ui.goldText}>
-                  Đang xử lý:{' '}
-                  <strong className="font-mono tabular-nums">
-                    {statusBar.processing}
-                  </strong>
-                </span>
-                <span
-                  className={`inline-flex items-center gap-1 ${
-                    darkMode ? 'text-rose-300' : 'text-[#A63A3A]'
-                  }`}
-                >
-                  <AlertTriangleIcon size={13} />
-                  <span>
-                    RMA / Cảnh báo trễ:{' '}
-                    <strong className="font-mono tabular-nums">
-                      {statusBar.alerts}
-                    </strong>
-                  </span>
-                </span>
-              </div>
-
-              <div
-                className={`mt-3 flex h-3 w-full overflow-hidden rounded-full ${
-                  darkMode ? 'bg-[#17100B]' : 'bg-[#E9DEC9]'
-                }`}
-              >
-                {statusBar.donePct > 0 ? (
-                  <div
-                    className="h-full bg-[#2E6B47] transition-all duration-300"
-                    style={{ width: `${statusBar.donePct}%` }}
-                  />
-                ) : null}
-                {statusBar.processingPct > 0 ? (
-                  <div
-                    className="h-full bg-[#C8A15E] transition-all duration-300"
-                    style={{ width: `${statusBar.processingPct}%` }}
-                  />
-                ) : null}
-                {statusBar.alertsPct > 0 ? (
-                  <div
-                    className="h-full bg-[#A63A3A] transition-all duration-300"
-                    style={{ width: `${statusBar.alertsPct}%` }}
-                  />
-                ) : null}
-              </div>
+              <LiveStackedHealthBar
+                isDark={darkMode}
+                segments={[
+                  {
+                    id: 'done',
+                    label: 'Đã giao / Hoàn tất',
+                    value: statusBar.done,
+                    tone: 'emerald',
+                  },
+                  {
+                    id: 'processing',
+                    label: 'Đang xử lý',
+                    value: statusBar.processing,
+                    tone: 'amber',
+                  },
+                  {
+                    id: 'alerts',
+                    label: 'RMA / Cảnh báo trễ',
+                    value: statusBar.alerts,
+                    tone: 'crimson',
+                  },
+                ]}
+              />
             </div>
           </div>
 
@@ -2485,7 +1856,10 @@ export function DashboardOverviewTab({
                 <p
                   className={`font-mono text-2xl font-bold tabular-nums ${ui.heading}`}
                 >
-                  {metrics.slaCompletionPct}%
+                  <AnimatedTelemetryNumber
+                    value={metrics.slaCompletionPct}
+                    format="percent"
+                  />
                 </p>
                 <span
                   className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${ui.pillEmerald}`}
@@ -2517,7 +1891,8 @@ export function DashboardOverviewTab({
                 <p
                   className={`font-mono text-2xl font-bold tabular-nums ${ui.heading}`}
                 >
-                  {metrics.servicesReady}/{metrics.servicesTotal}
+                  <AnimatedTelemetryNumber value={metrics.servicesReady} />/
+                  {metrics.servicesTotal}
                   <span className={`ml-1 text-xs font-medium ${ui.muted}`}>
                     UP
                   </span>
@@ -2527,7 +1902,7 @@ export function DashboardOverviewTab({
                     dlqCount === 0 ? ui.pillEmerald : ui.pillRose
                   }`}
                 >
-                  {dlqCount} DLQ
+                  <AnimatedTelemetryNumber value={dlqCount} /> DLQ
                 </span>
               </div>
               <p className={`mt-1.5 truncate font-mono text-[11px] ${ui.muted}`}>
@@ -2536,6 +1911,16 @@ export function DashboardOverviewTab({
               </p>
             </div>
           </div>
+
+          {/* Live Microservices Pulse Beacon Strip */}
+          {clusterServiceNodes.length > 0 ? (
+            <div className="mt-3">
+              <LiveServiceClusterStrip
+                services={clusterServiceNodes}
+                isDark={darkMode}
+              />
+            </div>
+          ) : null}
         </div>
       </section>
     </div>

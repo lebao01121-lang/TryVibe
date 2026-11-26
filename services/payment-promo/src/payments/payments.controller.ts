@@ -12,7 +12,13 @@ import {
   type RawBodyRequest,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { createApiResponse, type ApiResponse } from '@atelier/contracts';
+import {
+  createApiResponse,
+  type ApiResponse,
+  type SePayConfigStatusDTO,
+  type SePayOrderStatusDTO,
+  type SePaySyncResultDTO,
+} from '@atelier/contracts';
 import {
   getOrCreateCorrelationId,
   getOrCreateTraceparent,
@@ -29,6 +35,8 @@ import {
   type PaymentTransactionView,
   type RichPaymentIntentResponseDTO,
   type RichRefundResponseDTO,
+  type SePayWebhookResponseDTO,
+  type SimulateSePayWebhookResult,
   type VnpayIpnResponseDTO,
   type WebhookProcessResult,
 } from './payments.service';
@@ -153,6 +161,80 @@ export class PaymentsController {
     return createApiResponse(data, { correlationId, service: SERVICE_NAME });
   }
 
+  /**
+   * SePay Automated Webhook endpoint.
+   * Returns top-level `{ success: true, ... }` with HTTP 200 per SePay webhook specification.
+   */
+  @Post('payments/sepay/webhook')
+  @HttpCode(HttpStatus.OK)
+  async handleSePayWebhook(
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<SePayWebhookResponseDTO> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const traceparent = getOrCreateTraceparent(headers);
+    return this.paymentsService.handleSePayWebhook(
+      body,
+      headers,
+      correlationId,
+      traceparent,
+    );
+  }
+
+  @Get('payments/sepay/status/:orderCode')
+  async getSePayOrderStatus(
+    @Param('orderCode') orderCode: string,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<SePayOrderStatusDTO>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const traceparent = getOrCreateTraceparent(headers);
+    const data = await this.paymentsService.checkSePayOrderStatus(
+      orderCode,
+      correlationId,
+      traceparent,
+    );
+    return createApiResponse(data, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Post('payments/sepay/simulate')
+  @HttpCode(HttpStatus.OK)
+  async simulateSePayWebhook(
+    @Body() body: unknown,
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<SimulateSePayWebhookResult>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const traceparent = getOrCreateTraceparent(headers);
+    const data = await this.paymentsService.simulateSePayWebhook(
+      body,
+      correlationId,
+      traceparent,
+    );
+    return createApiResponse(data, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Get('payments/sepay/config')
+  async getSePayConfig(
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<SePayConfigStatusDTO>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const data = await this.paymentsService.getSePayConfigStatus();
+    return createApiResponse(data, { correlationId, service: SERVICE_NAME });
+  }
+
+  @Post('payments/sepay/sync')
+  @HttpCode(HttpStatus.OK)
+  async syncSePayTransactions(
+    @Headers() headers: HeaderBag,
+  ): Promise<ApiResponse<SePaySyncResultDTO>> {
+    const correlationId = getOrCreateCorrelationId(headers);
+    const traceparent = getOrCreateTraceparent(headers);
+    const data = await this.paymentsService.syncPendingSePayTransactions(
+      correlationId,
+      traceparent,
+    );
+    return createApiResponse(data, { correlationId, service: SERVICE_NAME });
+  }
+
   @Get('payments/webhooks/:provider')
   @HttpCode(HttpStatus.OK)
   async handlePaymentsWebhookGetAlias(
@@ -181,7 +263,9 @@ export class PaymentsController {
     @Body() body: unknown,
     @Headers() headers: HeaderBag,
     @Req() req: RawBodyRequest<Request>,
-  ): Promise<ApiResponse<WebhookProcessResult> | VnpayIpnResponseDTO> {
+  ): Promise<
+    ApiResponse<WebhookProcessResult> | VnpayIpnResponseDTO | SePayWebhookResponseDTO
+  > {
     return this.dispatchLegacyWebhook(provider, query, body, headers, req);
   }
 
@@ -193,7 +277,9 @@ export class PaymentsController {
     @Body() body: unknown,
     @Headers() headers: HeaderBag,
     @Req() req: RawBodyRequest<Request>,
-  ): Promise<ApiResponse<WebhookProcessResult> | VnpayIpnResponseDTO> {
+  ): Promise<
+    ApiResponse<WebhookProcessResult> | VnpayIpnResponseDTO | SePayWebhookResponseDTO
+  > {
     return this.dispatchLegacyWebhook(provider, query, body, headers, req);
   }
 
@@ -203,7 +289,9 @@ export class PaymentsController {
     body: unknown,
     headers: HeaderBag,
     req: RawBodyRequest<Request>,
-  ): Promise<ApiResponse<WebhookProcessResult> | VnpayIpnResponseDTO> {
+  ): Promise<
+    ApiResponse<WebhookProcessResult> | VnpayIpnResponseDTO | SePayWebhookResponseDTO
+  > {
     const correlationId = getOrCreateCorrelationId(headers);
     const traceparent = getOrCreateTraceparent(headers);
     const signature =
@@ -219,6 +307,14 @@ export class PaymentsController {
 
     // Auto-dispatch native provider webhook formats when no custom x-webhook-signature header is set
     if (!signature) {
+      if (normalized === 'sepay') {
+        return this.paymentsService.handleSePayWebhook(
+          body,
+          headers,
+          correlationId,
+          traceparent,
+        );
+      }
       if (normalized === 'vnpay' && (query.vnp_SecureHash || bodyRec.vnp_SecureHash)) {
         return this.paymentsService.handleVnpayIpn(
           { ...query, ...bodyRec },

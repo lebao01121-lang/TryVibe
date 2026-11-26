@@ -39,6 +39,16 @@ import {
   PartnerPortalGuard,
 } from './guards';
 import { JwtVerifierService } from './jwt-verifier.service';
+import {
+  ApiPublicWebhooksController,
+  extractWebhookForwardHeaders,
+  PublicWebhooksController,
+} from '../webhooks/public-webhooks.controller';
+import {
+  ApiAuthBffController,
+  AuthProxyService,
+  StorefrontAuthBffController,
+} from '../auth/auth-bff.controller';
 
 function createMockBffConfig(): BffConfig {
   return {
@@ -171,8 +181,14 @@ describe('CsrfOriginGuard', () => {
       '/bff/v1/payments/vnpay/ipn?vnp_TxnRef=TX-1',
       '/bff/v1/payments/momo/ipn',
       '/bff/v1/payments/payos/webhook',
+      '/bff/v1/payments/sepay/webhook',
+      '/bff/v1/payments/sepay/webhook?source=sepay',
+      '/api/v1/payments/sepay/webhook',
+      '/api/v1/payments/sepay/webhook?source=sepay',
       '/bff/v1/payments/webhooks/vietqr',
+      '/bff/v1/payments/webhooks/sepay',
       '/bff/v1/storefront/payments/webhooks/momo',
+      '/bff/v1/storefront/payments/webhooks/sepay',
       '/bff/v1/webhooks/shipping/ghn?token=abc',
     ];
 
@@ -629,5 +645,172 @@ describe('HttpProxyService & Storefront Sanitization', () => {
     expect(
       buildCanonicalQueryString({ z: '2', a: ['M', 'S'], empty: '  ', skip: null }),
     ).toBe('a=M&a=S&z=2');
+  });
+
+  it('preserves SePay payment intent and status fields in storefront sanitization', () => {
+    const sepayPayload = {
+      success: true,
+      data: {
+        orderCode: 'TX-2026SEPAY01',
+        sepayQrImageUrl: 'https://qr.sepay.vn/img?acc=088820269999&bank=MB&amount=1850000&des=TRYVIBE+TX2026SEPAY01',
+        transferContent: 'TRYVIBE TX2026SEPAY01',
+        vietqrProvider: 'SEPAY',
+        providerMode: 'SANDBOX_LOCAL',
+        sepaySyncedNow: true,
+        costPriceVnd: 650_000,
+        bankInfo: {
+          bankBin: '970422',
+          bankCode: 'MB',
+          bankName: 'MBBank',
+          accountNo: '088820269999',
+          accountName: 'TRYVIBE FASHION ATELIER',
+        },
+      },
+    };
+
+    const sanitized = stripStorefrontSensitiveFields(sepayPayload);
+    expect('costPriceVnd' in sanitized.data).toBe(false);
+    expect(sanitized.data.sepayQrImageUrl).toBe(sepayPayload.data.sepayQrImageUrl);
+    expect(sanitized.data.transferContent).toBe('TRYVIBE TX2026SEPAY01');
+    expect(sanitized.data.vietqrProvider).toBe('SEPAY');
+    expect(sanitized.data.providerMode).toBe('SANDBOX_LOCAL');
+    expect(sanitized.data.sepaySyncedNow).toBe(true);
+    expect(sanitized.data.bankInfo).toEqual(sepayPayload.data.bankInfo);
+  });
+
+  it('forwards SePay Authorization: Apikey and API key headers across /bff/v1 and /api/v1 webhook routes', async () => {
+    const config = createMockBffConfig();
+    const proxy = new HttpProxyService(config);
+    const forwardedCalls: Array<{ url: string; headers: Headers; body: string }> = [];
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const bodyBytes = init?.body instanceof Uint8Array ? Buffer.from(init.body).toString('utf8') : String(init?.body ?? '');
+      forwardedCalls.push({
+        url: String(input),
+        headers: init?.headers as Headers,
+        body: bodyBytes,
+      });
+      return new Response(JSON.stringify({ success: true, ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    const rawJson = JSON.stringify({
+      id: 987654,
+      gateway: 'MBBank',
+      transferType: 'in',
+      transferAmount: 1850000,
+      content: 'TRYVIBE TX2026SEPAY01',
+    });
+
+    const fakeReq = {
+      originalUrl: '/bff/v1/payments/sepay/webhook',
+      url: '/bff/v1/payments/sepay/webhook',
+      ip: '203.0.113.55',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Apikey sepay_live_webhook_secret_2026',
+        'x-sepay-apikey': 'sepay_alt_key',
+        'x-api-key': 'sepay_x_api_key',
+        'x-sepay-signature': 'sig-abc',
+      },
+      rawBody: Buffer.from(rawJson, 'utf8'),
+    } as unknown as Request & { rawBody?: Buffer };
+
+    const extracted = extractWebhookForwardHeaders(fakeReq, 'corr-sepay-1', '203.0.113.55');
+    expect(extracted.authorization).toBe('Apikey sepay_live_webhook_secret_2026');
+    expect(extracted['x-sepay-apikey']).toBe('sepay_alt_key');
+    expect(extracted['x-api-key']).toBe('sepay_x_api_key');
+    expect(extracted['x-sepay-signature']).toBe('sig-abc');
+
+    const resMock = {
+      setHeader: vi.fn(),
+      status: vi.fn().mockReturnThis(),
+      type: vi.fn().mockReturnThis(),
+      send: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    } as unknown as Response;
+
+    const bffWebhookCtrl = new PublicWebhooksController(config, proxy);
+    await bffWebhookCtrl.sepayWebhookPost(fakeReq, resMock);
+
+    const apiWebhookCtrl = new ApiPublicWebhooksController(config, proxy);
+    await apiWebhookCtrl.sepayWebhookAliasPost(
+      { ...fakeReq, originalUrl: '/api/v1/payments/sepay/webhook', url: '/api/v1/payments/sepay/webhook' } as unknown as Request & { rawBody?: Buffer },
+      resMock,
+    );
+
+    expect(forwardedCalls).toHaveLength(2);
+    for (const call of forwardedCalls) {
+      expect(call.url).toBe('http://127.0.0.1:4007/v1/payments/sepay/webhook');
+      expect(call.headers.get('authorization')).toBe('Apikey sepay_live_webhook_secret_2026');
+      expect(call.headers.get('x-sepay-apikey')).toBe('sepay_alt_key');
+      expect(call.headers.get('x-api-key')).toBe('sepay_x_api_key');
+      expect(call.headers.get('x-sepay-signature')).toBe('sig-abc');
+      expect(call.body).toBe(rawJson);
+    }
+  });
+
+  it('forwards OAuth2 start & callback with query strings and manual 302 Location without following redirects', async () => {
+    const config = createMockBffConfig();
+    const proxy = new HttpProxyService(config);
+    const authProxy = new AuthProxyService(config, proxy);
+    const storefrontCtrl = new StorefrontAuthBffController(authProxy);
+    const apiCtrl = new ApiAuthBffController(authProxy);
+
+    const calls: Array<{ url: string; redirect?: string }> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      calls.push({ url, redirect: init?.redirect });
+      return new globalThis.Response(null, {
+        status: 302,
+        headers: {
+          Location: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=test&state=abc123',
+        },
+      });
+    });
+
+    const resMock = {
+      setHeader: vi.fn(),
+      status: vi.fn().mockReturnThis(),
+      type: vi.fn().mockReturnThis(),
+      send: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    } as unknown as Response;
+
+    const startReq = {
+      originalUrl: '/bff/v1/auth/oauth/google/start?portal=storefront&returnTo=%2Ftai-khoan',
+      url: '/bff/v1/auth/oauth/google/start?portal=storefront&returnTo=%2Ftai-khoan',
+      ip: '127.0.0.1',
+      headers: {},
+    } as unknown as Request;
+
+    await storefrontCtrl.oauthStart('google', startReq, resMock);
+
+    const callbackReq = {
+      originalUrl: '/api/v1/auth/oauth/google/callback?code=4%2Fabc&state=xyz999',
+      url: '/api/v1/auth/oauth/google/callback?code=4%2Fabc&state=xyz999',
+      ip: '127.0.0.1',
+      headers: {},
+    } as unknown as Request;
+
+    await apiCtrl.oauthCallback('google', callbackReq, resMock);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.url).toBe(
+      'http://127.0.0.1:4001/v1/auth/oauth/google/start?portal=storefront&returnTo=%2Ftai-khoan',
+    );
+    expect(calls[0]?.redirect).toBe('manual');
+    expect(calls[1]?.url).toBe(
+      'http://127.0.0.1:4001/v1/auth/oauth/google/callback?code=4%2Fabc&state=xyz999',
+    );
+    expect(calls[1]?.redirect).toBe('manual');
+
+    expect(resMock.setHeader).toHaveBeenCalledWith(
+      'Location',
+      'https://accounts.google.com/o/oauth2/v2/auth?client_id=test&state=abc123',
+    );
+    expect(resMock.status).toHaveBeenCalledWith(302);
   });
 });

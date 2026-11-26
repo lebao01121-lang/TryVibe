@@ -9,7 +9,6 @@ import {
   HTTP_HEADERS,
   OrderStatus,
   PaymentMethod,
-  PaymentProvider,
   PromoStatus,
   PromoType,
   ShippingMethod,
@@ -19,6 +18,7 @@ import {
   type OrderDTO,
   type PackagingOptionDto,
   type PromotionDTO,
+  type SePayOrderStatusDTO,
   type StorefrontBootstrapDto,
 } from '@atelier/contracts';
 import { GiftCardPreview } from '@/features/drawer-bag/GiftCardPreview';
@@ -194,11 +194,35 @@ export function CheckoutPageClient() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [codDepositNotice, setCodDepositNotice] = useState<string | null>(null);
 
-  // VietQR Awaiting Payment State
+  // VietQR / SePay Awaiting Payment State
   const [createdOrder, setCreatedOrder] = useState<OrderDTO | null>(null);
   const [countdownSec, setCountdownSec] = useState(15 * 60);
   const [simulatingPayment, setSimulatingPayment] = useState(false);
-  const [copiedPayload, setCopiedPayload] = useState(false);
+  const [checkingSePay, setCheckingSePay] = useState(false);
+  const [sepayStatusNotice, setSepayStatusNotice] = useState<{
+    kind: 'info' | 'success' | 'warning';
+    text: string;
+  } | null>(null);
+  const [qrFallbackStage, setQrFallbackStage] = useState<0 | 1 | 2>(0);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const copyTimerRef = useRef<number | null>(null);
+
+  const handleCopyField = useCallback(async (fieldKey: string, value: string) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedField(fieldKey);
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = window.setTimeout(() => {
+        setCopiedField(null);
+        copyTimerRef.current = null;
+      }, 2000);
+    } catch {
+      // Ignore clipboard permission restrictions
+    }
+  }, []);
 
   const applySavedAddress = useCallback((addr: CustomerAddressDto) => {
     setSelectedAddressId(addr.id);
@@ -419,6 +443,9 @@ export function CheckoutPageClient() {
   useEffect(() => {
     return () => {
       cleanupOrderTracking();
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
     };
   }, [cleanupOrderTracking]);
 
@@ -493,7 +520,9 @@ export function CheckoutPageClient() {
       // Fall back cleanly to polling below
     }
 
+    let pollTick = 0;
     pollRef.current = window.setInterval(async () => {
+      pollTick += 1;
       const statusRes = await apiFetch<OrderDTO>(
         `/bff/v1/storefront/orders/${encodeURIComponent(orderCode)}`,
         { skipAuthRefresh: true },
@@ -505,6 +534,18 @@ export function CheckoutPageClient() {
           statusRes.data.status === OrderStatus.SHIPPED ||
           statusRes.data.status === OrderStatus.DELIVERED
         ) {
+          handlePaidRedirect();
+          return;
+        }
+      }
+
+      // Every 2nd tick also query SePay live reconciliation status so local dev with SEPAY_API_TOKEN auto-confirms
+      if (pollTick % 2 === 0) {
+        const sepayRes = await apiFetch<SePayOrderStatusDTO>(
+          `/bff/v1/storefront/payments/sepay/status/${encodeURIComponent(orderCode)}`,
+          { skipAuthRefresh: true },
+        );
+        if (sepayRes.ok && sepayRes.data?.paid) {
           handlePaidRedirect();
         }
       }
@@ -636,6 +677,8 @@ export function CheckoutPageClient() {
       order.paymentMethod === PaymentMethod.VIETQR &&
       order.status === OrderStatus.AWAITING_PAYMENT
     ) {
+      setQrFallbackStage(0);
+      setSepayStatusNotice(null);
       setCreatedOrder(order);
       return;
     }
@@ -643,22 +686,64 @@ export function CheckoutPageClient() {
     router.push(`/don-hang/${encodeURIComponent(order.orderCode)}`);
   };
 
+  const handleCheckSePayStatus = async () => {
+    if (!createdOrder || checkingSePay) return;
+    setCheckingSePay(true);
+    setErrorMessage(null);
+    setSepayStatusNotice(null);
+
+    const res = await apiFetch<SePayOrderStatusDTO>(
+      `/bff/v1/storefront/payments/sepay/status/${encodeURIComponent(createdOrder.orderCode)}`,
+      { skipAuthRefresh: true, timeoutMs: 12_000 },
+    );
+
+    setCheckingSePay(false);
+    if (!res.ok || !res.data) {
+      setSepayStatusNotice({
+        kind: 'warning',
+        text:
+          res.error?.message ||
+          'Chưa thể kết nối kiểm tra giao dịch SePay lúc này. Vui lòng thử lại sau vài giây.',
+      });
+      return;
+    }
+
+    if (res.data.paid) {
+      setSepayStatusNotice({
+        kind: 'success',
+        text:
+          res.data.message ||
+          `Đã xác nhận thanh toán SePay cho đơn #${createdOrder.orderCode}. Đang chuyển tới trang theo dõi đơn hàng...`,
+      });
+      cleanupOrderTracking();
+      refreshCartCount();
+      router.push(`/don-hang/${encodeURIComponent(createdOrder.orderCode)}`);
+      return;
+    }
+
+    setSepayStatusNotice({
+      kind: 'info',
+      text:
+        res.data.message ||
+        'Chưa ghi nhận chuyển khoản khớp đơn hàng. Nếu bạn vừa chuyển, vui lòng đợi 5–15 giây để ngân hàng báo về SePay rồi nhấn kiểm tra lại.',
+    });
+  };
+
   const handleSimulateDevWebhook = async () => {
     if (!createdOrder) return;
     setSimulatingPayment(true);
     setErrorMessage(null);
+    setSepayStatusNotice(null);
 
-    const res = await apiFetch<unknown>(
-      '/bff/v1/storefront/payments/dev-simulate-webhook',
+    const res = await apiFetch<Record<string, unknown>>(
+      '/bff/v1/storefront/payments/sepay/simulate',
       {
         method: 'POST',
         skipAuthRefresh: true,
         body: JSON.stringify({
           orderId: createdOrder.id,
           orderCode: createdOrder.orderCode,
-          provider: PaymentProvider.VIETQR,
           amountVnd: createdOrder.totalAmountVnd,
-          simulateLate: false,
         }),
       },
     );
@@ -666,30 +751,78 @@ export function CheckoutPageClient() {
     setSimulatingPayment(false);
     if (!res.ok) {
       setErrorMessage(
-        res.error?.message || 'Không thể giả lập webhook thanh toán lúc này.',
+        res.error?.message || 'Không thể giả lập chuyển khoản SePay lúc này.',
       );
+      return;
     }
+
+    setSepayStatusNotice({
+      kind: 'success',
+      text: `Đã giả lập chuyển khoản SePay thành công cho đơn #${createdOrder.orderCode}. Đang cập nhật trạng thái...`,
+    });
   };
 
   const showDevSimulateButton =
     process.env.NEXT_PUBLIC_PAYMENT_MODE !== 'live';
 
-  // VIETQR LIVE PAYMENT STAGE
+  // VIETQR / SEPAY LIVE PAYMENT STAGE
   if (createdOrder && createdOrder.status === OrderStatus.AWAITING_PAYMENT) {
     const intent = createdOrder.paymentIntent;
+    const isSePayLive = intent?.providerMode === 'LIVE';
+    const bankInfo = intent?.bankInfo ?? null;
+    const bankDisplay = bankInfo?.bankName
+      ? bankInfo.bankCode && !bankInfo.bankName.toUpperCase().includes(bankInfo.bankCode.toUpperCase())
+        ? `${bankInfo.bankName} (${bankInfo.bankCode})`
+        : bankInfo.bankName
+      : bankInfo?.bankCode || 'MBBank (MB)';
+    const transferContent = intent?.transferContent?.trim() || createdOrder.orderCode;
     const qrPayload =
       intent?.vietQrPayload ||
       `VIETQR|TRYVIBE|${createdOrder.orderCode}|${createdOrder.totalAmountVnd}`;
 
+    const primaryQrUrl = intent?.sepayQrImageUrl || intent?.vietQrImageUrl || null;
+    const fallbackLocalQrUrl =
+      intent?.sepayQrImageUrl &&
+      intent?.vietQrImageUrl &&
+      intent.vietQrImageUrl !== intent.sepayQrImageUrl
+        ? intent.vietQrImageUrl
+        : null;
+    const activeQrUrl =
+      qrFallbackStage === 0
+        ? primaryQrUrl
+        : qrFallbackStage === 1
+          ? fallbackLocalQrUrl
+          : null;
+
     return (
-      <div className="mx-auto max-w-3xl px-6 py-12 lg:px-10">
-        <div className="rounded-[28px] border border-[#B08A4A]/40 bg-[#FBF7EF] p-7 shadow-xl sm:p-10">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#B08A4A]/25 pb-5">
+      <div className="mx-auto max-w-4xl px-6 py-12 lg:px-10">
+        <div
+          data-testid="checkout-sepay-stage"
+          className="rounded-[28px] border border-[#B08A4A]/40 bg-[#FBF7EF] p-7 shadow-xl sm:p-10"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#B08A4A]/25 pb-5">
             <div>
-              <p className="eyebrow text-[#8A672C]">
-                Thanh toán tự động VietQR · Giữ kho 15 phút
-              </p>
-              <h1 className="mt-1 font-editorial text-4xl font-light text-[#1C1410]">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="eyebrow text-[#8A672C]">
+                  Thanh toán tự động SePay · VietQR · Giữ kho 15 phút
+                </p>
+                <span
+                  data-testid="checkout-sepay-mode-badge"
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                    isSePayLive
+                      ? 'border-emerald-700/35 bg-emerald-50 text-emerald-900'
+                      : 'border-[#B08A4A]/50 bg-[#F4EBDA] text-[#5C431C]'
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      isSePayLive ? 'bg-emerald-600' : 'bg-[#B08A4A]'
+                    }`}
+                  />
+                  {isSePayLive ? 'SePay Live Tự Động' : 'SePay · VietQR Sandbox'}
+                </span>
+              </div>
+              <h1 className="mt-1.5 font-editorial text-4xl font-light text-[#1C1410]">
                 Đơn hàng #{createdOrder.orderCode}
               </h1>
             </div>
@@ -698,46 +831,141 @@ export function CheckoutPageClient() {
             </div>
           </div>
 
-          <div className="mt-7 grid items-center gap-8 md:grid-cols-[260px_1fr]">
-            {/* VietQR Code Image or Styled Fallback */}
-            <div className="mx-auto flex w-full max-w-[260px] flex-col items-center rounded-3xl border border-[#B08A4A]/35 bg-white p-5 shadow-md">
-              {intent?.vietQrImageUrl ? (
+          <div className="mt-7 grid items-start gap-8 md:grid-cols-[270px_1fr]">
+            {/* SePay VietQR Code Image with seamless fallback to local QR -> styled box */}
+            <div className="mx-auto flex w-full max-w-[270px] flex-col items-center rounded-3xl border border-[#B08A4A]/35 bg-white p-5 shadow-md">
+              {activeQrUrl ? (
                 <img
-                  src={intent.vietQrImageUrl}
-                  alt={`Mã VietQR đơn hàng ${createdOrder.orderCode}`}
+                  src={activeQrUrl}
+                  alt={`Mã VietQR SePay đơn hàng ${createdOrder.orderCode}`}
+                  onError={() => {
+                    setQrFallbackStage((prev) => {
+                      if (prev === 0 && fallbackLocalQrUrl) return 1;
+                      return 2;
+                    });
+                  }}
                   className="aspect-square w-full rounded-xl object-contain"
                 />
               ) : (
                 <div className="flex aspect-square w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#B08A4A]/45 bg-[#FBF7EF] p-4 text-center">
-                  <span className="font-editorial text-2xl text-[#8A672C]">VietQR</span>
+                  <span className="font-editorial text-2xl text-[#8A672C]">VietQR · SePay</span>
                   <span className="mt-2 font-mono text-[11px] break-all text-[#2B2019]">
-                    {createdOrder.orderCode}
+                    {transferContent}
                   </span>
                 </div>
               )}
-              <p className="mt-3 text-center text-[11px] text-[#7A6A5B]">
-                Mở ứng dụng ngân hàng để quét mã
+              <p className="mt-3 text-center text-[11px] leading-snug text-[#7A6A5B]">
+                Mở ứng dụng ngân hàng để quét mã QR — số tiền &amp; nội dung sẽ tự động điền sẵn.
               </p>
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-2xl border border-[#B08A4A]/25 bg-[#F4EBDA]/65 p-4 text-sm">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-xs uppercase tracking-[0.18em] text-[#7A6A5B]">
-                    Số tiền chuyển khoản
-                  </span>
-                  <b className="font-editorial text-3xl text-[#1C1410]">
-                    {FORMAT_VND(createdOrder.totalAmountVnd)}
-                  </b>
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#B08A4A]/20 pt-3 text-xs">
-                  <span className="text-[#7A6A5B]">Nội dung chuyển khoản</span>
-                  <code className="rounded bg-white px-2.5 py-1 font-mono font-medium text-[#1C1410]">
-                    {createdOrder.orderCode}
-                  </code>
+              {/* Structured Bank Transfer Card with individual 1-click Copy buttons */}
+              <div className="rounded-2xl border border-[#B08A4A]/30 bg-white p-4 text-xs shadow-xs sm:p-5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#8A672C]">
+                  Thông tin chuyển khoản ngân hàng
+                </p>
+
+                <dl className="mt-3 divide-y divide-[#B08A4A]/15">
+                  <div className="flex items-center justify-between gap-3 py-2.5 first:pt-0">
+                    <div className="min-w-0">
+                      <dt className="text-[11px] text-[#7A6A5B]">Ngân hàng</dt>
+                      <dd className="mt-0.5 font-medium text-[#1C1410]">{bankDisplay}</dd>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyField('bank', bankDisplay)}
+                      className="shrink-0 rounded-lg border border-[#B08A4A]/35 bg-[#FBF7EF] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[#5C431C] hover:border-[#8A672C]"
+                    >
+                      {copiedField === 'bank' ? 'Đã chép' : 'Sao chép'}
+                    </button>
+                  </div>
+
+                  {bankInfo?.accountNo ? (
+                    <div className="flex items-center justify-between gap-3 py-2.5">
+                      <div className="min-w-0">
+                        <dt className="text-[11px] text-[#7A6A5B]">Số tài khoản</dt>
+                        <dd className="mt-0.5 font-mono text-sm font-semibold text-[#1C1410]">
+                          {bankInfo.accountNo}
+                        </dd>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyField('accountNo', bankInfo.accountNo)}
+                        className="shrink-0 rounded-lg border border-[#B08A4A]/35 bg-[#FBF7EF] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[#5C431C] hover:border-[#8A672C]"
+                      >
+                        {copiedField === 'accountNo' ? 'Đã chép' : 'Sao chép'}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {bankInfo?.accountName ? (
+                    <div className="flex items-center justify-between gap-3 py-2.5">
+                      <div className="min-w-0">
+                        <dt className="text-[11px] text-[#7A6A5B]">Chủ tài khoản</dt>
+                        <dd className="mt-0.5 font-medium uppercase text-[#1C1410]">
+                          {bankInfo.accountName}
+                        </dd>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyField('accountName', bankInfo.accountName)}
+                        className="shrink-0 rounded-lg border border-[#B08A4A]/35 bg-[#FBF7EF] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[#5C431C] hover:border-[#8A672C]"
+                      >
+                        {copiedField === 'accountName' ? 'Đã chép' : 'Sao chép'}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <div className="flex items-center justify-between gap-3 py-2.5">
+                    <div className="min-w-0">
+                      <dt className="text-[11px] text-[#7A6A5B]">Số tiền chính xác</dt>
+                      <dd className="mt-0.5 font-editorial text-2xl font-medium text-[#1C1410]">
+                        {FORMAT_VND(createdOrder.totalAmountVnd)}
+                      </dd>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleCopyField('amount', String(createdOrder.totalAmountVnd))
+                      }
+                      className="shrink-0 rounded-lg border border-[#B08A4A]/35 bg-[#FBF7EF] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[#5C431C] hover:border-[#8A672C]"
+                    >
+                      {copiedField === 'amount' ? 'Đã chép' : 'Sao chép'}
+                    </button>
+                  </div>
+                </dl>
+
+                {/* Highlighted Transfer Content for SePay Auto-Matching */}
+                <div className="mt-3 rounded-xl border border-[#B08A4A]/45 bg-[#F4EBDA]/80 p-3.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8A672C]">
+                        Nội dung chuyển khoản (bắt buộc)
+                      </p>
+                      <code
+                        data-testid="checkout-sepay-transfer-content"
+                        className="mt-1 inline-block rounded bg-white px-2.5 py-1 font-mono text-sm font-semibold text-[#1C1410]"
+                      >
+                        {transferContent}
+                      </code>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyField('content', transferContent)}
+                      className="shrink-0 rounded-lg bg-[#1C1410] px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-[#EBCF8F]"
+                    >
+                      {copiedField === 'content' ? 'Đã chép' : 'Sao chép nội dung'}
+                    </button>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-relaxed text-[#5C431C]">
+                    Vui lòng giữ nguyên chính xác nội dung chuyển khoản trên để hệ thống SePay tự
+                    động đối soát và xác nhận đơn hàng trong 5–15 giây.
+                  </p>
                 </div>
               </div>
 
+              {/* Compact EMVCo VietQR Payload Box */}
               <div className="rounded-xl border border-[#B08A4A]/25 bg-white p-3 text-xs">
                 <p className="text-[10px] uppercase tracking-[0.18em] text-[#8A672C]">
                   Chuỗi VietQR Payload
@@ -752,25 +980,35 @@ export function CheckoutPageClient() {
                   />
                   <button
                     type="button"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(qrPayload);
-                        setCopiedPayload(true);
-                      } catch {
-                        // ignore clipboard restrictions
-                      }
-                    }}
+                    onClick={() => void handleCopyField('payload', qrPayload)}
                     className="shrink-0 rounded-lg bg-[#1C1410] px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] text-[#EBCF8F]"
                   >
-                    {copiedPayload ? 'Đã chép' : 'Sao chép'}
+                    {copiedField === 'payload' ? 'Đã chép' : 'Sao chép'}
                   </button>
                 </div>
               </div>
 
               <p className="text-xs leading-relaxed text-[#6B5B4C]">
-                Trang đang lắng nghe tín hiệu đối soát thời gian thực qua Socket.io — sẽ tự
-                động chuyển sang trang theo dõi đơn hàng ngay khi giao dịch hoàn tất.
+                Trang đang tự động lắng nghe tín hiệu đối soát SePay thời gian thực (Socket.io &amp;
+                đồng bộ định kỳ) — sẽ tự chuyển sang trang theo dõi đơn hàng ngay khi giao dịch hoàn
+                tất.
               </p>
+
+              {sepayStatusNotice ? (
+                <p
+                  role="status"
+                  data-testid="checkout-sepay-status-notice"
+                  className={`rounded-xl border px-3.5 py-2.5 text-xs ${
+                    sepayStatusNotice.kind === 'success'
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-950'
+                      : sepayStatusNotice.kind === 'warning'
+                        ? 'border-red-300 bg-red-50 text-red-900'
+                        : 'border-[#B08A4A]/45 bg-[#F4EBDA]/80 text-[#3B2E25]'
+                  }`}
+                >
+                  {sepayStatusNotice.text}
+                </p>
+              ) : null}
 
               {errorMessage ? (
                 <p className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-900">
@@ -779,6 +1017,18 @@ export function CheckoutPageClient() {
               ) : null}
 
               <div className="flex flex-wrap items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  data-testid="sepay-check-status-btn"
+                  disabled={checkingSePay}
+                  onClick={() => void handleCheckSePayStatus()}
+                  className="btn btn--gold !px-5 !py-2.5 !text-xs disabled:opacity-50"
+                >
+                  {checkingSePay
+                    ? 'Đang kiểm tra giao dịch SePay...'
+                    : 'Tôi đã chuyển khoản — Kiểm tra ngay'}
+                </button>
+
                 <Link
                   href={`/don-hang/${encodeURIComponent(createdOrder.orderCode)}`}
                   className="btn btn--line !px-5 !py-2.5 !text-xs"
@@ -789,13 +1039,14 @@ export function CheckoutPageClient() {
                 {showDevSimulateButton ? (
                   <button
                     type="button"
+                    data-testid="sepay-dev-simulate-btn"
                     disabled={simulatingPayment}
                     onClick={() => void handleSimulateDevWebhook()}
                     className="rounded-full border border-[#8A672C]/50 bg-[#F4EBDA] px-4 py-2.5 text-[11px] font-medium tracking-[0.12em] text-[#5C431C] transition-colors hover:bg-[#EBCF8F] disabled:opacity-50"
                   >
                     {simulatingPayment
-                      ? 'Đang gửi webhook đối soát...'
-                      : 'Giả lập thanh toán thành công (Dev)'}
+                      ? 'Đang giả lập SePay...'
+                      : 'Giả lập chuyển khoản SePay (Dev)'}
                   </button>
                 ) : null}
               </div>
@@ -1343,8 +1594,8 @@ export function CheckoutPageClient() {
                 {[
                   {
                     method: PaymentMethod.VIETQR,
-                    title: 'VietQR PayOS (Khuyên dùng)',
-                    desc: 'Quét mã đối soát tự động 24/7, giữ kho 15 phút an toàn.',
+                    title: 'VietQR · SePay Tự động (Khuyên dùng)',
+                    desc: 'Quét mã QR chuyển khoản ngân hàng — SePay tự động đối soát 24/7 trong 5–15 giây, giữ kho 15 phút.',
                   },
                   {
                     method: PaymentMethod.VNPAY,

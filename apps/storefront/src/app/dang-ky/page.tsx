@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { LoginResponse } from '@atelier/contracts';
 import { InnerPageFrame } from '@/components/layout/InnerPageFrame';
+import { SocialOAuthButtons } from '@/components/SocialOAuthButtons';
 import {
   apiFetch,
   mergeGuestCartAfterAuth,
@@ -19,6 +20,24 @@ export default function CustomerRegisterPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const oauthError = params.get('oauthError');
+    const oauthErrorCode = params.get('oauthErrorCode');
+    if (oauthError || oauthErrorCode) {
+      setErrorMessage(
+        oauthError?.trim() ||
+          'Đăng nhập nhanh không thành công. Vui lòng thử lại hoặc đăng ký bằng Email & Mật khẩu.',
+      );
+      params.delete('oauthError');
+      params.delete('oauthErrorCode');
+      const nextSearch = params.toString();
+      const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
+      window.history.replaceState({}, '', nextUrl);
+    }
+  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -47,10 +66,18 @@ export default function CustomerRegisterPage() {
       return;
     }
 
-    setErrorMessage(
-      res.error?.message ||
-        'Đăng ký không thành công. Kiểm tra email và mật khẩu (tối thiểu 8 ký tự).',
-    );
+    const errorCode = String(res.error?.code ?? '');
+    if (errorCode === 'EMAIL_BOUND_TO_OAUTH' || res.status === 409) {
+      setErrorMessage(
+        res.error?.message ||
+          'Email này đã được tạo qua đăng nhập nhanh bằng Google/GitHub nên không thể đăng ký tài khoản mới. Vui lòng tiếp tục đăng nhập bằng Google/GitHub.',
+      );
+    } else {
+      setErrorMessage(
+        res.error?.message ||
+          'Đăng ký không thành công. Kiểm tra email và mật khẩu (tối thiểu 8 ký tự).',
+      );
+    }
     setLoading(false);
   };
 
@@ -124,7 +151,11 @@ export default function CustomerRegisterPage() {
             </label>
 
             {errorMessage ? (
-              <p className="rounded-xl border border-[#8B2E2E]/35 bg-[#FFF5F4] px-3.5 py-2.5 text-xs text-[#8B2E2E]">
+              <p
+                role="alert"
+                data-testid="register-error-alert"
+                className="rounded-2xl border border-[#8B2E2E]/35 bg-[#FFF5F4] px-3.5 py-2.5 text-xs leading-relaxed text-[#8B2E2E]"
+              >
                 {errorMessage}
               </p>
             ) : null}
@@ -137,6 +168,13 @@ export default function CustomerRegisterPage() {
               {loading ? 'Đang khởi tạo...' : 'Đăng ký thành viên'}
             </button>
           </form>
+
+          <SocialOAuthButtons
+            mode="register"
+            returnTo="/tai-khoan"
+            disabled={loading}
+            onInlineError={setErrorMessage}
+          />
 
           <div className="mt-6 border-t border-[#B08A4A]/20 pt-4 text-center text-xs text-[#7A6A5B]">
             Đã có tài khoản?{' '}

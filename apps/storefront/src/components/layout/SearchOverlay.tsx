@@ -73,12 +73,18 @@ export function SearchOverlay({ open, onClose }: SearchOverlayProps) {
       }
     })();
 
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
-      cancelled = true;
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [open, onClose]);

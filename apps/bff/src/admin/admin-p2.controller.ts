@@ -542,6 +542,50 @@ export class AdminP2Controller {
     );
   }
 
+  @Get('payments/sepay/config')
+  @RequireAnyPermission(Permission.ORDER_READ, Permission.ORDER_REFUND_APPROVE)
+  async getSePayConfig(
+    @Req() req: Request,
+    @Res() res: Response,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<void> {
+    const upstream = await this.proxy.request({
+      method: 'GET',
+      url: `${this.config.paymentPromoServiceUrl}/v1/payments/sepay/config`,
+      req,
+      extraHeaders: this.buildActorHeaders(user),
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    this.proxy.sendProxyResponse(res, upstream, (payload) =>
+      redactRestrictedFields(payload, user.roles),
+    );
+  }
+
+  @Post('payments/sepay/sync')
+  @HttpCode(HttpStatus.OK)
+  @RequireAnyPermission(Permission.ORDER_READ, Permission.ORDER_REFUND_APPROVE)
+  async syncSePayTransactions(
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Res() res: Response,
+    @CurrentUser() user: JwtAccessPayload,
+  ): Promise<void> {
+    const correlationId = getOrCreateCorrelationId(req.headers as HeaderBag);
+    const upstream = await this.proxy.request({
+      method: 'POST',
+      url: `${this.config.paymentPromoServiceUrl}/v1/payments/sepay/sync`,
+      req,
+      body: body ?? {},
+      correlationId,
+      extraHeaders: this.buildActorHeaders(user),
+      timeoutMs: 25_000,
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    this.proxy.sendProxyResponse(res, upstream, (payload) =>
+      redactRestrictedFields(payload, user.roles),
+    );
+  }
+
   // ============================================================================
   // 3. Editorial CMS — Occasions & 6 Seasons (catalog-lookbook:4002)
   // ============================================================================

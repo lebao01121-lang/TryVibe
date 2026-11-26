@@ -11,6 +11,10 @@ import {
   type SizeChartDto,
 } from '@atelier/contracts';
 import {
+  AnimatedTelemetryNumber,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
+import {
   adminFetch,
   getAdminSession,
   type AdminStoredSession,
@@ -799,7 +803,8 @@ export function CategorySizeChartTab({
                   : 'border border-[#B08A4A]/35 bg-[#FBF7EF] text-[#5C4B41]'
             }`}
           >
-            1. Cây Danh mục · Categories ({categories.length})
+            1. Cây Danh mục · Categories (
+            <AnimatedTelemetryNumber value={categories.length} />)
           </button>
           <button
             type="button"
@@ -815,8 +820,36 @@ export function CategorySizeChartTab({
                   : 'border border-[#B08A4A]/35 bg-[#FBF7EF] text-[#5C4B41]'
             }`}
           >
-            2. Bảng Thông số Rập &amp; Size · Size Charts ({sizeCharts.length})
+            2. Bảng Thông số Rập &amp; Size · Size Charts (
+            <AnimatedTelemetryNumber value={sizeCharts.length} />)
           </button>
+        </div>
+
+        <div className="mt-4">
+          <LiveStreamProgressBar
+            percent={
+              categories.length > 0
+                ? Math.round(
+                    (categories.filter((c) => c.isActive).length /
+                      categories.length) *
+                      100,
+                  )
+                : 0
+            }
+            tone="gold"
+            height="xs"
+            isDark={darkMode}
+            label={`Tỷ lệ danh mục kích hoạt (${categories.filter((c) => c.isActive).length}/${categories.length}) · ${sizeCharts.length} bảng rập chuẩn hóa`}
+            rightText={`${
+              categories.length > 0
+                ? Math.round(
+                    (categories.filter((c) => c.isActive).length /
+                      categories.length) *
+                      100,
+                  )
+                : 0
+            }%`}
+          />
         </div>
 
         {errorMsg ? (

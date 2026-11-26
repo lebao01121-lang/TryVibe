@@ -22,6 +22,8 @@ import {
   type TryOnUploadUrlResponse,
 } from '@atelier/contracts';
 import {
+  AnimatedTelemetryNumber,
+  LiveStreamProgressBar,
   applyCameraActiveState,
   useCameraGpuGuard,
   useMotionState,
@@ -3127,28 +3129,64 @@ export function VirtualTryOnModal({
               </button>
             </div>
 
-            <span
+            <div
               data-testid="tryon-daily-quota-badge"
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#B08A4A]/40 bg-[#221813] px-2.5 py-1 font-mono text-[10px] text-[#EBCF8F]"
+              className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[#B08A4A]/40 bg-[#221813] px-3 py-1 font-mono text-[10px] text-[#EBCF8F]"
             >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  serverQuota && serverQuota.remainingQuota === 0
-                    ? 'bg-amber-400'
-                    : 'bg-emerald-400'
-                }`}
-              />
+              <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
+                {!(serverQuota && serverQuota.remainingQuota === 0) ? (
+                  <span
+                    aria-hidden="true"
+                    className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-400/75"
+                  />
+                ) : null}
+                <span
+                  className={`relative h-1.5 w-1.5 rounded-full ${
+                    serverQuota && serverQuota.remainingQuota === 0
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-400'
+                  }`}
+                />
+              </span>
               {serverQuota ? (
-                <span>
-                  Còn {serverQuota.remainingQuota}/{serverQuota.dailyLimit} lượt
-                  AI hôm nay
-                </span>
+                <div className="flex items-center gap-2">
+                  <span>
+                    Còn{' '}
+                    <AnimatedTelemetryNumber
+                      value={serverQuota.remainingQuota}
+                    />
+                    /{serverQuota.dailyLimit} lượt AI
+                  </span>
+                  <div className="hidden w-14 sm:block">
+                    <LiveStreamProgressBar
+                      percent={
+                        serverQuota.dailyLimit > 0
+                          ? Math.round(
+                              (serverQuota.remainingQuota /
+                                serverQuota.dailyLimit) *
+                                100,
+                            )
+                          : 0
+                      }
+                      tone={
+                        serverQuota.remainingQuota === 0
+                          ? 'crimson'
+                          : serverQuota.remainingQuota <= 2
+                            ? 'amber'
+                            : 'emerald'
+                      }
+                      height="xs"
+                      isDark
+                      ariaLabel="Hạn mức lượt thử đồ AI mỗi ngày"
+                    />
+                  </div>
+                </div>
               ) : serverQuotaLoading ? (
                 <span>Đang tải hạn mức AI...</span>
               ) : (
                 <span>Hạn mức AI miễn phí mỗi ngày</span>
               )}
-            </span>
+            </div>
           </div>
 
           {/* 3 Practical Input Mode Tabs (shown in AR Mirror mode) */}

@@ -160,16 +160,32 @@ export async function seedOrderDatabase(db: AtelierDbClient): Promise<OrderSeedS
   );
   const actualOrderItemId = existingItemRes.rows[0]?.id ?? orderItemId;
 
+  const minioPublicUrl = (
+    process.env.MINIO_PUBLIC_URL?.trim() ||
+    `http://${process.env.MINIO_ENDPOINT?.trim() || '127.0.0.1'}:${process.env.MINIO_PORT?.trim() || '9000'}`
+  ).replace(/\/+$/, '');
+  const minioPublicBucket = process.env.MINIO_BUCKET_PUBLIC?.trim() || 'atelier-public';
+  const seedPackPhotoUrl = `${minioPublicUrl}/${minioPublicBucket}/seed/packaging-hop-lua-co-dien.webp`;
+
   await db.query(
     `INSERT INTO shipments (
        id, order_id, warehouse_code, carrier, tracking_code,
        status, pack_photo_url, cod_collect_vnd, updated_at
      ) VALUES (
        $1, $2, 'HN_ATELIER', 'GHN', 'GHN-2026SEED01',
-       $3, 'http://127.0.0.1:9000/atelier-public/seed/pack-seed01.webp', 0, NOW() - INTERVAL '3 days'
+       $3, $4, 0, NOW() - INTERVAL '3 days'
      )
      ON CONFLICT (tracking_code) DO NOTHING`,
-    [shipmentId, actualOrderId, ShipmentStatus.DELIVERED],
+    [shipmentId, actualOrderId, ShipmentStatus.DELIVERED, seedPackPhotoUrl],
+  );
+
+  // Repair legacy seeded shipment row pointing to missing pack-seed01.webp on already-seeded databases
+  await db.query(
+    `UPDATE shipments
+        SET pack_photo_url = $1
+      WHERE tracking_code = 'GHN-2026SEED01'
+        AND pack_photo_url LIKE '%/seed/pack-seed01.webp'`,
+    [seedPackPhotoUrl],
   );
 
   const seededRmas: ReadonlyArray<{

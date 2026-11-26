@@ -22,6 +22,10 @@ import {
   type RmaRequestDTO,
   type Role,
 } from '@atelier/contracts';
+import {
+  AnimatedTelemetryNumber,
+  LiveStackedHealthBar,
+} from '@atelier/motion-kit';
 import { adminFetch, extractList } from '@/lib/api-client';
 import { PrinterIcon } from '../AdminIcons';
 import { emitPortalToast } from '../PortalToastBanner';
@@ -108,8 +112,9 @@ const RMA_REASON_LABELS: Record<RmaReasonCode, string> = {
   [RmaReasonCode.KHAC]: 'Lý do khác',
 };
 
-const DEFAULT_PACK_PHOTO_URL =
-  'https://atelier.local/media/pack-box-signature-ivory.webp';
+const DEFAULT_PACK_PHOTO_URL = `${(
+  process.env.NEXT_PUBLIC_MINIO_URL || 'http://127.0.0.1:9000'
+).replace(/\/+$/, '')}/atelier-public/seed/packaging-hop-lua-co-dien.webp`;
 const PACK_PHOTO_ALLOWED_MIMES = new Set([
   'image/jpeg',
   'image/png',
@@ -451,11 +456,11 @@ export function OrdersRmaTab({ onRefreshOverview }: OrdersRmaTabProps) {
       sizeKb: Math.max(1, Math.round(file.size / 1024)),
     });
     setPackPhotoUploading(true);
-    setPackPhotoProgress(20);
+    setPackPhotoProgress(35);
 
-    const progressTimer = window.setInterval(() => {
-      setPackPhotoProgress((prev) => (prev < 85 ? prev + 15 : prev));
-    }, 220);
+    const progressTimer = window.setTimeout(() => {
+      setPackPhotoProgress(78);
+    }, 320);
 
     try {
       const formData = new FormData();
@@ -471,7 +476,7 @@ export function OrdersRmaTab({ onRefreshOverview }: OrdersRmaTabProps) {
         },
       );
 
-      window.clearInterval(progressTimer);
+      window.clearTimeout(progressTimer);
 
       if (res.ok && res.data) {
         const uploadedUrl = extractUploadedMediaUrl(res.data);
@@ -497,7 +502,7 @@ export function OrdersRmaTab({ onRefreshOverview }: OrdersRmaTabProps) {
         );
       }
     } catch (err) {
-      window.clearInterval(progressTimer);
+      window.clearTimeout(progressTimer);
       setPackPhotoProgress(0);
       setPackPhotoError(
         err instanceof Error
@@ -933,7 +938,9 @@ export function OrdersRmaTab({ onRefreshOverview }: OrdersRmaTabProps) {
               Phiếu giao
             </p>
             <h2 className="font-editorial mt-1 text-3xl text-[#1C1410]">
-              Quản lý Đơn hàng ({filteredOrders.length} / {orders.length})
+              Quản lý Đơn hàng (
+              <AnimatedTelemetryNumber value={filteredOrders.length} /> /{' '}
+              <AnimatedTelemetryNumber value={orders.length} />)
             </h2>
           </div>
 
@@ -945,6 +952,41 @@ export function OrdersRmaTab({ onRefreshOverview }: OrdersRmaTabProps) {
           >
             {loading ? 'Đang tải...' : 'Làm mới đơn & RMA'}
           </button>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[#B08A4A]/20 bg-[#FBF7EF]/80 px-4 py-3">
+          <LiveStackedHealthBar
+            segments={[
+              {
+                id: 'completed',
+                label: 'Đã giao / Hoàn tất',
+                value: orders.filter(
+                  (o) =>
+                    o.status === OrderStatus.DELIVERED ||
+                    o.status === OrderStatus.COMPLETED,
+                ).length,
+                tone: 'emerald',
+              },
+              {
+                id: 'processing',
+                label: 'Đang đóng gói / Vận chuyển',
+                value: orders.filter(
+                  (o) =>
+                    o.status === OrderStatus.CONFIRMED ||
+                    o.status === OrderStatus.PACKING ||
+                    o.status === OrderStatus.SHIPPED ||
+                    o.status === OrderStatus.AWAITING_PAYMENT,
+                ).length,
+                tone: 'amber',
+              },
+              {
+                id: 'rma-alerts',
+                label: 'RMA & Thanh toán trễ',
+                value: rmas.length + latePaymentOrders.length,
+                tone: 'crimson',
+              },
+            ]}
+          />
         </div>
 
         {feedback ? (

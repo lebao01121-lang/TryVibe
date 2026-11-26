@@ -1,6 +1,8 @@
 @import "tailwindcss";
+@source "../../../../packages/motion-kit/src";
 @import "@atelier/ui-tokens/tokens.css";
 @import "@atelier/ui-tokens/theme.css";
+@import "@atelier/ui-tokens/live-telemetry-motion.css";
 
 :root {
   --ptr-cocoa: var(--cocoa, #1C1410);

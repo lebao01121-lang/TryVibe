@@ -15,6 +15,10 @@ import {
   type ProductSpuDto,
   type Role,
 } from '@atelier/contracts';
+import {
+  AnimatedTelemetryNumber,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
 import { adminFetch, type AdminStoredSession } from '@/lib/api-client';
 import { emitPortalToast } from '../PortalToastBanner';
 
@@ -504,9 +508,26 @@ export function MediaStudioTab({
         <p className={`ledger-eyebrow ${goldTextCls}`}>
           Dual Media Studio · Kiểm định Magic Bytes + Pixel BoundingBox + Sharp Pipeline
         </p>
-        <h2 className="font-editorial mt-1 text-3xl">
-          Tải lên &amp; Chuẩn hóa ảnh 2:3 Alpha / 3:4 Flat-Lay
+        <h2 className="font-editorial mt-1 flex flex-wrap items-center gap-2.5 text-3xl">
+          <span>Tải lên &amp; Chuẩn hóa ảnh 2:3 Alpha / 3:4 Flat-Lay</span>
+          <span className="rounded-full border border-[#B08A4A]/35 px-2.5 py-0.5 font-mono text-xs text-[#8A672C] dark:text-[#EBCF8F]">
+            <AnimatedTelemetryNumber value={assets.length} /> assets ·{' '}
+            <AnimatedTelemetryNumber value={products.length} /> SPU
+          </span>
         </h2>
+        <div className="mt-2.5 max-w-md">
+          <LiveStreamProgressBar
+            percent={uploading ? 68 : assets.length > 0 ? 100 : 12}
+            tone={uploading ? 'amber' : 'emerald'}
+            height="xs"
+            isDark={darkMode}
+            label={
+              uploading
+                ? 'Đang quét Magic Bytes & Pixel BoundingBox...'
+                : 'Pipeline Sharp WebP Alpha & MinIO sẵn sàng'
+            }
+          />
+        </div>
         <p className={`mt-1 text-xs ${mutedCls}`}>
           Hệ thống kiểm tra Magic Bytes thực của tệp (từ chối{' '}
           <code>400 INVALID_MAGIC_BYTES</code> nếu giả mạo đuôi), tự động quét

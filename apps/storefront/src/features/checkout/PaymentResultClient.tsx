@@ -64,6 +64,8 @@ function formatProviderLabel(provider: string | null | undefined): string {
     case 'MOMO':
       return 'Ví điện tử MoMo';
     case 'VIETQR':
+    case 'SEPAY':
+      return 'VietQR · SePay Tự động';
     case 'PAYOS':
       return 'VietQR · PayOS';
     default:

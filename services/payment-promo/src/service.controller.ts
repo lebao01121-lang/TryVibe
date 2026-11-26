@@ -103,8 +103,17 @@ export class PaymentPromoController {
           'voucher_redemptions',
         ],
         paymentGateways: ['VIETQR', 'VNPAY', 'MOMO', 'COD'],
+        vietqrProvider: this.config.vietqrProvider,
+        sepay: {
+          mode: this.config.sepay.isLiveConfigured ? 'LIVE' : 'SANDBOX_LOCAL',
+          bankCode: this.config.sepay.bankCode,
+          webhookApiKeyConfigured: this.config.sepay.webhookApiKeyConfigured,
+          apiTokenConfigured: this.config.sepay.apiTokenConfigured,
+          autoPollEnabled: this.config.sepay.autoPollEnabled,
+        },
         idempotencyPolicy: {
           webhookSignatureVerification: 'HMAC_SHA256_TIMING_SAFE',
+          sepayWebhookAuthVerification: 'SEPAY_APIKEY_TIMING_SAFE',
           uniqueWebhookConstraint: '(provider, provider_event_id)',
           latePaymentDetection: true,
         },

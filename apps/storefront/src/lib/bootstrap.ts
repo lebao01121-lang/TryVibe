@@ -64,6 +64,64 @@ export interface PdpCompositeView {
   reviewsDegraded: boolean;
 }
 
+interface StorefrontMemoryCacheEntry<T> {
+  value: T;
+  expiresAt: number;
+  tags: readonly string[];
+}
+
+const storefrontMemoryCache = new Map<string, StorefrontMemoryCacheEntry<unknown>>();
+const MAX_STOREFRONT_CACHE_ENTRIES = 128;
+
+function getMemoryCached<T>(key: string): T | null {
+  const entry = storefrontMemoryCache.get(key);
+  if (!entry) return null;
+  if (Date.now() >= entry.expiresAt) {
+    storefrontMemoryCache.delete(key);
+    return null;
+  }
+  return entry.value as T;
+}
+
+function setMemoryCached<T>(
+  key: string,
+  value: T,
+  ttlMs: number,
+  tags: readonly string[],
+): void {
+  if (
+    storefrontMemoryCache.size >= MAX_STOREFRONT_CACHE_ENTRIES &&
+    !storefrontMemoryCache.has(key)
+  ) {
+    const oldestKey = storefrontMemoryCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      storefrontMemoryCache.delete(oldestKey);
+    }
+  }
+  storefrontMemoryCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+    tags,
+  });
+}
+
+export function invalidateStorefrontMemoryCache(tags?: readonly string[]): void {
+  if (!tags || tags.length === 0) {
+    storefrontMemoryCache.clear();
+    return;
+  }
+  const tagSet = new Set(tags);
+  if (tagSet.has('storefront')) {
+    storefrontMemoryCache.clear();
+    return;
+  }
+  for (const [key, entry] of storefrontMemoryCache.entries()) {
+    if (entry.tags.some((t) => tagSet.has(t))) {
+      storefrontMemoryCache.delete(key);
+    }
+  }
+}
+
 export function getServerBffUrl(): string {
   if (typeof window !== 'undefined') {
     return '';
@@ -305,10 +363,14 @@ function buildFallbackSeasonalCollections(): SeasonalCollectionDto[] {
 }
 
 export async function fetchRackCollection(): Promise<RackGarmentItemDto[]> {
+  const cacheKey = 'rack-collection';
+  const cached = getMemoryCached<RackGarmentItemDto[]>(cacheKey);
+  if (cached) return cached;
+
   const bffUrl = getServerBffUrl();
   try {
     const res = await fetch(`${bffUrl}/bff/v1/storefront/rack-collection`, {
-      next: { revalidate: 120, tags: ['storefront', 'rack'] },
+      cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(2500),
     });
@@ -320,20 +382,27 @@ export async function fetchRackCollection(): Promise<RackGarmentItemDto[]> {
         const items = Array.isArray(json.data)
           ? json.data
           : json.data.items ?? [];
-        if (items.length > 0) return items;
+        if (items.length > 0) {
+          setMemoryCached(cacheKey, items, 120_000, ['storefront', 'rack']);
+          return items;
+        }
       }
     }
   } catch {
-    // Fallback below
+    // Fallback below (never cached)
   }
   return buildFallbackRackItems();
 }
 
 export async function fetchOccasionLookbooks(): Promise<OccasionLookbookDto[]> {
+  const cacheKey = 'occasions';
+  const cached = getMemoryCached<OccasionLookbookDto[]>(cacheKey);
+  if (cached) return cached;
+
   const bffUrl = getServerBffUrl();
   try {
     const res = await fetch(`${bffUrl}/bff/v1/storefront/occasions`, {
-      next: { revalidate: 300, tags: ['storefront', 'occasions'] },
+      cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(2500),
     });
@@ -345,11 +414,14 @@ export async function fetchOccasionLookbooks(): Promise<OccasionLookbookDto[]> {
         const list = Array.isArray(json.data)
           ? json.data
           : json.data.items ?? [];
-        if (list.length > 0) return list;
+        if (list.length > 0) {
+          setMemoryCached(cacheKey, list, 180_000, ['storefront', 'occasions']);
+          return list;
+        }
       }
     }
   } catch {
-    // Fallback below
+    // Fallback below (never cached)
   }
   return buildFallbackOccasionLookbooks();
 }
@@ -357,10 +429,14 @@ export async function fetchOccasionLookbooks(): Promise<OccasionLookbookDto[]> {
 export async function fetchSeasonalCollections(): Promise<
   SeasonalCollectionDto[]
 > {
+  const cacheKey = 'seasons';
+  const cached = getMemoryCached<SeasonalCollectionDto[]>(cacheKey);
+  if (cached) return cached;
+
   const bffUrl = getServerBffUrl();
   try {
     const res = await fetch(`${bffUrl}/bff/v1/storefront/seasons`, {
-      next: { revalidate: 300, tags: ['storefront', 'seasons'] },
+      cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(2500),
     });
@@ -372,11 +448,14 @@ export async function fetchSeasonalCollections(): Promise<
         const list = Array.isArray(json.data)
           ? json.data
           : json.data.items ?? [];
-        if (list.length > 0) return list;
+        if (list.length > 0) {
+          setMemoryCached(cacheKey, list, 180_000, ['storefront', 'seasons']);
+          return list;
+        }
       }
     }
   } catch {
-    // Fallback below
+    // Fallback below (never cached)
   }
   return buildFallbackSeasonalCollections();
 }
@@ -402,11 +481,18 @@ export async function fetchStorefrontProducts(
   if (params.limit) query.set('limit', String(params.limit));
 
   const qs = query.toString();
+  const cacheKey = `products:${qs}`;
+  const cached = getMemoryCached<{
+    source: 'live-bff' | 'editorial-fallback';
+    products: ProductSpuDto[];
+  }>(cacheKey);
+  if (cached) return cached;
+
   try {
     const res = await fetch(
       `${bffUrl}/bff/v1/storefront/products${qs ? `?${qs}` : ''}`,
       {
-        next: { revalidate: 120, tags: ['storefront', 'products'] },
+        cache: 'no-store',
         headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(2500),
       },
@@ -415,11 +501,15 @@ export async function fetchStorefrontProducts(
       const json = (await res.json()) as ApiResponse<unknown>;
       const items = extractProductArray(json?.data);
       if (json?.success) {
-        return { source: 'live-bff', products: items };
+        const result = { source: 'live-bff' as const, products: items };
+        if (items.length > 0) {
+          setMemoryCached(cacheKey, result, 120_000, ['storefront', 'products']);
+        }
+        return result;
       }
     }
   } catch {
-    // Graceful offline fallback
+    // Graceful offline fallback (never cached)
   }
 
   let filtered = [...FALLBACK_PRODUCTS];
@@ -471,15 +561,16 @@ export async function fetchStorefrontProducts(
 export async function fetchPdpCompositeBySlug(
   slug: string,
 ): Promise<PdpCompositeView> {
+  const cacheKey = `pdp:${slug}`;
+  const cached = getMemoryCached<PdpCompositeView>(cacheKey);
+  if (cached) return cached;
+
   const bffUrl = getServerBffUrl();
   try {
     const res = await fetch(
       `${bffUrl}/bff/v1/storefront/products/${encodeURIComponent(slug)}`,
       {
-        next: {
-          revalidate: 120,
-          tags: ['storefront', 'products', `product:${slug}`],
-        },
+        cache: 'no-store',
         headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(2500),
       },
@@ -496,17 +587,25 @@ export async function fetchPdpCompositeBySlug(
       if (json?.success && json.data) {
         const raw = json.data;
         const product: ProductSpuDto = raw.product ?? raw;
-        return {
+        const view: PdpCompositeView = {
           source: 'live-bff',
           product,
           fitStats: raw.fitStats ?? null,
           reviews: Array.isArray(raw.reviews) ? raw.reviews : [],
           reviewsDegraded: Boolean(raw.reviewsDegraded),
         };
+        if (!view.reviewsDegraded) {
+          setMemoryCached(cacheKey, view, 120_000, [
+            'storefront',
+            'products',
+            `product:${slug}`,
+          ]);
+        }
+        return view;
       }
     }
   } catch {
-    // Fallback below
+    // Fallback below (never cached)
   }
 
   const fallback =
@@ -521,6 +620,10 @@ export async function fetchPdpCompositeBySlug(
 }
 
 export async function fetchStorefrontBootstrap(): Promise<StorefrontBootstrapView> {
+  const cacheKey = 'bootstrap';
+  const cached = getMemoryCached<StorefrontBootstrapView>(cacheKey);
+  if (cached) return cached;
+
   const bffUrl = getServerBffUrl();
 
   const fallback: StorefrontBootstrapView = {
@@ -542,7 +645,7 @@ export async function fetchStorefrontBootstrap(): Promise<StorefrontBootstrapVie
 
   try {
     const response = await fetch(`${bffUrl}/bff/v1/storefront/bootstrap`, {
-      next: { revalidate: 300, tags: ['storefront', 'bootstrap'] },
+      cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(2500),
     });
@@ -656,17 +759,24 @@ export async function fetchStorefrontBootstrap(): Promise<StorefrontBootstrapVie
       data.featuredProducts && data.featuredProducts.length > 0
         ? data.featuredProducts
         : [];
+    let hasLiveFeatured = featuredProducts.length > 0;
 
     if (featuredProducts.length === 0) {
       const listRes = await fetchStorefrontProducts({ limit: 12 });
-      featuredProducts =
-        listRes.products.length > 0
-          ? listRes.products
-          : fallback.featuredProducts;
+      if (listRes.source === 'live-bff' && listRes.products.length > 0) {
+        featuredProducts = listRes.products;
+        hasLiveFeatured = true;
+      } else {
+        featuredProducts = fallback.featuredProducts;
+        hasLiveFeatured = false;
+      }
     }
 
-    return {
-      source: 'live-bff',
+    const bffHealth = (data.serviceStatus?.bff || '').toLowerCase();
+    const isHealthy = bffHealth !== 'degraded' && hasLiveFeatured;
+
+    const view: StorefrontBootstrapView = {
+      source: isHealthy ? 'live-bff' : 'editorial-fallback',
       bffUrl: '',
       intro,
       hero,
@@ -684,6 +794,13 @@ export async function fetchStorefrontBootstrap(): Promise<StorefrontBootstrapVie
           ? data.packagingOptions
           : DEFAULT_PACKAGING_DTO,
     };
+
+    // Only cache healthy live bootstrap responses — NEVER poison cache with cold-boot degraded state
+    if (isHealthy) {
+      setMemoryCached(cacheKey, view, 180_000, ['storefront', 'bootstrap']);
+    }
+
+    return view;
   } catch {
     return fallback;
   }

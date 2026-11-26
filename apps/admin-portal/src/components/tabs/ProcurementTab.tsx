@@ -20,6 +20,10 @@ import {
   type SupplierPayableDTO,
   type WarehouseDto,
 } from '@atelier/contracts';
+import {
+  AnimatedTelemetryNumber,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
 import { adminFetch, extractList } from '@/lib/api-client';
 import { emitPortalToast } from '../PortalToastBanner';
 
@@ -767,12 +771,17 @@ export function ProcurementTab({ onRefreshOverview }: ProcurementTabProps) {
               Payables
             </p>
             <h2 className="font-editorial mt-1 text-3xl text-[#1C1410]">
-              Sổ Đơn Đặt Hàng Nhập (Purchase Orders · {purchaseOrders.length})
+              Sổ Đơn Đặt Hàng Nhập (Purchase Orders ·{' '}
+              <AnimatedTelemetryNumber value={purchaseOrders.length} />)
             </h2>
             <p className="mt-1 text-xs text-[#7A6A5B]">
               Hỗ trợ lập PO đa dòng SKU, duyệt bản nháp <code>NHAP_AI</code> từ
               MCP Copilot, quản lý nhà cung cấp, hủy PO và tất toán công nợ đối
-              tác.
+              tác (Chờ tất toán:{' '}
+              <strong className="font-mono text-[#8A672C]">
+                <AnimatedTelemetryNumber value={unpaidTotalVnd} format="vnd" />
+              </strong>
+              ).
             </p>
           </div>
 
@@ -1216,26 +1225,58 @@ export function ProcurementTab({ onRefreshOverview }: ProcurementTabProps) {
                     </div>
                   </div>
 
-                  {po.items.length > 0 ? (
-                    <div className="mt-3 grid gap-1.5 border-t border-[#B08A4A]/15 pt-2.5 sm:grid-cols-2">
-                      {po.items.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between rounded-xl bg-white px-3 py-1.5 font-mono text-[11px]"
-                        >
-                          <span>
-                            {item.skuCode} · Đặt {item.orderedQty} (Đã nhận đạt:{' '}
-                            {item.acceptedQty})
-                          </span>
-                          <span className="text-[#8A672C]">
-                            {item.unitCostVnd != null
-                              ? `${FORMAT_VND(item.unitCostVnd)}/sp`
-                              : '[RBAC]'}
-                          </span>
+                  {po.items.length > 0 ? (() => {
+                    const totalOrdered = po.items.reduce(
+                      (s, it) => s + Math.max(0, it.orderedQty),
+                      0,
+                    );
+                    const totalAccepted = po.items.reduce(
+                      (s, it) => s + Math.max(0, it.acceptedQty),
+                      0,
+                    );
+                    const grnPct =
+                      totalOrdered > 0
+                        ? Math.min(
+                            100,
+                            Math.round((totalAccepted / totalOrdered) * 100),
+                          )
+                        : 0;
+                    return (
+                      <div className="mt-3 space-y-2.5 border-t border-[#B08A4A]/15 pt-2.5">
+                        <LiveStreamProgressBar
+                          percent={grnPct}
+                          tone={
+                            grnPct >= 100
+                              ? 'emerald'
+                              : grnPct > 0
+                                ? 'gold'
+                                : 'amber'
+                          }
+                          height="xs"
+                          label={`Tiến độ nhập kho PO → GRN (${totalAccepted}/${totalOrdered} sp)`}
+                          rightText={`${grnPct}%`}
+                        />
+                        <div className="grid gap-1.5 sm:grid-cols-2">
+                          {po.items.map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center justify-between rounded-xl bg-white px-3 py-1.5 font-mono text-[11px]"
+                            >
+                              <span>
+                                {item.skuCode} · Đặt {item.orderedQty} (Đã nhận
+                                đạt: {item.acceptedQty})
+                              </span>
+                              <span className="text-[#8A672C]">
+                                {item.unitCostVnd != null
+                                  ? `${FORMAT_VND(item.unitCostVnd)}/sp`
+                                  : '[RBAC]'}
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  ) : null}
+                      </div>
+                    );
+                  })() : null}
                 </article>
               );
             })

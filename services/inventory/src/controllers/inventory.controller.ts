@@ -244,6 +244,15 @@ export class InventoryApiController {
     });
   }
 
+  @Post('batch-availability')
+  @HttpCode(HttpStatus.OK)
+  async getBatchAvailabilityAlias(
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<ApiResponse<BatchAvailabilityResponse>> {
+    return this.getBatchAvailability(body, req);
+  }
+
   @Post('reservations')
   @HttpCode(HttpStatus.CREATED)
   async reserveStock(

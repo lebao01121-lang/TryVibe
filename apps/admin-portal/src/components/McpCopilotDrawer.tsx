@@ -538,53 +538,67 @@ export function McpCopilotDrawer({
   if (!isOpen) {
     return (
       <div className="fixed right-5 bottom-5 z-40">
-        <button
-          type="button"
-          data-testid="copilot-floating-launcher"
-          onClick={onToggleOpen}
-          aria-label="Mở Trợ lý Điều hành AI MCP Copilot"
-          className="group flex items-center gap-3 rounded-2xl border border-[#EBCF8F]/45 bg-gradient-to-r from-[#19120D] via-[#221811] to-[#16100C] px-4 py-2.5 text-left text-[#FBF7EF] shadow-[0_18px_42px_-12px_rgba(22,16,12,0.78)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#EBCF8F]/85 hover:shadow-[0_22px_48px_-12px_rgba(176,138,74,0.42)]"
-        >
-          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#EBCF8F]/35 bg-[#B08A4A]/20 text-[#EBCF8F]">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-5 w-5"
-              aria-hidden="true"
-            >
-              <path d="M12 3v3" />
-              <rect x="4" y="6" width="16" height="12" rx="3" />
-              <path d="M9 11h.01" />
-              <path d="M15 11h.01" />
-              <path d="M9 15c1 .8 2 .8 3 .8s2 0 3-.8" />
-              <path d="M2 12h2" />
-              <path d="M20 12h2" />
-            </svg>
-            <span
-              className={`absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#19120D] ${
-                ollamaInfo.reachable ? 'bg-emerald-400' : 'bg-amber-400'
-              }`}
-            />
-          </span>
-          <span className="min-w-0">
-            <span className="flex items-center gap-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.11em] text-[#FBF7EF]">
-                TRỢ LÝ ĐIỀU HÀNH AI
-              </span>
-              <span className="rounded-md border border-[#EBCF8F]/40 bg-[#B08A4A]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-[0.06em] text-[#EBCF8F]">
-                LLM + MCP
+        <div className="telemetry-copilot-halo-wrap shadow-[0_18px_42px_-12px_rgba(22,16,12,0.78)] transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_-12px_rgba(176,138,74,0.48)]">
+          <span
+            aria-hidden="true"
+            className="telemetry-anim telemetry-copilot-halo-ring"
+          />
+          <button
+            type="button"
+            data-testid="copilot-floating-launcher"
+            onClick={onToggleOpen}
+            aria-label="Mở Trợ lý Điều hành AI MCP Copilot"
+            className="group relative z-10 flex items-center gap-3 rounded-[14px] bg-gradient-to-r from-[#19120D] via-[#221811] to-[#16100C] px-4 py-2.5 text-left text-[#FBF7EF]"
+          >
+            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#EBCF8F]/35 bg-[#B08A4A]/20 text-[#EBCF8F]">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5"
+                aria-hidden="true"
+              >
+                <path d="M12 3v3" />
+                <rect x="4" y="6" width="16" height="12" rx="3" />
+                <path d="M9 11h.01" />
+                <path d="M15 11h.01" />
+                <path d="M9 15c1 .8 2 .8 3 .8s2 0 3-.8" />
+                <path d="M2 12h2" />
+                <path d="M20 12h2" />
+              </svg>
+              <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5 items-center justify-center">
+                {ollamaInfo.reachable ? (
+                  <span
+                    aria-hidden="true"
+                    className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-400/75"
+                  />
+                ) : null}
+                <span
+                  className={`relative h-2.5 w-2.5 rounded-full ring-2 ring-[#19120D] ${
+                    ollamaInfo.reachable ? 'bg-emerald-400' : 'bg-amber-400'
+                  }`}
+                />
               </span>
             </span>
-            <span className="mt-0.5 block font-mono text-[10px] text-[#EBCF8F]/80">
-              Ollama {ollamaInfo.activeMainModel} · MCP + HITL
-              {turns.length > 0 ? ` · ${turns.length} lượt` : ''}
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.11em] text-[#FBF7EF]">
+                  TRỢ LÝ ĐIỀU HÀNH AI
+                </span>
+                <span className="rounded-md border border-[#EBCF8F]/40 bg-[#B08A4A]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-[0.06em] text-[#EBCF8F]">
+                  LLM + MCP
+                </span>
+              </span>
+              <span className="mt-0.5 block font-mono text-[10px] text-[#EBCF8F]/80">
+                Ollama {ollamaInfo.activeMainModel} · MCP + HITL
+                {turns.length > 0 ? ` · ${turns.length} lượt` : ''}
+              </span>
             </span>
-          </span>
-        </button>
+          </button>
+        </div>
       </div>
     );
   }
@@ -1024,7 +1038,7 @@ export function McpCopilotDrawer({
 
               {/* Live Interactive Action Cards */}
               {resp && resp.actionCards.length > 0
-                ? resp.actionCards.map((card) => {
+                ? resp.actionCards.map((card, cardIdx) => {
                     const cardState = cardStates[card.id];
                     const itemsList = Array.isArray(card.payload.items)
                       ? (card.payload.items as Array<Record<string, unknown>>)
@@ -1038,7 +1052,10 @@ export function McpCopilotDrawer({
                       <article
                         key={card.id}
                         data-testid="copilot-action-card"
-                        className="rounded-2xl border border-[#B08A4A]/50 bg-[#FBF7EF] p-4 text-xs text-[#2B2019]"
+                        style={
+                          { '--row-idx': cardIdx } as React.CSSProperties
+                        }
+                        className="telemetry-anim telemetry-row-stagger telemetry-row-flash rounded-2xl border border-[#B08A4A]/50 bg-[#FBF7EF] p-4 text-xs text-[#2B2019]"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -1271,9 +1288,24 @@ export function McpCopilotDrawer({
         })}
 
         {sending ? (
-          <div className="rounded-2xl border border-[#B08A4A]/25 bg-[#241A14] px-4 py-3 text-xs text-[#EBCF8F]">
-            Ollama Qwen 2.5 Local AI đang thực thi công cụ qua BFF với JWT của
-            bạn...
+          <div className="relative overflow-hidden rounded-2xl border border-[#EBCF8F]/45 bg-[#241A14] px-4 py-3 text-xs text-[#EBCF8F]">
+            <span
+              aria-hidden="true"
+              className="telemetry-anim telemetry-sheen opacity-40"
+            />
+            <div className="relative flex items-center gap-2.5">
+              <span className="relative flex h-2.5 w-2.5 shrink-0 items-center justify-center">
+                <span
+                  aria-hidden="true"
+                  className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-400/75"
+                />
+                <span className="relative h-2 w-2 rounded-full bg-emerald-400" />
+              </span>
+              <span>
+                Ollama Qwen 2.5 Local AI đang thực thi công cụ qua BFF với JWT của
+                bạn...
+              </span>
+            </div>
           </div>
         ) : null}
       </div>

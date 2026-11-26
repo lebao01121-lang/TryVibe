@@ -80,11 +80,57 @@ export const JwtAccessPayloadSchema = z.object({
 });
 export type JwtAccessPayload = z.infer<typeof JwtAccessPayloadSchema>;
 
+export const AuthProvider = {
+  LOCAL: 'LOCAL',
+  GOOGLE: 'GOOGLE',
+  GITHUB: 'GITHUB',
+} as const;
+export type AuthProvider = (typeof AuthProvider)[keyof typeof AuthProvider];
+export const AuthProviderSchema = z.enum([
+  AuthProvider.LOCAL,
+  AuthProvider.GOOGLE,
+  AuthProvider.GITHUB,
+]);
+
+export const OAuthProvider = {
+  GOOGLE: 'GOOGLE',
+  GITHUB: 'GITHUB',
+} as const;
+export type OAuthProvider = (typeof OAuthProvider)[keyof typeof OAuthProvider];
+export const OAuthProviderSchema = z.enum([OAuthProvider.GOOGLE, OAuthProvider.GITHUB]);
+
+export const OAuthPortal = {
+  STOREFRONT: 'storefront',
+  ADMIN: 'admin',
+} as const;
+export type OAuthPortal = (typeof OAuthPortal)[keyof typeof OAuthPortal];
+export const OAuthPortalSchema = z.enum([OAuthPortal.STOREFRONT, OAuthPortal.ADMIN]);
+
+export const OAuthProviderPublicStatusSchema = z.object({
+  enabled: z.boolean(),
+  callbackUrl: z.string(),
+});
+export type OAuthProviderPublicStatus = z.infer<typeof OAuthProviderPublicStatusSchema>;
+
+export const OAuthProvidersStatusResponseSchema = z.object({
+  google: OAuthProviderPublicStatusSchema,
+  github: OAuthProviderPublicStatusSchema,
+  adminExceptionConfigured: z.boolean(),
+});
+export type OAuthProvidersStatusResponse = z.infer<typeof OAuthProvidersStatusResponseSchema>;
+
+export const OAuthExchangeRequestSchema = z.object({
+  ticket: z.string().trim().min(16).max(256),
+});
+export type OAuthExchangeRequest = z.infer<typeof OAuthExchangeRequestSchema>;
+
 export const UserSummaryDtoSchema = z.object({
   id: z.string().min(1),
   email: z.string().email(),
   fullName: z.string().min(1),
   phone: z.string().nullable().optional(),
+  avatarUrl: z.string().nullable().optional(),
+  authProvider: AuthProviderSchema.optional(),
   status: UserStatusSchema,
   roles: z.array(RoleSchema),
   permissions: z.array(PermissionSchema),

@@ -35,7 +35,10 @@ import {
 } from './storefront/storefront-bff.controller';
 import { StorefrontCheckoutController } from './storefront/storefront-checkout.controller';
 import { StorefrontCommerceTryOnController } from './storefront/storefront-commerce-tryon.controller';
-import { PublicWebhooksController } from './webhooks/public-webhooks.controller';
+import {
+  ApiPublicWebhooksController,
+  PublicWebhooksController,
+} from './webhooks/public-webhooks.controller';
 
 @Module({
   controllers: [
@@ -49,6 +52,7 @@ import { PublicWebhooksController } from './webhooks/public-webhooks.controller'
     StorefrontCommerceTryOnController,
     StorefrontCheckoutController,
     PublicWebhooksController,
+    ApiPublicWebhooksController,
     AdminBffController,
     AdminPhase5Controller,
     AdminP2Controller,

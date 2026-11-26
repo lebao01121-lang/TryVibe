@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/main.js",
     "dev": "tsx watch src/main.ts",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:oauth": "tsx test/oauth-policy.test.ts"
   },
   "dependencies": {
     "@atelier/contracts": "workspace:*",

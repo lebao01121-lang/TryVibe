@@ -5,6 +5,7 @@ import {
   Dancing_Script,
 } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { LiveMotionProvider } from '@atelier/motion-kit';
 import './globals.css';
 
 const cormorant = Cormorant_Garamond({
@@ -49,7 +50,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
       className={`${cormorant.variable} ${beVietnamPro.variable} ${dancingScript.variable}`}
     >
       <body className="min-h-screen bg-[#FBF7EF] text-[#2B2019]">
-        {children}
+        <LiveMotionProvider>{children}</LiveMotionProvider>
       </body>
     </html>
   );

@@ -9,6 +9,8 @@ const REVOKED_JTI_PREFIX = 'revoked_jti:';
 const REVOKED_FAMILY_PREFIX = 'revoked_family:';
 const EMAIL_OTP_PREFIX = 'mfa:email_otp:';
 const PASSWORD_RESET_PREFIX = 'auth:pwd_reset:';
+const OAUTH_STATE_PREFIX = 'oauth:state:';
+const OAUTH_TICKET_PREFIX = 'oauth:ticket:';
 
 @Injectable()
 export class AuthRedisService implements OnModuleInit, OnModuleDestroy {
@@ -16,6 +18,14 @@ export class AuthRedisService implements OnModuleInit, OnModuleDestroy {
   private readonly client: AtelierRedisClient;
   private readonly fallbackOtpStore = new Map<string, { code: string; expiresAtMs: number }>();
   private readonly fallbackPasswordResetStore = new Map<
+    string,
+    { value: string; expiresAtMs: number }
+  >();
+  private readonly fallbackOAuthStateStore = new Map<
+    string,
+    { value: string; expiresAtMs: number }
+  >();
+  private readonly fallbackOAuthTicketStore = new Map<
     string,
     { value: string; expiresAtMs: number }
   >();
@@ -219,5 +229,101 @@ export class AuthRedisService implements OnModuleInit, OnModuleDestroy {
     } catch {
       // Ignore Redis cleanup failure
     }
+  }
+
+  async setOAuthState(
+    state: string,
+    payloadJson: string,
+    ttlSeconds: number = 600,
+  ): Promise<void> {
+    const redisKey = `${OAUTH_STATE_PREFIX}${state}`;
+    try {
+      await this.client.set(redisKey, payloadJson, ttlSeconds);
+      this.fallbackOAuthStateStore.delete(state);
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        'Redis unavailable for OAuth state; using in-memory fallback',
+      );
+      this.fallbackOAuthStateStore.set(state, {
+        value: payloadJson,
+        expiresAtMs: Date.now() + ttlSeconds * 1000,
+      });
+    }
+  }
+
+  async consumeOAuthState(state: string): Promise<string | null> {
+    const redisKey = `${OAUTH_STATE_PREFIX}${state}`;
+    try {
+      const value = await this.client.get(redisKey);
+      if (value !== null) {
+        const deleted = await this.client.del(redisKey);
+        if (deleted >= 1) {
+          this.fallbackOAuthStateStore.delete(state);
+          return value;
+        }
+        return null;
+      }
+    } catch {
+      // Fall through to in-memory fallback
+    }
+
+    const fallback = this.fallbackOAuthStateStore.get(state);
+    if (!fallback) {
+      return null;
+    }
+    this.fallbackOAuthStateStore.delete(state);
+    if (fallback.expiresAtMs <= Date.now()) {
+      return null;
+    }
+    return fallback.value;
+  }
+
+  async setOAuthTicket(
+    ticket: string,
+    payloadJson: string,
+    ttlSeconds: number = 120,
+  ): Promise<void> {
+    const redisKey = `${OAUTH_TICKET_PREFIX}${ticket}`;
+    try {
+      await this.client.set(redisKey, payloadJson, ttlSeconds);
+      this.fallbackOAuthTicketStore.delete(ticket);
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        'Redis unavailable for OAuth ticket; using in-memory fallback',
+      );
+      this.fallbackOAuthTicketStore.set(ticket, {
+        value: payloadJson,
+        expiresAtMs: Date.now() + ttlSeconds * 1000,
+      });
+    }
+  }
+
+  async consumeOAuthTicket(ticket: string): Promise<string | null> {
+    const redisKey = `${OAUTH_TICKET_PREFIX}${ticket}`;
+    try {
+      const value = await this.client.get(redisKey);
+      if (value !== null) {
+        const deleted = await this.client.del(redisKey);
+        if (deleted >= 1) {
+          this.fallbackOAuthTicketStore.delete(ticket);
+          return value;
+        }
+        return null;
+      }
+    } catch {
+      // Fall through to in-memory fallback
+    }
+
+    const fallback = this.fallbackOAuthTicketStore.get(ticket);
+    if (!fallback) {
+      return null;
+    }
+    this.fallbackOAuthTicketStore.delete(ticket);
+    if (fallback.expiresAtMs <= Date.now()) {
+      return null;
+    }
+    return fallback.value;
   }
 }

@@ -2,6 +2,11 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { Portal, Role, type LoginResponse } from '@atelier/contracts';
+import {
+  AnimatedTelemetryNumber,
+  LiveKpiSparkCard,
+  LiveMotionTogglePill,
+} from '@atelier/motion-kit';
 import type {
   PartnerLiveOverviewData,
   PartnerOverviewStatus,
@@ -170,20 +175,23 @@ export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
             </h1>
           </div>
 
-          {session ? (
-            <div className="flex items-center gap-3 text-xs">
-              <span className="rounded-full border border-[#B08A4A]/45 px-3.5 py-1.5 font-mono text-[#EBCF8F]">
-                {roles.join(', ')}
-              </span>
-              <button
-                type="button"
-                onClick={() => void handleLogout()}
-                className="rounded-full border border-[#EBCF8F]/50 px-4 py-1.5 text-[11px] uppercase tracking-[0.14em] text-[#EBCF8F]"
-              >
-                Đăng xuất
-              </button>
-            </div>
-          ) : null}
+          <div className="flex items-center gap-2.5 text-xs">
+            <LiveMotionTogglePill compact tone="dark" />
+            {session ? (
+              <>
+                <span className="rounded-full border border-[#B08A4A]/45 px-3.5 py-1.5 font-mono text-[#EBCF8F]">
+                  {roles.join(', ')}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleLogout()}
+                  className="rounded-full border border-[#EBCF8F]/50 px-4 py-1.5 text-[11px] uppercase tracking-[0.14em] text-[#EBCF8F]"
+                >
+                  Đăng xuất
+                </button>
+              </>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -285,35 +293,122 @@ export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
             onMfaSuccess={handleMfaSuccess}
           >
             {liveOverview ? (
-              <div
-                data-testid="partner-live-overview-bar"
-                className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#B08A4A]/30 bg-white px-4 py-2.5 text-[11px] text-[#5C4B41]"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#2E6B47]/15 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-[#1E4B32]">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#2E6B47]" />
-                    B2B OVERVIEW LIVE
-                  </span>
-                  <span className="font-mono text-[10px] text-[#1C1410]">
-                    Mẫu đề xuất: {liveOverview.b2bSummary.submissionsTotal}
-                  </span>
-                  <span className="font-mono text-[10px] text-[#8A672C]">
-                    PO chờ xác nhận:{' '}
-                    {liveOverview.b2bSummary.purchaseOrdersAwaitingConfirmation}
-                  </span>
-                  <span className="font-mono text-[10px] text-[#5C4B41]">
-                    Lịch giao GRN:{' '}
-                    {liveOverview.b2bSummary.scheduledGrnDeliveries}
+              <div className="mb-6 space-y-4">
+                <div
+                  data-testid="partner-live-overview-bar"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#B08A4A]/30 bg-white px-4 py-2.5 text-[11px] text-[#5C4B41]"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#2E6B47]/15 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-[#1E4B32]">
+                      <span className="relative flex h-2 w-2 items-center justify-center">
+                        <span
+                          aria-hidden="true"
+                          className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-500/75"
+                        />
+                        <span className="relative h-1.5 w-1.5 rounded-full bg-[#2E6B47]" />
+                      </span>
+                      B2B OVERVIEW LIVE
+                    </span>
+                    <span className="font-mono text-[10px] text-[#1C1410]">
+                      Scope: {liveOverview.tenantIsolation.boundSupplierId}
+                    </span>
+                  </div>
+                  <span className="rounded-full bg-[#F4EBDA] px-2.5 py-0.5 font-mono text-[10px] text-[#8A672C]">
+                    SLA đúng hạn:{' '}
+                    <AnimatedTelemetryNumber
+                      value={liveOverview.b2bSummary.onTimeFulfillmentSlaPct}
+                      format="percent"
+                    />
                   </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 font-mono text-[10px]">
-                  <span className="rounded-full bg-[#F4EBDA] px-2.5 py-0.5 text-[#8A672C]">
-                    SLA đúng hạn:{' '}
-                    {liveOverview.b2bSummary.onTimeFulfillmentSlaPct}%
-                  </span>
-                  <span className="rounded-full bg-[#FBF7EF] px-2.5 py-0.5 text-[#5C4B41]">
-                    Scope: {liveOverview.tenantIsolation.boundSupplierId}
-                  </span>
+
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <LiveKpiSparkCard
+                    cardIndex={0}
+                    title="PO chờ xác nhận"
+                    value={
+                      liveOverview.b2bSummary.purchaseOrdersAwaitingConfirmation
+                    }
+                    unitLabel="PO"
+                    variant="sparkBars"
+                    sparkBars={{
+                      values: [
+                        1,
+                        Math.max(
+                          1,
+                          liveOverview.b2bSummary.scheduledGrnDeliveries,
+                        ),
+                        Math.max(
+                          1,
+                          liveOverview.b2bSummary
+                            .purchaseOrdersAwaitingConfirmation,
+                        ),
+                      ],
+                      tone: 'gold',
+                    }}
+                    footerLeft="Cần phản hồi ngày hẹn giao"
+                    onClick={() => setActiveTab('po')}
+                  />
+                  <LiveKpiSparkCard
+                    cardIndex={1}
+                    title="Lịch giao GRN"
+                    value={liveOverview.b2bSummary.scheduledGrnDeliveries}
+                    unitLabel="lô"
+                    variant="laserCurve"
+                    laserCurve={{
+                      values: [
+                        0,
+                        liveOverview.b2bSummary.scheduledGrnDeliveries,
+                        liveOverview.b2bSummary.scheduledGrnDeliveries,
+                      ],
+                      tone: 'emerald',
+                    }}
+                    footerLeft="Nghiệm thu & nhập kho TryVibe"
+                    onClick={() => setActiveTab('grn')}
+                  />
+                  <LiveKpiSparkCard
+                    cardIndex={2}
+                    title="SLA Giao đúng hạn"
+                    value={liveOverview.b2bSummary.onTimeFulfillmentSlaPct}
+                    valueFormat="percent"
+                    variant="radialGauge"
+                    radialGauge={{
+                      current: liveOverview.b2bSummary.onTimeFulfillmentSlaPct,
+                      total: 100,
+                      centerText: `${liveOverview.b2bSummary.onTimeFulfillmentSlaPct}%`,
+                    }}
+                    footerLeft="Hiệu suất đối tác B2B"
+                    onClick={() => setActiveTab('payables')}
+                  />
+                  <LiveKpiSparkCard
+                    cardIndex={3}
+                    title="Mẫu đề xuất mới"
+                    value={liveOverview.b2bSummary.submissionsTotal}
+                    unitLabel="mẫu"
+                    variant="dualStreamBars"
+                    dualStreamBars={[
+                      {
+                        label: 'Đề xuất',
+                        value: liveOverview.b2bSummary.submissionsTotal,
+                        max: Math.max(
+                          5,
+                          liveOverview.b2bSummary.submissionsTotal,
+                        ),
+                        tone: 'gold',
+                      },
+                      {
+                        label: 'GRN',
+                        value: liveOverview.b2bSummary.scheduledGrnDeliveries,
+                        max: Math.max(
+                          5,
+                          liveOverview.b2bSummary.scheduledGrnDeliveries,
+                        ),
+                        tone: 'emerald',
+                      },
+                    ]}
+                    footerLeft="Gửi thẩm định bộ sưu tập"
+                    onClick={() => setActiveTab('submissions')}
+                  />
                 </div>
               </div>
             ) : null}
@@ -346,16 +441,18 @@ export function PartnerWorkspace({ overviewStatus }: PartnerWorkspaceProps) {
               ))}
             </nav>
 
-            {activeTab === 'po' && lockedSupplierId ? (
-              <PartnerPurchaseOrdersTab supplierId={lockedSupplierId} />
-            ) : null}
-            {activeTab === 'grn' ? <PartnerGoodsReceiptsTab /> : null}
-            {activeTab === 'payables' ? (
-              <PartnerPayablesTab supplierId={lockedSupplierId ?? undefined} />
-            ) : null}
-            {activeTab === 'submissions' && lockedSupplierId ? (
-              <PartnerSubmissionPanel supplierId={lockedSupplierId} />
-            ) : null}
+            <div key={activeTab} className="telemetry-tab-enter">
+              {activeTab === 'po' && lockedSupplierId ? (
+                <PartnerPurchaseOrdersTab supplierId={lockedSupplierId} />
+              ) : null}
+              {activeTab === 'grn' ? <PartnerGoodsReceiptsTab /> : null}
+              {activeTab === 'payables' ? (
+                <PartnerPayablesTab supplierId={lockedSupplierId ?? undefined} />
+              ) : null}
+              {activeTab === 'submissions' && lockedSupplierId ? (
+                <PartnerSubmissionPanel supplierId={lockedSupplierId} />
+              ) : null}
+            </div>
           </SupplierRoleGuard>
         )}
       </main>

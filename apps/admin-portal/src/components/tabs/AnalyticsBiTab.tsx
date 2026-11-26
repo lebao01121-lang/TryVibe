@@ -8,6 +8,11 @@ import {
   type BiSeriesPointDto,
   type Role,
 } from '@atelier/contracts';
+import {
+  AnimatedTelemetryNumber,
+  LiveComboAreaBarChart,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
 import { adminFetch, downloadUtf8BomCsv } from '@/lib/api-client';
 import { DownloadIcon, ShieldLockIcon } from '../AdminIcons';
 import { emitPortalToast } from '../PortalToastBanner';
@@ -61,7 +66,6 @@ export function AnalyticsBiTab({
   const [biData, setBiData] = useState<BiAnalyticsSummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   const callerCanReadCost = canReadCostPrice(roles);
 
@@ -129,69 +133,6 @@ export function AnalyticsBiTab({
     () => biData?.series ?? [],
     [biData],
   );
-
-  const chartMaxVnd = useMemo(() => {
-    let max = 0;
-    for (const pt of series) {
-      max = Math.max(max, pt.netRevenueVnd || 0);
-      if (!isCostRedacted && typeof pt.cogsVnd === 'number') {
-        max = Math.max(max, pt.cogsVnd);
-      }
-    }
-    return Math.max(max, 1);
-  }, [isCostRedacted, series]);
-
-  const svgPoints = useMemo(() => {
-    if (series.length === 0) return { areaPath: '', linePath: '', bars: [] as Array<{ x: number; w: number; revH: number; revY: number; cogsH: number; cogsY: number; point: BiSeriesPointDto; idx: number }> };
-    const width = 820;
-    const height = 220;
-    const padX = 20;
-    const padTop = 18;
-    const padBottom = 26;
-    const plotW = width - padX * 2;
-    const plotH = height - padTop - padBottom;
-    const stepX = plotW / Math.max(series.length, 1);
-    const barW = Math.max(4, Math.min(26, stepX * (isCostRedacted ? 0.56 : 0.36)));
-
-    const coords: Array<{ x: number; y: number }> = [];
-    const bars = series.map((point, idx) => {
-      const centerX = padX + stepX * idx + stepX / 2;
-      const revRatio = Math.min(1, (point.netRevenueVnd || 0) / chartMaxVnd);
-      const revH = Math.max(2, revRatio * plotH);
-      const revY = padTop + (plotH - revH);
-      coords.push({ x: centerX, y: revY });
-
-      const cogsVal =
-        !isCostRedacted && typeof point.cogsVnd === 'number'
-          ? point.cogsVnd
-          : 0;
-      const cogsRatio = Math.min(1, cogsVal / chartMaxVnd);
-      const cogsH = !isCostRedacted && cogsVal > 0 ? Math.max(2, cogsRatio * plotH) : 0;
-      const cogsY = padTop + (plotH - cogsH);
-
-      return {
-        x: centerX,
-        w: barW,
-        revH,
-        revY,
-        cogsH,
-        cogsY,
-        point,
-        idx,
-      };
-    });
-
-    const linePath = coords
-      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
-      .join(' ');
-    const baseY = padTop + plotH;
-    const areaPath =
-      coords.length > 0
-        ? `${linePath} L ${coords[coords.length - 1]!.x.toFixed(1)} ${baseY.toFixed(1)} L ${coords[0]!.x.toFixed(1)} ${baseY.toFixed(1)} Z`
-        : '';
-
-    return { areaPath, linePath, bars };
-  }, [chartMaxVnd, isCostRedacted, series]);
 
   // Authorized-only UTF-8 BOM CSV Export
   const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -299,9 +240,6 @@ export function AnalyticsBiTab({
     ? 'border-b border-[#B08A4A]/25 bg-[#241A13] text-[#EBCF8F]'
     : 'border-b border-[#B08A4A]/20 bg-[#F4EBDA]/75 text-[#8A672C]';
   const rowHoverCls = darkMode ? 'hover:bg-[#251B14]' : 'hover:bg-[#FBF7EF]/85';
-
-  const hoveredBar =
-    hoveredIdx !== null ? (svgPoints.bars[hoveredIdx] ?? null) : null;
 
   return (
     <div data-testid="analytics-bi-tab" className="space-y-6">
@@ -445,7 +383,7 @@ export function AnalyticsBiTab({
         {/* 4 Executive KPI Cards */}
         <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
           {/* Card 1: Net Revenue */}
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p
               className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}
             >
@@ -454,7 +392,14 @@ export function AnalyticsBiTab({
             <p
               className={`adm-tabular mt-1.5 font-mono text-2xl font-bold ${goldTextCls}`}
             >
-              {biData ? FORMAT_VND(biData.netRevenueVnd) : '—'}
+              {biData ? (
+                <AnimatedTelemetryNumber
+                  value={biData.netRevenueVnd}
+                  format="vnd"
+                />
+              ) : (
+                '—'
+              )}
             </p>
             <p className={`mt-1.5 text-[11px] ${mutedCls}`}>
               Hoàn tiền:{' '}
@@ -465,7 +410,7 @@ export function AnalyticsBiTab({
           </div>
 
           {/* Card 2: COGS (Hidden cleanly when Layer 5 redacted) */}
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p
               className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}
             >
@@ -478,9 +423,14 @@ export function AnalyticsBiTab({
               </div>
             ) : (
               <p className="adm-tabular mt-1.5 font-mono text-2xl font-bold">
-                {authorizedCogsVnd !== undefined
-                  ? FORMAT_VND(authorizedCogsVnd)
-                  : '—'}
+                {authorizedCogsVnd !== undefined ? (
+                  <AnimatedTelemetryNumber
+                    value={authorizedCogsVnd}
+                    format="vnd"
+                  />
+                ) : (
+                  '—'
+                )}
               </p>
             )}
             <p className={`mt-1.5 text-[11px] ${mutedCls}`}>
@@ -491,7 +441,7 @@ export function AnalyticsBiTab({
           </div>
 
           {/* Card 3: Gross Margin VND & % (Hidden cleanly when Layer 5 redacted) */}
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p
               className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}
             >
@@ -509,13 +459,22 @@ export function AnalyticsBiTab({
                     darkMode ? 'text-emerald-300' : 'text-[#1E4B32]'
                   }`}
                 >
-                  {authorizedGrossMarginVnd !== undefined
-                    ? FORMAT_VND(authorizedGrossMarginVnd)
-                    : '—'}
+                  {authorizedGrossMarginVnd !== undefined ? (
+                    <AnimatedTelemetryNumber
+                      value={authorizedGrossMarginVnd}
+                      format="vnd"
+                    />
+                  ) : (
+                    '—'
+                  )}
                 </span>
                 {authorizedGrossMarginPct !== undefined ? (
                   <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-emerald-600">
-                    {authorizedGrossMarginPct.toFixed(1)}%
+                    <AnimatedTelemetryNumber
+                      value={authorizedGrossMarginPct}
+                      format="percent"
+                      decimals={1}
+                    />
                   </span>
                 ) : null}
               </div>
@@ -528,19 +487,25 @@ export function AnalyticsBiTab({
           </div>
 
           {/* Card 4: Orders & RMA Rate */}
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p
               className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}
             >
               Đơn hàng &amp; Tỷ lệ RMA
             </p>
             <p className="adm-tabular mt-1.5 font-mono text-2xl font-bold">
-              {biData ? `${biData.orderCount} đơn` : '—'}
+              {biData ? (
+                <>
+                  <AnimatedTelemetryNumber value={biData.orderCount} /> đơn
+                </>
+              ) : (
+                '—'
+              )}
             </p>
             <p className={`mt-1.5 text-[11px] ${mutedCls}`}>
               RMA:{' '}
               <strong className="font-mono">
-                {biData ? biData.rmaCount : 0} phiếu
+                <AnimatedTelemetryNumber value={biData ? biData.rmaCount : 0} /> phiếu
               </strong>
               {biData && typeof biData.rmaRatePct === 'number'
                 ? ` (${biData.rmaRatePct.toFixed(1)}%)`
@@ -550,7 +515,7 @@ export function AnalyticsBiTab({
         </div>
       </section>
 
-      {/* Interactive Bar / Area Chart: Revenue vs COGS */}
+      {/* Interactive Live Telemetry Combo Chart: Revenue vs COGS/Orders */}
       <section className={`rounded-3xl border p-6 ${cardCls}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -567,14 +532,12 @@ export function AnalyticsBiTab({
           <div className="flex items-center gap-4 text-[11px]">
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-sm bg-[#B08A4A]" />
-              Doanh thu ròng
+              Doanh thu ròng (Cột)
             </span>
-            {!isCostRedacted ? (
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-sm bg-[#2E6B47]" />
-                Giá vốn COGS
-              </span>
-            ) : null}
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-[#34D399]" />
+              {isCostRedacted ? 'Số đơn hàng (Miền)' : 'Giá vốn COGS (Miền)'}
+            </span>
           </div>
         </div>
 
@@ -582,162 +545,31 @@ export function AnalyticsBiTab({
           <p className={`py-14 text-center text-xs ${mutedCls}`}>
             Đang tổng hợp biểu đồ BI...
           </p>
-        ) : series.length === 0 ? (
-          <p className={`py-14 text-center text-xs ${mutedCls}`}>
-            Chưa có dữ liệu chuỗi thời gian cho khoảng thời gian đã chọn.
-          </p>
         ) : (
-          <div className="mt-4">
-            {/* Hover Inspector Strip */}
-            <div
-              className={`mb-3 flex min-h-[38px] flex-wrap items-center justify-between gap-2 rounded-2xl border px-4 py-2 font-mono text-[11px] ${subCardCls}`}
-            >
-              {hoveredBar ? (
-                <>
-                  <span>
-                    Ngày: <strong>{hoveredBar.point.date}</strong> · Đơn:{' '}
-                    <strong>{hoveredBar.point.orderCount}</strong> · RMA:{' '}
-                    <strong>{hoveredBar.point.rmaCount}</strong>
-                  </span>
-                  <span className="flex flex-wrap items-center gap-3">
-                    <span className={goldTextCls}>
-                      Doanh thu: {FORMAT_VND(hoveredBar.point.netRevenueVnd)}
-                    </span>
-                    {!isCostRedacted &&
-                    typeof hoveredBar.point.cogsVnd === 'number' ? (
-                      <span>
-                        COGS: {FORMAT_VND(hoveredBar.point.cogsVnd)}
-                      </span>
-                    ) : null}
-                    {!isCostRedacted &&
-                    typeof hoveredBar.point.grossMarginVnd === 'number' ? (
-                      <span className="text-emerald-600">
-                        Lãi gộp: {FORMAT_VND(hoveredBar.point.grossMarginVnd)}
-                      </span>
-                    ) : null}
-                  </span>
-                </>
-              ) : (
-                <span className={mutedCls}>
-                  Di chuột lên từng cột ngày để xem chi tiết doanh thu
-                  {!isCostRedacted ? ', giá vốn COGS & lãi gộp' : ' & số đơn'}.
-                </span>
-              )}
-            </div>
-
-            <div className="w-full overflow-x-auto">
-              <svg
-                viewBox="0 0 820 220"
-                className="h-56 w-full min-w-[540px]"
-                role="img"
-                aria-label="Biểu đồ doanh thu theo ngày"
-              >
-                <defs>
-                  <linearGradient id="biRevArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#B08A4A" stopOpacity="0.28" />
-                    <stop offset="100%" stopColor="#B08A4A" stopOpacity="0.02" />
-                  </linearGradient>
-                </defs>
-
-                {/* Horizontal Guide Lines */}
-                {[0.25, 0.5, 0.75, 1].map((pct) => {
-                  const y = 18 + (1 - pct) * 176;
-                  return (
-                    <g key={pct}>
-                      <line
-                        x1="20"
-                        x2="800"
-                        y1={y}
-                        y2={y}
-                        stroke={darkMode ? '#3A2C22' : '#EBD9B4'}
-                        strokeDasharray="3 4"
-                      />
-                      <text
-                        x="22"
-                        y={y - 3}
-                        fontSize="9"
-                        fill={darkMode ? '#B4A391' : '#7A6A5B'}
-                        fontFamily="monospace"
-                      >
-                        {formatVndCompact(chartMaxVnd * pct)}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {/* Smooth Area Under Net Revenue */}
-                {svgPoints.areaPath ? (
-                  <path d={svgPoints.areaPath} fill="url(#biRevArea)" />
-                ) : null}
-                {svgPoints.linePath ? (
-                  <path
-                    d={svgPoints.linePath}
-                    fill="none"
-                    stroke="#B08A4A"
-                    strokeWidth="2"
-                  />
-                ) : null}
-
-                {/* Bars */}
-                {svgPoints.bars.map((bar) => {
-                  const isHovered = hoveredIdx === bar.idx;
-                  const showLabel =
-                    series.length <= 14 ||
-                    bar.idx % Math.ceil(series.length / 10) === 0 ||
-                    bar.idx === series.length - 1;
-                  return (
-                    <g
-                      key={bar.point.date}
-                      onMouseEnter={() => setHoveredIdx(bar.idx)}
-                      onMouseLeave={() => setHoveredIdx(null)}
-                      className="cursor-pointer"
-                    >
-                      {/* Net Revenue Bar */}
-                      <rect
-                        x={
-                          isCostRedacted
-                            ? bar.x - bar.w / 2
-                            : bar.x - bar.w - 1
-                        }
-                        y={bar.revY}
-                        width={bar.w}
-                        height={bar.revH}
-                        rx="3"
-                        fill={isHovered ? '#EBCF8F' : '#B08A4A'}
-                        opacity={isHovered ? 1 : 0.85}
-                      />
-
-                      {/* COGS Bar (Authorized Only) */}
-                      {!isCostRedacted && bar.cogsH > 0 ? (
-                        <rect
-                          x={bar.x + 1}
-                          y={bar.cogsY}
-                          width={bar.w}
-                          height={bar.cogsH}
-                          rx="3"
-                          fill="#2E6B47"
-                          opacity={isHovered ? 1 : 0.8}
-                        />
-                      ) : null}
-
-                      {showLabel ? (
-                        <text
-                          x={bar.x}
-                          y="212"
-                          textAnchor="middle"
-                          fontSize="9"
-                          fill={darkMode ? '#B4A391' : '#7A6A5B'}
-                          fontFamily="monospace"
-                        >
-                          {formatShortDate(bar.point.date)}
-                        </text>
-                      ) : null}
-                    </g>
-                  );
-                })}
-              </svg>
-            </div>
-          </div>
+          <LiveComboAreaBarChart
+            className="mt-4"
+            isDark={darkMode}
+            points={series.map((pt) => ({
+              label: formatShortDate(pt.date),
+              tooltipLabel: `Ngày ${pt.date}`,
+              barValue: Math.round((pt.netRevenueVnd || 0) / 1000),
+              lineValue:
+                !isCostRedacted && typeof pt.cogsVnd === 'number'
+                  ? Math.round(pt.cogsVnd / 1000)
+                  : pt.orderCount,
+              metaLabel:
+                !isCostRedacted && typeof pt.grossMarginVnd === 'number'
+                  ? `Đơn: ${pt.orderCount} · RMA: ${pt.rmaCount} · Lãi gộp: ${FORMAT_VND(pt.grossMarginVnd)}`
+                  : `Đơn: ${pt.orderCount} · RMA: ${pt.rmaCount}`,
+            }))}
+            barLabel="Doanh thu ròng (nghìn ₫)"
+            lineLabel={isCostRedacted ? 'Số đơn hàng' : 'Giá vốn COGS (nghìn ₫)'}
+            formatBarValue={(v) => formatVndCompact(v * 1000)}
+            formatLineValue={(v) =>
+              isCostRedacted ? `${Math.round(v)} đơn` : formatVndCompact(v * 1000)
+            }
+            emptyText="Chưa có dữ liệu chuỗi thời gian cho khoảng thời gian đã chọn."
+          />
         )}
       </section>
 
@@ -880,6 +712,14 @@ export function AnalyticsBiTab({
                           >
                             {sku.rmaRatePct.toFixed(1)}%
                           </span>
+                          <div className="ml-auto mt-1 w-16">
+                            <LiveStreamProgressBar
+                              percent={Math.min(100, sku.rmaRatePct)}
+                              tone={highRisk ? 'crimson' : 'amber'}
+                              height="xs"
+                              isDark={darkMode}
+                            />
+                          </div>
                         </td>
                         <td className="px-4 py-3 font-mono text-[11px]">
                           {sku.dominantReasonCode}

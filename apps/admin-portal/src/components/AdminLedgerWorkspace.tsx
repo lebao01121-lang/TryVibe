@@ -14,6 +14,7 @@ import {
   isMfaRequiredForRoles,
   type LoginResponse,
 } from '@atelier/contracts';
+import { LiveMotionTogglePill } from '@atelier/motion-kit';
 import type {
   AdminLiveOverviewData,
   AdminOverviewStatus,
@@ -32,8 +33,10 @@ import {
   adminFetch,
   clearAdminSession,
   getAdminSession,
+  getBffBaseUrl,
   setAdminSession,
   type AdminStoredSession,
+  type ApiFetchResult,
 } from '@/lib/api-client';
 import {
   AdminNavIcon,
@@ -134,6 +137,116 @@ function getRoleShortLabel(role: Role): string {
   }
 }
 
+type AdminOAuthProvider = 'google' | 'github';
+
+interface AdminOAuthProvidersStatus {
+  google: { enabled: boolean; callbackUrl: string };
+  github: { enabled: boolean; callbackUrl: string };
+  adminExceptionConfigured?: boolean;
+}
+
+const inFlightAdminOAuthExchanges = new Map<
+  string,
+  Promise<ApiFetchResult<LoginResponse>>
+>();
+
+function resolveAdminOAuthError(
+  oauthError: string | null,
+  oauthErrorCode: string | null,
+): string {
+  if (oauthError && oauthError.trim().length > 0) {
+    return oauthError.trim();
+  }
+  switch (oauthErrorCode) {
+    case 'ADMIN_OAUTH_FORBIDDEN':
+      return 'Tài khoản này không có quyền quản trị trên TryVibe Admin Portal.';
+    case 'OAUTH_LOCAL_ACCOUNT_CONFLICT':
+      return 'Email này đã được đăng ký tài khoản nội bộ trên website. Không thể đăng nhập nhanh bằng Google/GitHub — vui lòng dùng Email & Mật khẩu.';
+    case 'OAUTH_PROVIDER_MISMATCH':
+      return 'Email này đã được liên kết với nhà cung cấp đăng nhập nhanh khác.';
+    case 'OAUTH_NOT_CONFIGURED':
+      return 'Phương thức đăng nhập nhanh này chưa được cấu hình khóa OAuth2 trên máy chủ.';
+    case 'OAUTH_CANCELLED':
+      return 'Bạn đã hủy quá trình đăng nhập nhanh quản trị.';
+    case 'OAUTH_STATE_INVALID':
+      return 'Phiên xác thực OAuth2 quản trị đã hết hạn hoặc không hợp lệ. Vui lòng thử lại.';
+    case 'OAUTH_EMAIL_UNVERIFIED':
+      return 'Email từ Google/GitHub chưa được xác minh nên không thể đăng nhập Admin Portal.';
+    case 'OAUTH_PROVIDER_ERROR':
+      return 'Không thể kết nối nhà cung cấp OAuth2. Vui lòng thử lại sau giây lát.';
+    case 'OAUTH_TICKET_INVALID':
+      return 'Mã xác thực OAuth2 đã hết hạn hoặc đã được sử dụng. Vui lòng đăng nhập lại.';
+    default:
+      return 'Đăng nhập nhanh OAuth2 không thành công. Vui lòng thử lại hoặc dùng Email & Mật khẩu.';
+  }
+}
+
+function cleanAdminOAuthQueryParams(): void {
+  if (typeof window === 'undefined') return;
+  const current = new URL(window.location.href);
+  let changed = false;
+  for (const key of [
+    'oauthTicket',
+    'oauthError',
+    'oauthErrorCode',
+    'returnTo',
+  ]) {
+    if (current.searchParams.has(key)) {
+      current.searchParams.delete(key);
+      changed = true;
+    }
+  }
+  if (changed) {
+    const nextSearch = current.searchParams.toString();
+    const nextUrl = `${current.pathname}${nextSearch ? `?${nextSearch}` : ''}${current.hash}`;
+    window.history.replaceState({}, '', nextUrl);
+  }
+}
+
+function AdminGoogleIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={18}
+      height={18}
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <path
+        fill="#4285F4"
+        d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
+      />
+    </svg>
+  );
+}
+
+function AdminGitHubIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={17}
+      height={17}
+      fill="currentColor"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
+    </svg>
+  );
+}
+
 export function AdminLedgerWorkspace({
   overviewStatus,
 }: AdminLedgerWorkspaceProps) {
@@ -154,6 +267,13 @@ export function AdminLedgerWorkspace({
   );
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [oauthProviders, setOauthProviders] =
+    useState<AdminOAuthProvidersStatus | null>(null);
+  const [oauthProvidersLoaded, setOauthProvidersLoaded] = useState(false);
+  const [oauthExchanging, setOauthExchanging] = useState(false);
+  const [oauthRedirecting, setOauthRedirecting] =
+    useState<AdminOAuthProvider | null>(null);
+  const [oauthConfigHint, setOauthConfigHint] = useState<string | null>(null);
 
   // Enterprise Shell UI State
   const [activeTab, setActiveTab] = useState<AdminTabKey>('dashboard');
@@ -168,7 +288,9 @@ export function AdminLedgerWorkspace({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>('light');
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [syncTick, setSyncTick] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [bgSyncing, setBgSyncing] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const alertsContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -203,6 +325,103 @@ export function AdminLedgerWorkspace({
 
     setHydrated(true);
   }, []);
+
+  // Load OAuth provider availability when unauthenticated
+  useEffect(() => {
+    if (!hydrated || session) return undefined;
+    let cancelled = false;
+    void adminFetch<AdminOAuthProvidersStatus>('/api/v1/auth/oauth/providers', {
+      method: 'GET',
+      skipAuthRefresh: true,
+    }).then((res) => {
+      if (cancelled) return;
+      if (res.ok && res.data) {
+        setOauthProviders(res.data);
+      }
+      setOauthProvidersLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, session]);
+
+  // Handle OAuth2 callback (?oauthTicket=... or ?oauthError=...) when unauthenticated
+  useEffect(() => {
+    if (!hydrated || session || typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const oauthTicket = params.get('oauthTicket')?.trim() || '';
+    const oauthError = params.get('oauthError');
+    const oauthErrorCode = params.get('oauthErrorCode');
+
+    if (oauthError || oauthErrorCode) {
+      setLoginError(resolveAdminOAuthError(oauthError, oauthErrorCode));
+      cleanAdminOAuthQueryParams();
+      return undefined;
+    }
+
+    if (!oauthTicket) {
+      return undefined;
+    }
+
+    let active = true;
+    setOauthExchanging(true);
+    setLoginError(null);
+    setOauthConfigHint(null);
+
+    let exchangePromise = inFlightAdminOAuthExchanges.get(oauthTicket);
+    if (!exchangePromise) {
+      exchangePromise = adminFetch<LoginResponse>(
+        '/api/v1/auth/oauth/exchange',
+        {
+          method: 'POST',
+          skipAuthRefresh: true,
+          body: JSON.stringify({ ticket: oauthTicket }),
+        },
+      );
+      inFlightAdminOAuthExchanges.set(oauthTicket, exchangePromise);
+    }
+
+    void exchangePromise.then((res) => {
+      if (!active) return;
+      inFlightAdminOAuthExchanges.delete(oauthTicket);
+      cleanAdminOAuthQueryParams();
+
+      if (res.ok && res.data) {
+        const mfaReq = Boolean(
+          res.data.mfaRequired && !res.data.user.mfaVerified,
+        );
+        const nextSession: AdminStoredSession = {
+          accessToken: res.data.accessToken,
+          csrfToken: res.data.csrfToken,
+          mfaRequired: mfaReq,
+          mfaVerified: Boolean(res.data.user.mfaVerified) || !mfaReq,
+          user: res.data.user,
+        };
+        setAdminSession(nextSession);
+        setSession(nextSession);
+        setActiveTab(getDefaultAdminTab(res.data.user.roles));
+        setDrawerOpen(false);
+        emitPortalToast({
+          kind: 'success',
+          title: 'ĐĂNG NHẬP NHANH QUẢN TRỊ',
+          message: `Đã xác thực OAuth2 cho ${res.data.user.email} (${res.data.user.roles.join(', ')}).`,
+        });
+      } else {
+        setLoginError(
+          res.error?.message ||
+            'Không thể hoàn tất đăng nhập nhanh quản trị. Mã xác thực đã hết hạn hoặc không hợp lệ.',
+        );
+      }
+      setOauthExchanging(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [hydrated, session]);
 
   // Close notification popover on outside click or Escape
   useEffect(() => {
@@ -338,6 +557,33 @@ export function AdminLedgerWorkspace({
     setLoginLoading(false);
   };
 
+  const handleAdminOAuthStart = (provider: AdminOAuthProvider) => {
+    if (loginLoading || oauthExchanging || oauthRedirecting !== null) return;
+
+    const isEnabled =
+      provider === 'google'
+        ? oauthProviders
+          ? Boolean(oauthProviders.google?.enabled)
+          : true
+        : oauthProviders
+          ? Boolean(oauthProviders.github?.enabled)
+          : false;
+
+    if (oauthProvidersLoaded && !isEnabled) {
+      setOauthConfigHint(
+        provider === 'github'
+          ? 'Đăng nhập nhanh GitHub chưa được cấu hình. Vui lòng thêm GITHUB_OAUTH_CLIENT_ID và GITHUB_OAUTH_CLIENT_SECRET vào tệp .env rồi khởi động lại Auth/BFF.'
+          : 'Đăng nhập nhanh Google chưa được cấu hình. Vui lòng thêm GOOGLE_OAUTH_CLIENT_ID và GOOGLE_OAUTH_CLIENT_SECRET vào tệp .env rồi khởi động lại Auth/BFF.',
+      );
+      return;
+    }
+
+    setOauthConfigHint(null);
+    setLoginError(null);
+    setOauthRedirecting(provider);
+    window.location.href = `${getBffBaseUrl()}/api/v1/auth/oauth/${provider}/start?portal=admin`;
+  };
+
   const handleMfaSuccess = (payload: LoginResponse) => {
     const updated: AdminStoredSession = {
       accessToken: payload.accessToken,
@@ -400,7 +646,37 @@ export function AdminLedgerWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [session?.accessToken, isAllowed, isTwoFactorSatisfied, refreshNonce]);
+  }, [session?.accessToken, isAllowed, isTwoFactorSatisfied, refreshNonce, syncTick]);
+
+  // Silent 15s background auto-sync (no tab remount, no white flash, paused while tab hidden)
+  useEffect(() => {
+    if (!session?.accessToken || !isAllowed || !isTwoFactorSatisfied) {
+      return undefined;
+    }
+
+    let clearTimer: number | null = null;
+    const pollTimer = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
+      setBgSyncing(true);
+      setSyncTick((prev) => prev + 1);
+      if (clearTimer !== null) {
+        window.clearTimeout(clearTimer);
+      }
+      clearTimer = window.setTimeout(() => {
+        setBgSyncing(false);
+        clearTimer = null;
+      }, 1300);
+    }, 15_000);
+
+    return () => {
+      window.clearInterval(pollTimer);
+      if (clearTimer !== null) {
+        window.clearTimeout(clearTimer);
+      }
+    };
+  }, [session?.accessToken, isAllowed, isTwoFactorSatisfied]);
 
   const visibleTabs = useMemo(() => getVisibleAdminTabs(roles), [roles]);
   const visibleNavGroups = useMemo(
@@ -937,22 +1213,124 @@ export function AdminLedgerWorkspace({
                 {loginError ? (
                   <p
                     role="alert"
-                    className="rounded-xl border border-[#8B2E2E]/35 bg-[#FFF5F4] px-4 py-2.5 text-xs text-[#8B2E2E]"
+                    data-testid="admin-login-error-alert"
+                    className="rounded-xl border border-[#8B2E2E]/35 bg-[#FFF5F4] px-4 py-2.5 text-xs leading-relaxed text-[#8B2E2E]"
                   >
                     {loginError}
                   </p>
                 ) : null}
 
+                {oauthExchanging ? (
+                  <div
+                    role="status"
+                    data-testid="admin-oauth-exchanging-banner"
+                    className="flex items-center gap-2.5 rounded-xl border border-[#B08A4A]/40 bg-[#F4EBDA]/80 px-4 py-2.5 text-xs text-[#5C4630]"
+                  >
+                    <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-[#B08A4A] border-t-transparent" />
+                    <span>Đang hoàn tất xác thực nhanh quản trị...</span>
+                  </div>
+                ) : null}
+
                 <button
                   type="submit"
-                  disabled={loginLoading}
+                  disabled={
+                    loginLoading || oauthExchanging || oauthRedirecting !== null
+                  }
                   className="w-full rounded-full bg-[#1C1410] py-3.5 text-xs font-medium uppercase tracking-[0.2em] text-[#EBCF8F] shadow-md transition-all hover:bg-[#2A1E17] disabled:opacity-55"
                 >
                   {loginLoading
                     ? 'Đang xác thực...'
-                    : 'Đăng nhập Admin Portal'}
+                    : oauthExchanging
+                      ? 'Đang hoàn tất xác thực nhanh...'
+                      : 'Đăng nhập Admin Portal'}
                 </button>
               </form>
+
+              {/* Admin OAuth2 Quick-Login Section */}
+              <div className="mt-6">
+                <div className="relative flex items-center">
+                  <div className="flex-1 border-t border-[#B08A4A]/25" />
+                  <span className="px-3 text-[10.5px] font-medium uppercase tracking-[0.18em] text-[#8A672C]/90">
+                    hoặc đăng nhập nhanh quản trị
+                  </span>
+                  <div className="flex-1 border-t border-[#B08A4A]/25" />
+                </div>
+
+                <div className="mt-4 space-y-2.5">
+                  <button
+                    type="button"
+                    data-testid="admin-oauth-google-btn"
+                    disabled={
+                      loginLoading ||
+                      oauthExchanging ||
+                      oauthRedirecting !== null
+                    }
+                    onClick={() => handleAdminOAuthStart('google')}
+                    className="flex w-full items-center justify-center gap-3 rounded-2xl border border-[#B08A4A]/40 bg-white px-4 py-3 text-[13px] font-medium text-[#1C1410] shadow-[0_6px_18px_-14px_rgba(28,20,16,0.35)] transition-all duration-200 hover:-translate-y-[0.5px] hover:border-[#8A672C]/70 hover:bg-[#F4EBDA] hover:shadow-[0_12px_26px_-16px_rgba(28,20,16,0.45)] disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    <AdminGoogleIcon />
+                    <span>
+                      {oauthRedirecting === 'google'
+                        ? 'Đang chuyển tới Google...'
+                        : 'Đăng nhập nhanh Quản trị bằng Google'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="admin-oauth-github-btn"
+                    disabled={
+                      loginLoading ||
+                      oauthExchanging ||
+                      oauthRedirecting !== null
+                    }
+                    onClick={() => handleAdminOAuthStart('github')}
+                    className={`flex w-full items-center justify-center gap-2.5 rounded-2xl border px-4 py-2.5 text-[12.5px] font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 ${
+                      oauthProvidersLoaded && !oauthProviders?.github?.enabled
+                        ? 'border-[#B08A4A]/28 bg-[#FAF5EB] text-[#5C4B41] hover:border-[#B08A4A]/55 hover:bg-[#F4EBDA]'
+                        : 'border-[#1C1410]/20 bg-[#231A15] text-[#FBF7EF] hover:border-[#B08A4A]/55 hover:bg-[#1C1410]'
+                    }`}
+                  >
+                    <AdminGitHubIcon />
+                    <span>
+                      {oauthRedirecting === 'github'
+                        ? 'Đang chuyển tới GitHub...'
+                        : 'GitHub'}
+                    </span>
+                    {oauthProvidersLoaded &&
+                    !oauthProviders?.github?.enabled ? (
+                      <span className="rounded-full border border-[#B08A4A]/35 bg-white/80 px-2 py-0.5 text-[10px] font-normal text-[#8A672C]">
+                        Chưa cấu hình khóa GitHub
+                      </span>
+                    ) : null}
+                  </button>
+                </div>
+
+                {oauthConfigHint ? (
+                  <p
+                    role="status"
+                    data-testid="admin-oauth-config-hint"
+                    className="mt-3 rounded-2xl border border-[#B08A4A]/40 bg-[#FFF9EC] px-3.5 py-2.5 text-[11px] leading-relaxed text-[#6B4E1F]"
+                  >
+                    {oauthConfigHint}
+                  </p>
+                ) : null}
+
+                <p
+                  data-testid="admin-oauth-policy-caption"
+                  className="mt-3.5 rounded-2xl border border-[#B08A4A]/22 bg-[#FBF7EF] px-3.5 py-2.5 text-[11px] leading-relaxed text-[#6E5D4F]"
+                >
+                  Đặc quyền Admin (Google &amp; GitHub): cho phép{' '}
+                  <code className="rounded bg-[#F4EBDA] px-1 py-0.5 text-[10.5px] text-[#1C1410]">
+                    lebao01121@gmail.com
+                  </code>{' '}
+                  đăng nhập nhanh giữ nguyên vai trò{' '}
+                  <code className="rounded bg-[#F4EBDA] px-1 py-0.5 text-[10.5px] text-[#8A672C]">
+                    SUPER_ADMIN
+                  </code>
+                  .
+                </p>
+              </div>
             </div>
           </section>
         </main>
@@ -1055,11 +1433,25 @@ export function AdminLedgerWorkspace({
                               : 'border-amber-600/30 bg-amber-50 text-amber-800'
                         }`}
                       >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            bffOnline ? 'bg-emerald-500' : 'bg-amber-500'
-                          }`}
-                        />
+                        <span className="relative flex h-2 w-2 items-center justify-center">
+                          {bffOnline ? (
+                            <>
+                              <span
+                                aria-hidden="true"
+                                className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-400/75"
+                              />
+                              <span
+                                aria-hidden="true"
+                                className="telemetry-anim telemetry-beacon-ring-delay absolute inset-0 rounded-full bg-emerald-400/60"
+                              />
+                            </>
+                          ) : null}
+                          <span
+                            className={`relative h-1.5 w-1.5 rounded-full ${
+                              bffOnline ? 'bg-emerald-500' : 'bg-amber-500'
+                            }`}
+                          />
+                        </span>
                         {bffOnline
                           ? `BFF Live (:4000) · ${servicesReadyDisplay}/${servicesTotalDisplay} Online`
                           : 'BFF Ngoại tuyến (:4000)'}
@@ -1119,10 +1511,20 @@ export function AdminLedgerWorkspace({
                   >
                     <RefreshIcon
                       size={13}
-                      className={refreshing ? 'animate-spin text-[#B08A4A]' : ''}
+                      className={
+                        refreshing || bgSyncing
+                          ? 'telemetry-anim telemetry-refresh-spin text-[#B08A4A]'
+                          : ''
+                      }
                     />
                     <span className="hidden sm:inline">Làm mới</span>
                   </button>
+
+                  {/* Live GPU Telemetry Motion Toggle Pill */}
+                  <LiveMotionTogglePill
+                    compact
+                    tone={isDark ? 'dark' : 'light'}
+                  />
 
                   {/* Role-Permitted Quick Jump Buttons (shown at 2xl+ so 1440px topbar stays single-line) */}
                   {canSeeLookbook ? (
@@ -1413,11 +1815,21 @@ export function AdminLedgerWorkspace({
                     </button>
                   </div>
                 </div>
+                {refreshing || bgSyncing ? (
+                  <span
+                    aria-hidden="true"
+                    data-testid="admin-sync-sweep-bar"
+                    className="telemetry-anim telemetry-sync-bar"
+                  />
+                ) : null}
               </header>
 
               {/* Main Content Canvas */}
               <main className="flex-1 px-4 py-5 sm:px-6 lg:px-7 lg:py-6">
-                <div className="mx-auto max-w-[1440px] pb-20">
+                <div
+                  key={effectiveTab}
+                  className="telemetry-tab-enter mx-auto max-w-[1440px] pb-20"
+                >
                   {effectiveTab === 'dashboard' ? (
                     <DashboardOverviewTab
                       roles={roles}
@@ -1427,6 +1839,7 @@ export function AdminLedgerWorkspace({
                       onNavigateTab={handleNavigateTab}
                       onOpenCopilot={() => setDrawerOpen(true)}
                       refreshNonce={refreshNonce}
+                      syncTick={syncTick}
                       darkMode={isDark}
                       onLiveBadgesChange={handleLiveBadgesChange}
                     />

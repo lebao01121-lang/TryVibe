@@ -18,6 +18,10 @@ import {
   type VerifiedReviewDto,
 } from '@atelier/contracts';
 import {
+  AnimatedTelemetryNumber,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
+import {
   adminFetch,
   buildQueryString,
   extractList,
@@ -609,12 +613,12 @@ export function CrmModerationTab({
                       100,
                       Math.max(0, Math.round(Number(c.codTrustScore ?? 100))),
                     );
-                    const trustColor =
+                    const trustTone =
                       trust >= 80
-                        ? 'bg-emerald-500'
+                        ? 'emerald'
                         : trust >= 50
-                          ? 'bg-amber-500'
-                          : 'bg-rose-500';
+                          ? 'amber'
+                          : 'crimson';
                     return (
                       <tr key={c.id} className={rowHoverCls}>
                         <td className="px-5 py-3.5">
@@ -640,7 +644,7 @@ export function CrmModerationTab({
                         </td>
                         <td className="px-4 py-3.5 font-mono">
                           <span className="font-semibold">
-                            {c.tryOnQuotaRemaining}
+                            <AnimatedTelemetryNumber value={c.tryOnQuotaRemaining} />
                           </span>{' '}
                           <span className={mutedCls}>
                             / {c.tryOnDailyLimit} lượt
@@ -648,14 +652,17 @@ export function CrmModerationTab({
                         </td>
                         <td className="px-4 py-3.5">
                           <div className="flex items-center gap-2">
-                            <div className="h-2 w-20 overflow-hidden rounded-full bg-[#B08A4A]/20">
-                              <div
-                                style={{ width: `${trust}%` }}
-                                className={`h-full rounded-full ${trustColor}`}
+                            <div className="w-24">
+                              <LiveStreamProgressBar
+                                percent={trust}
+                                tone={trustTone}
+                                height="sm"
+                                isDark={darkMode}
+                                ariaLabel={`Điểm tín nhiệm COD ${trust}/100`}
                               />
                             </div>
                             <span className="font-mono text-[11px] font-semibold">
-                              {trust}/100
+                              <AnimatedTelemetryNumber value={trust} />/100
                             </span>
                           </div>
                         </td>

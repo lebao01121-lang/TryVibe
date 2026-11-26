@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Role } from '@atelier/contracts';
+import {
+  AnimatedTelemetryNumber,
+  LiveEcgIcon,
+  LiveFunnelStageBar,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
 import { adminFetch } from '@/lib/api-client';
 import { emitPortalToast } from '@/components/PortalToastBanner';
 
@@ -674,11 +680,19 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#B08A4A]/25 pb-5">
           <div>
             <span className="inline-flex items-center gap-2 rounded-full border border-[#EBCF8F]/50 bg-[#2A1E17] px-3.5 py-1 text-[11px] font-medium text-[#EBCF8F]">
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  localAiStatus.reachable ? 'bg-emerald-400' : 'bg-rose-400'
-                }`}
-              />
+              <span className="relative flex h-2 w-2 items-center justify-center">
+                {localAiStatus.reachable ? (
+                  <span
+                    aria-hidden="true"
+                    className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-400/75"
+                  />
+                ) : null}
+                <span
+                  className={`relative h-2 w-2 rounded-full ${
+                    localAiStatus.reachable ? 'bg-emerald-400' : 'bg-rose-400'
+                  }`}
+                />
+              </span>
               {localAiStatus.badge}
             </span>
             <h2 className="font-editorial mt-2 text-3xl font-light text-[#FBF7EF]">
@@ -798,9 +812,13 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
             <p className="ledger-eyebrow text-[#8A672C]">
               11-Service Cluster Health &amp; Infrastructure Telemetry
             </p>
-            <h2 className="font-editorial mt-1 text-3xl text-[#1C1410]">
-              Giám sát Cụm 11 Microservices ({upCount}/
-              {servicesList.length || 11} UP)
+            <h2 className="font-editorial mt-1 flex items-center gap-2.5 text-3xl text-[#1C1410]">
+              <span>
+                Giám sát Cụm 11 Microservices (
+                <AnimatedTelemetryNumber value={upCount} />/
+                {servicesList.length || 11} UP)
+              </span>
+              <LiveEcgIcon size={24} color="#059669" />
             </h2>
             <p className="mt-1 text-xs text-[#7A6A5B]">
               Kiểm tra đồng thời <code>/health</code> &amp; <code>/ready</code>{' '}
@@ -853,13 +871,36 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
           ) : (
             servicesList.map((svc) => {
               const st = normalizeStatus(svc.status);
+              const latencyPct =
+                typeof svc.latencyMs === 'number'
+                  ? Math.min(100, Math.max(8, Math.round((svc.latencyMs / 350) * 100)))
+                  : st === 'UP'
+                    ? 16
+                    : 0;
               return (
                 <article
                   key={`${svc.name}-${svc.port ?? ''}`}
                   className="rounded-2xl border border-[#B08A4A]/25 bg-[#FBF7EF]/75 p-4 text-xs"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono font-semibold text-[#1C1410]">
+                    <span className="flex items-center gap-1.5 font-mono font-semibold text-[#1C1410]">
+                      <span className="relative flex h-2 w-2 items-center justify-center">
+                        {st === 'UP' ? (
+                          <span
+                            aria-hidden="true"
+                            className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-500/70"
+                          />
+                        ) : null}
+                        <span
+                          className={`relative h-1.5 w-1.5 rounded-full ${
+                            st === 'UP'
+                              ? 'bg-emerald-500'
+                              : st === 'DEGRADED'
+                                ? 'bg-amber-500'
+                                : 'bg-rose-500'
+                          }`}
+                        />
+                      </span>
                       {svc.name}
                     </span>
                     <span
@@ -875,6 +916,20 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
                         ? `${Math.round(svc.latencyMs)} ms`
                         : '—'}
                     </span>
+                  </div>
+                  <div className="mt-2">
+                    <LiveStreamProgressBar
+                      percent={latencyPct}
+                      tone={
+                        st === 'DOWN'
+                          ? 'crimson'
+                          : st === 'DEGRADED' || (svc.latencyMs ?? 0) > 250
+                            ? 'amber'
+                            : 'emerald'
+                      }
+                      height="xs"
+                      ariaLabel={`${svc.name} latency`}
+                    />
                   </div>
                 </article>
               );
@@ -1189,18 +1244,24 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
                 </p>
                 <div className="mt-2 flex items-baseline justify-between font-mono">
                   <strong className="text-lg text-[#1C1410]">
-                    {tier.count}
+                    <AnimatedTelemetryNumber value={tier.count} />
                   </strong>
                   <span className="text-[11px] text-[#8A672C]">
-                    {tier.pct}%
+                    <AnimatedTelemetryNumber value={tier.pct} format="percent" />
                   </span>
                 </div>
-                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#F4EBDA]">
-                  <div
-                    style={{
-                      width: `${Math.max(tier.pct, tier.count > 0 ? 6 : 0)}%`,
-                    }}
-                    className={`h-full rounded-full transition-all duration-500 ${tier.barCls}`}
+                <div className="mt-1.5">
+                  <LiveStreamProgressBar
+                    percent={Math.max(tier.pct, tier.count > 0 ? 6 : 0)}
+                    tone={
+                      tier.key === 'CACHE_HIT'
+                        ? 'emerald'
+                        : tier.key === 'FAL_CATVTON'
+                          ? 'gold'
+                          : 'amber'
+                    }
+                    height="xs"
+                    ariaLabel={`${tier.label}: ${tier.pct}%`}
                   />
                 </div>
               </div>
@@ -1208,34 +1269,31 @@ export function AiOpsHealthTab({ roles, mfaVerified }: AiOpsHealthTabProps) {
           </div>
         </div>
 
-        {/* Visual Funnel Bars */}
+        {/* Visual 5-Step AI Conversion Funnel Bars */}
         <div className="mt-6 space-y-3">
           <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#8A672C]">
             Phễu Chuyển đổi Khách hàng (Rack/Outfit → Try-On → Giỏ hàng → Đơn
             trả tiền)
           </p>
-          {funnelSteps.map((step) => (
-            <div
-              key={step.label}
-              className="rounded-2xl border border-[#B08A4A]/20 bg-[#FBF7EF]/75 p-3.5 text-xs"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium text-[#1C1410]">{step.label}</span>
-                <span className="font-mono font-semibold text-[#8A672C]">
-                  {step.value} ({step.pct}%)
-                </span>
-              </div>
-              <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[#EBD9B4]/55">
-                <div
-                  style={{
-                    width: `${Math.max(step.pct, step.value > 0 ? 4 : 0)}%`,
-                  }}
-                  className="h-full rounded-full bg-[#1C1410] transition-all duration-500"
-                />
-              </div>
-              <p className="mt-1 text-[11px] text-[#7A6A5B]">{step.detail}</p>
-            </div>
-          ))}
+          <LiveFunnelStageBar
+            unitLabel="sự kiện"
+            stages={funnelSteps.map((step, idx) => ({
+              id: `funnel-${idx}`,
+              stepNumber: idx + 1,
+              label: step.label.replace(/^\d+\.\s*/, ''),
+              count: step.value,
+              ratePct: step.pct,
+              subLabel: step.detail,
+              tone:
+                idx === 4
+                  ? 'emerald'
+                  : idx === 0
+                    ? 'espresso'
+                    : idx === 1 || idx === 2
+                      ? 'gold'
+                      : 'amber',
+            }))}
+          />
         </div>
 
         {/* RMA Size-Exchange Rate by Product Table */}

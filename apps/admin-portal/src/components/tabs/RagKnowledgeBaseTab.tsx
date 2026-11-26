@@ -9,6 +9,10 @@ import {
   type ReactNode,
 } from 'react';
 import { Role } from '@atelier/contracts';
+import {
+  AnimatedTelemetryNumber,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
 import { adminFetch, buildQueryString } from '@/lib/api-client';
 import { emitPortalToast } from '../PortalToastBanner';
 
@@ -1058,7 +1062,7 @@ export function RagKnowledgeBaseTab({
 
         {/* KPI Cards */}
         <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p
               className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}
             >
@@ -1066,46 +1070,59 @@ export function RagKnowledgeBaseTab({
             </p>
             <div className="mt-1.5 flex items-baseline gap-2">
               <p className="adm-tabular font-mono text-3xl font-semibold">
-                {summary.activeDocuments}
+                <AnimatedTelemetryNumber value={summary.activeDocuments} />
               </p>
               <span className={`font-mono text-xs ${mutedCls}`}>
-                / {summary.totalDocuments} tổng
+                / <AnimatedTelemetryNumber value={summary.totalDocuments} /> tổng
               </span>
             </div>
-            <p className={`mt-1 text-[11px] ${secondaryCls}`}>
-              Khả dụng ngay cho Copilot &amp; Storefront
-            </p>
+            <div className="mt-2">
+              <LiveStreamProgressBar
+                percent={
+                  summary.totalDocuments > 0
+                    ? Math.round(
+                        (summary.activeDocuments / summary.totalDocuments) * 100,
+                      )
+                    : 0
+                }
+                tone="emerald"
+                height="xs"
+                isDark={darkMode}
+                ariaLabel="Tỷ lệ tài liệu RAG đang hoạt động"
+              />
+            </div>
           </div>
 
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p
               className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}
             >
               Tổng phân đoạn (Vector Chunks)
             </p>
             <p className="adm-tabular mt-1.5 font-mono text-3xl font-semibold">
-              {summary.totalChunks}
+              <AnimatedTelemetryNumber value={summary.totalChunks} />
             </p>
             <p className={`mt-1 text-[11px] ${secondaryCls}`}>
               Cắt đoạn ngữ cảnh gối đầu (700 / 120 ký tự)
             </p>
           </div>
 
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p
               className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}
             >
               Mô hình Embedding Cục bộ
             </p>
             <p className={`mt-2 truncate font-mono text-base font-semibold ${goldTextCls}`}>
-              {summary.embeddingModel} · {summary.embeddingDim}d
+              {summary.embeddingModel} ·{' '}
+              <AnimatedTelemetryNumber value={summary.embeddingDim} />d
             </p>
             <p className={`mt-1.5 text-[11px] ${secondaryCls}`}>
               Ollama Local AI · 0 USD chi phí API
             </p>
           </div>
 
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p
               className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}
             >
@@ -1124,11 +1141,19 @@ export function RagKnowledgeBaseTab({
                       : 'border-[#B08A4A]/50 bg-[#FEF4E1] text-[#8A672C]'
                 }`}
               >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    summary.hnswIndexActive ? 'bg-emerald-500' : 'bg-[#B08A4A]'
-                  }`}
-                />
+                <span className="relative flex h-2 w-2 items-center justify-center">
+                  {summary.hnswIndexActive ? (
+                    <span
+                      aria-hidden="true"
+                      className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-500/75"
+                    />
+                  ) : null}
+                  <span
+                    className={`relative h-1.5 w-1.5 rounded-full ${
+                      summary.hnswIndexActive ? 'bg-emerald-500' : 'bg-[#B08A4A]'
+                    }`}
+                  />
+                </span>
                 {summary.hnswIndexActive
                   ? `HNSW m=${summary.indexM}, ef=${summary.indexEfConstruction}`
                   : `Fallback · HNSW m=${summary.indexM}, ef=${summary.indexEfConstruction}`}

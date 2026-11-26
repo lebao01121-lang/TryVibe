@@ -8,6 +8,10 @@ import {
   type ProductSpuDto,
 } from '@atelier/contracts';
 import {
+  AnimatedTelemetryNumber,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
+import {
   adminFetch,
   getAdminSession,
   type AdminStoredSession,
@@ -706,6 +710,40 @@ export function EditorialCmsTab({
             </button>
           ))}
         </div>
+        <div className="mt-4">
+          <LiveStreamProgressBar
+            percent={
+              occasions.length + seasons.length > 0
+                ? Math.round(
+                    ((occasions.filter((o) => o.isActive).length +
+                      seasons.filter((s) => s.isActive).length) /
+                      (occasions.length + seasons.length)) *
+                      100,
+                  )
+                : 0
+            }
+            tone="gold"
+            height="xs"
+            isDark={darkMode}
+            label={
+              <>
+                Phủ sóng Editorial Storefront:{' '}
+                <AnimatedTelemetryNumber value={occasions.length} /> dịp mặc ·{' '}
+                <AnimatedTelemetryNumber value={seasons.length} /> mùa Lookbook
+              </>
+            }
+            rightText={`${
+              occasions.length + seasons.length > 0
+                ? Math.round(
+                    ((occasions.filter((o) => o.isActive).length +
+                      seasons.filter((s) => s.isActive).length) /
+                      (occasions.length + seasons.length)) *
+                      100,
+                  )
+                : 0
+            }% ACTIVE`}
+          />
+        </div>
       </section>
 
       {/* SECTION 1: Homepage Campaign */}
@@ -885,7 +923,7 @@ export function EditorialCmsTab({
               })}
             </div>
           )}
-        </section>
+      </section>
       ) : null}
 
       {/* SECTION 3: 6 Seasons Lookbook CRUD */}
@@ -1051,7 +1089,7 @@ export function EditorialCmsTab({
               })}
             </div>
           )}
-        </section>
+      </section>
       ) : null}
 
       {/* Occasion Create/Edit Modal */}

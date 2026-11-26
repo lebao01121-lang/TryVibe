@@ -22,6 +22,10 @@ import {
   type VerifiedReviewDto,
 } from '@atelier/contracts';
 import {
+  AnimatedTelemetryNumber,
+  LiveStackedHealthBar,
+} from '@atelier/motion-kit';
+import {
   adminFetch,
   getAdminSession,
   type AdminStoredSession,
@@ -924,8 +928,41 @@ export function CatalogMatrixTab({
               Catalog SPU / Variant / SKU Matrix
             </p>
             <h2 className="font-editorial mt-1 text-3xl">
-              Danh mục sản phẩm ({pagination.total} SPU)
+              Danh mục sản phẩm (
+              <AnimatedTelemetryNumber value={pagination.total} /> SPU)
             </h2>
+            <div className="mt-2 max-w-md">
+              <LiveStackedHealthBar
+                isDark={darkMode}
+                heightClass="h-2"
+                segments={[
+                  {
+                    id: 'published',
+                    label: 'Đang mở bán',
+                    value: products.filter(
+                      (p) => p.status === ProductStatus.PUBLISHED,
+                    ).length,
+                    tone: 'emerald',
+                  },
+                  {
+                    id: 'draft',
+                    label: 'Bản nháp',
+                    value: products.filter(
+                      (p) => p.status === ProductStatus.DRAFT,
+                    ).length,
+                    tone: 'amber',
+                  },
+                  {
+                    id: 'archived',
+                    label: 'Lưu trữ',
+                    value: products.filter(
+                      (p) => p.status === ProductStatus.ARCHIVED,
+                    ).length,
+                    tone: 'slate',
+                  },
+                ]}
+              />
+            </div>
           </div>
 
           {/* Search, Category, Status Filters */}

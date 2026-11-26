@@ -580,15 +580,53 @@ _SEASON_MANIFEST_CACHE: dict[str, Any] = {
 
 
 def _resolve_seasons_lookbook_dir() -> Path:
-    primary = REPO_ROOT / "apps" / "storefront" / "public" / "seasons-lookbook"
-    if primary.exists():
-        return primary
+    vitrine_primary = REPO_ROOT / "apps" / "storefront" / "public" / "images" / "seasons-vitrine"
+    if vitrine_primary.exists():
+        return vitrine_primary
+    legacy_primary = REPO_ROOT / "apps" / "storefront" / "public" / "seasons-lookbook"
+    if legacy_primary.exists():
+        return legacy_primary
     fallback = (
         REPO_ROOT / "infra" / "seeds" / "real-assets-cache" / "processed" / "seasons-lookbook"
     )
     if fallback.exists():
         return fallback
-    return primary
+    return vitrine_primary
+
+
+def _resolve_lookbook_asset_path(lookbook_dir: Path, raw_asset_url: str) -> Path | None:
+    """Safely resolve a relative seasonal lookbook/vitrine asset URL inside storefront public or lookbook_dir."""
+    cleaned = raw_asset_url.strip().split("?", 1)[0].lstrip("/")
+    if not cleaned:
+        return None
+
+    public_dir = (REPO_ROOT / "apps" / "storefront" / "public").resolve()
+    resolved_lookbook_dir = lookbook_dir.resolve()
+
+    # 1. Try direct resolution relative to apps/storefront/public (e.g. /images/seasons-vitrine/...)
+    try:
+        public_candidate = (public_dir / cleaned).resolve()
+        public_candidate.relative_to(public_dir)
+        if public_candidate.is_file():
+            return public_candidate
+    except ValueError:
+        pass
+
+    # 2. Strip known URL prefixes and resolve inside lookbook_dir
+    rel = cleaned
+    for prefix in ("images/seasons-vitrine/", "seasons-vitrine/", "seasons-lookbook/"):
+        if rel.startswith(prefix):
+            rel = rel[len(prefix) :]
+            break
+    try:
+        local_candidate = (resolved_lookbook_dir / rel).resolve()
+        local_candidate.relative_to(resolved_lookbook_dir)
+        if local_candidate.is_file():
+            return local_candidate
+    except ValueError:
+        pass
+
+    return None
 
 
 def _load_seasons_manifest_map() -> dict[str, dict[str, Any]]:
@@ -679,25 +717,21 @@ def _resolve_slot_mask_and_profile(
                     profile["shadowDepth"] = float(raw_profile["shadowDepth"])
             raw_mask = str(slot.get("garmentRegionMask") or "").strip()
             if raw_mask:
-                rel = raw_mask.lstrip("/")
-                if rel.startswith("seasons-lookbook/"):
-                    rel = rel[len("seasons-lookbook/") :]
-                candidate = (lookbook_dir / rel).resolve()
-                try:
-                    candidate.relative_to(lookbook_dir.resolve())
-                    if candidate.is_file():
-                        mask_path = candidate
-                except ValueError:
-                    pass
+                resolved_mask = _resolve_lookbook_asset_path(lookbook_dir, raw_mask)
+                if resolved_mask is not None:
+                    mask_path = resolved_mask
             break
 
     if mask_path is None:
-        for fname in (
-            f"mask-{slot_lower}.png",
-            f"mask-{slot_lower.replace('_', '-')}.png",
-            f"mask-{slot_lower}.webp",
+        slot_dash = slot_lower.replace("_", "-")
+        for candidate in (
+            lookbook_dir / "masks" / f"{season_slug}-mask-{slot_lower}.png",
+            lookbook_dir / "masks" / f"{season_slug}-mask-{slot_dash}.png",
+            lookbook_dir / "masks" / f"{season_slug}-mask-{slot_lower}.webp",
+            lookbook_dir / season_slug / f"mask-{slot_lower}.png",
+            lookbook_dir / season_slug / f"mask-{slot_dash}.png",
+            lookbook_dir / season_slug / f"mask-{slot_lower}.webp",
         ):
-            candidate = lookbook_dir / season_slug / fname
             if candidate.is_file():
                 mask_path = candidate
                 break
@@ -805,8 +839,33 @@ def _render_season_restyle_sync(
     selections: list[SeasonRestyleSelectionBody],
 ) -> bytes:
     lookbook_dir = _resolve_seasons_lookbook_dir()
-    base_path = lookbook_dir / season_slug / "base.webp"
-    if not base_path.is_file():
+    manifest_map = _load_seasons_manifest_map()
+    manifest_season = manifest_map.get(season_slug)
+
+    base_path: Path | None = None
+    if manifest_season and isinstance(manifest_season.get("baseEditorialImageUrl"), str):
+        base_path = _resolve_lookbook_asset_path(
+            lookbook_dir,
+            str(manifest_season["baseEditorialImageUrl"]),
+        )
+
+    if base_path is None:
+        for candidate in (
+            lookbook_dir / "lookbooks" / f"{season_slug}-base.webp",
+            lookbook_dir / season_slug / "base.webp",
+            REPO_ROOT
+            / "infra"
+            / "seeds"
+            / "real-assets-cache"
+            / "processed"
+            / "seasons"
+            / f"{season_slug}.webp",
+        ):
+            if candidate.is_file():
+                base_path = candidate
+                break
+
+    if base_path is None or not base_path.is_file():
         raise FileNotFoundError(f"Base editorial image not found for season '{season_slug}'")
 
     base_raw = cv2.imread(str(base_path), cv2.IMREAD_COLOR)
@@ -824,9 +883,6 @@ def _render_season_restyle_sync(
 
     orig_lab = cv2.cvtColor(base_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
     working_bgr = base_bgr.astype(np.float32)
-
-    manifest_map = _load_seasons_manifest_map()
-    manifest_season = manifest_map.get(season_slug)
 
     for sel in selections:
         mask_path, profile = _resolve_slot_mask_and_profile(

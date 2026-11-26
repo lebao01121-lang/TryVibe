@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  transpilePackages: ['@atelier/contracts', '@atelier/ui-tokens'],
+  transpilePackages: ['@atelier/contracts', '@atelier/ui-tokens', '@atelier/motion-kit'],
   webpack: (config) => {
     const existing = config.watchOptions?.ignored;
     const ignoredList = Array.isArray(existing)

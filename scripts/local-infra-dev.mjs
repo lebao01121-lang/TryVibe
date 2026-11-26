@@ -2389,6 +2389,105 @@ function createMinioServer(port, storageRoot, defaultBuckets, privateBucketName)
 
       // Bucket-level operations
       if (!objectKey) {
+        const BUCKET_SUBRESOURCE_GET_MAP = {
+          policy: { status: 404, code: 'NoSuchBucketPolicy', message: 'The bucket policy does not exist' },
+          cors: { status: 404, code: 'NoSuchCORSConfiguration', message: 'The CORS configuration does not exist' },
+          lifecycle: { status: 404, code: 'NoSuchLifecycleConfiguration', message: 'The lifecycle configuration does not exist' },
+          tagging: { status: 404, code: 'NoSuchTagSet', message: 'The TagSet does not exist' },
+          encryption: {
+            status: 404,
+            code: 'ServerSideEncryptionConfigurationNotFoundError',
+            message: 'The server side encryption configuration was not found',
+          },
+          versioning: {
+            status: 200,
+            xml: '<?xml version="1.0" encoding="UTF-8"?><VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>',
+          },
+          publicaccessblock: {
+            status: 404,
+            code: 'NoSuchPublicAccessBlockConfiguration',
+            message: 'The public access block configuration was not found',
+          },
+          website: {
+            status: 404,
+            code: 'NoSuchWebsiteConfiguration',
+            message: 'The specified bucket does not have a website configuration',
+          },
+          logging: {
+            status: 200,
+            xml: '<?xml version="1.0" encoding="UTF-8"?><BucketLoggingStatus xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>',
+          },
+          notification: {
+            status: 200,
+            xml: '<?xml version="1.0" encoding="UTF-8"?><NotificationConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>',
+          },
+          replication: {
+            status: 404,
+            code: 'ReplicationConfigurationNotFoundError',
+            message: 'The replication configuration was not found',
+          },
+          ownershipcontrols: {
+            status: 404,
+            code: 'OwnershipControlsNotFoundError',
+            message: 'The bucket ownership controls were not found',
+          },
+        };
+
+        let bucketSubresource = null;
+        for (const paramKey of url.searchParams.keys()) {
+          const lowerKey = paramKey.toLowerCase();
+          if (Object.prototype.hasOwnProperty.call(BUCKET_SUBRESOURCE_GET_MAP, lowerKey)) {
+            bucketSubresource = lowerKey;
+            break;
+          }
+        }
+
+        if (bucketSubresource) {
+          if (bucket === privateBucketName && !hasS3Auth(req, url)) {
+            return sendS3Error(
+              res,
+              403,
+              'AccessDenied',
+              `Unsigned ${method} ?${bucketSubresource} on ${privateBucketName} is forbidden.`,
+              corsHeaders,
+            );
+          }
+          if (!fs.existsSync(bucketDir)) {
+            if (method === 'HEAD') {
+              res.writeHead(404, { 'x-amz-request-id': crypto.randomUUID(), ...corsHeaders });
+              res.end();
+              return;
+            }
+            return sendS3Error(res, 404, 'NoSuchBucket', 'The specified bucket does not exist.', corsHeaders);
+          }
+          if (method === 'DELETE') {
+            // Never delete bucketDir when deleting a bucket subresource (e.g. DELETE /<bucket>?policy)
+            res.writeHead(204, { 'x-amz-request-id': crypto.randomUUID(), ...corsHeaders });
+            res.end();
+            return;
+          }
+          if (method === 'PUT') {
+            await readRequestBodyBuffer(req);
+            const putStatus = bucketSubresource === 'policy' || bucketSubresource === 'tagging' ? 204 : 200;
+            res.writeHead(putStatus, { 'x-amz-request-id': crypto.randomUUID(), ...corsHeaders });
+            res.end();
+            return;
+          }
+          if (method === 'HEAD') {
+            res.writeHead(200, { 'x-amz-request-id': crypto.randomUUID(), ...corsHeaders });
+            res.end();
+            return;
+          }
+          if (method === 'GET') {
+            const spec = BUCKET_SUBRESOURCE_GET_MAP[bucketSubresource];
+            if (spec.status === 200 && spec.xml) {
+              return sendS3Xml(res, 200, spec.xml, corsHeaders);
+            }
+            return sendS3Error(res, spec.status, spec.code, spec.message, corsHeaders);
+          }
+          return sendS3Error(res, 405, 'MethodNotAllowed', `Method ${method} not supported on ?${bucketSubresource}`, corsHeaders);
+        }
+
         if (method === 'HEAD') {
           if (fs.existsSync(bucketDir)) {
             res.writeHead(200, { 'x-amz-request-id': crypto.randomUUID(), ...corsHeaders });
@@ -2406,6 +2505,15 @@ function createMinioServer(port, storageRoot, defaultBuckets, privateBucketName)
           return;
         }
         if (method === 'DELETE') {
+          if (bucket === privateBucketName && !hasS3Auth(req, url)) {
+            return sendS3Error(
+              res,
+              403,
+              'AccessDenied',
+              `Unsigned bucket DELETE on ${privateBucketName} is forbidden.`,
+              corsHeaders,
+            );
+          }
           if (fs.existsSync(bucketDir)) {
             fs.rmSync(bucketDir, { recursive: true, force: true });
           }

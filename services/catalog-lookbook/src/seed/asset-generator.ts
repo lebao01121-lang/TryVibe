@@ -746,11 +746,16 @@ export class SeedAssetGenerator {
                 label: `packaging-${pkgCode}-back`,
               })
             : frontBuf;
-        await Promise.all([
+        const packagingUploads: Array<Promise<void>> = [
           this.putWebp(pubBucket, `seed/packaging-${pkgCode}.webp`, frontBuf),
           this.putWebp(pubBucket, `seed/packaging-${pkgCode}-front.webp`, frontBuf),
           this.putWebp(pubBucket, `seed/packaging-${pkgCode}-back.webp`, backBuf),
-        ]);
+        ];
+        if (pkgCode === 'hop-lua-co-dien') {
+          // Backwards-compatible alias for already-seeded order_db shipments pointing to seed/pack-seed01.webp
+          packagingUploads.push(this.putWebp(pubBucket, 'seed/pack-seed01.webp', frontBuf));
+        }
+        await Promise.all(packagingUploads);
         uploadedCount += 1;
       } catch (error) {
         logger.warn(

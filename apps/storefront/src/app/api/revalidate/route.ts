@@ -1,5 +1,6 @@
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { NextResponse, type NextRequest } from 'next/server';
+import { invalidateStorefrontMemoryCache } from '@/lib/bootstrap';
 
 interface RevalidateRequestBody {
   tags?: string[];
@@ -98,6 +99,7 @@ export async function POST(request: NextRequest) {
   const tags = Array.from(tagSet);
   const paths = Array.from(pathSet);
 
+  invalidateStorefrontMemoryCache(tags);
   for (const tag of tags) {
     revalidateTag(tag);
   }

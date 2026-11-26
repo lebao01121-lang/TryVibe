@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@atelier/contracts": "workspace:*",
+    "@atelier/motion-kit": "workspace:*",
     "@atelier/ui-tokens": "workspace:*",
     "next": "^15.3.0",
     "react": "^19.1.0",

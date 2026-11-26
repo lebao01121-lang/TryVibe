@@ -15,6 +15,7 @@ export interface OpenTryOnOptions {
   lower?: TryOnGarmentRef | null;
   onePiece?: TryOnGarmentRef | null;
   outerwear?: TryOnGarmentRef | null;
+  accessory?: TryOnGarmentRef | null;
 }
 
 export type ActiveStudioOutfitSlotKey =

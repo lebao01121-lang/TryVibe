@@ -18,6 +18,10 @@ import {
   type UserSummaryDto,
 } from '@atelier/contracts';
 import {
+  AnimatedTelemetryNumber,
+  LiveStackedHealthBar,
+} from '@atelier/motion-kit';
+import {
   adminFetch,
   buildQueryString,
   extractList,
@@ -590,8 +594,30 @@ export function IamAuditTab({
               IAM &amp; RBAC · Redis permissionVersion Instant Revocation
             </p>
             <h2 className="font-editorial mt-1 text-3xl text-[#1C1410]">
-              Quản lý tài khoản &amp; Phân quyền ({users.length})
+              Quản lý tài khoản &amp; Phân quyền (
+              <AnimatedTelemetryNumber value={users.length} />)
             </h2>
+            <div className="mt-2 max-w-md">
+              <LiveStackedHealthBar
+                heightClass="h-2"
+                segments={[
+                  {
+                    id: 'active',
+                    label: 'Hoạt động',
+                    value: users.filter((u) => u.status === UserStatus.ACTIVE)
+                      .length,
+                    tone: 'emerald',
+                  },
+                  {
+                    id: 'inactive',
+                    label: 'Tạm khóa / Khác',
+                    value: users.filter((u) => u.status !== UserStatus.ACTIVE)
+                      .length,
+                    tone: 'amber',
+                  },
+                ]}
+              />
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button

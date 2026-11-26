@@ -256,6 +256,12 @@ export const SeasonWearableSlotKeySchema = z.enum([
 ]);
 export type SeasonWearableSlotKey = z.infer<typeof SeasonWearableSlotKeySchema>;
 
+export const SeasonOutfitFormulaSchema = z.enum([
+  'TOP_BOTTOM_ACCESSORY',
+  'ONE_PIECE_OUTERWEAR_ACCESSORY',
+]);
+export type SeasonOutfitFormula = z.infer<typeof SeasonOutfitFormulaSchema>;
+
 export const MaterialOpticalProfileSchema = z.object({
   sheen: z.enum(['silk', 'linen', 'tweed', 'leather']),
   specularIntensity: z.number(),
@@ -283,6 +289,8 @@ export const SeasonWearableSlotSchema = z.object({
   productId: z.string().min(1),
   productSlug: z.string().min(1),
   productName: z.string().min(1),
+  shortPinLabel: z.string().min(1).optional(),
+  defaultColorKey: z.string().min(1).optional(),
   basePriceVnd: z.number().int().nonnegative(),
   pinPosition: z.object({
     xPercent: z.number(),
@@ -306,6 +314,8 @@ export const SeasonInteractiveLookbookSchema = z.object({
   baseEditorialImageUrl: z.string().min(1),
   materialHeadline: z.string().min(1),
   shortName: z.string().min(1),
+  outfitFormula: SeasonOutfitFormulaSchema.optional(),
+  defaultMacroSlotKey: SeasonWearableSlotKeySchema.optional(),
   totalDesigns: z.number().int().nonnegative(),
   wearableSlots: z.array(SeasonWearableSlotSchema),
   restyleCacheMap: z.record(z.string()),

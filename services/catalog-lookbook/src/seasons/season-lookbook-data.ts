@@ -6,6 +6,7 @@ import type {
   ProductVariantDto,
   SeasonalCollectionDto,
   SeasonInteractiveLookbook,
+  SeasonOutfitFormula,
   SeasonWearableSlot,
   SeasonWearableSlotKey,
   SeasonWearableVariant,
@@ -24,6 +25,8 @@ interface ManifestVariantEntry {
 interface ManifestSlotEntry {
   slotKey?: SeasonWearableSlotKey;
   productSlug?: string;
+  shortPinLabel?: string;
+  defaultColorKey?: string;
   pinPosition?: { xPercent?: number; yPercent?: number };
   garmentRegionMask?: string;
   maskBbox?: { x?: number; y?: number; w?: number; h?: number };
@@ -41,6 +44,8 @@ interface ManifestSeasonEntry {
   materialHeadline?: string;
   note?: string;
   isCurrent?: boolean;
+  outfitFormula?: SeasonOutfitFormula;
+  defaultMacroSlotKey?: SeasonWearableSlotKey;
   baseEditorialImageUrl?: string;
   wearableSlots?: ManifestSlotEntry[];
   restyleCacheMap?: Record<string, string>;
@@ -49,6 +54,8 @@ interface ManifestSeasonEntry {
 interface CanonicalSlotFallback {
   slotKey: SeasonWearableSlotKey;
   productSlug: string;
+  shortPinLabel: string;
+  defaultColorKey: string;
   pinPosition: { xPercent: number; yPercent: number };
   garmentRegionMask: string;
   maskBbox: { x: number; y: number; w: number; h: number };
@@ -73,6 +80,8 @@ export interface CanonicalSeasonMetadata {
   materialHeadline: string;
   note: string;
   isCurrent: boolean;
+  outfitFormula: SeasonOutfitFormula;
+  defaultMacroSlotKey: SeasonWearableSlotKey;
   baseEditorialImageUrl: string;
   wearableSlots: CanonicalSlotFallback[];
 }
@@ -95,16 +104,20 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
     name: 'Xuân Lụa Bảo Lộc',
     shortName: 'Xuân Lụa',
     materialHeadline: 'Lụa Tơ Tằm Bảo Lộc 22 Momme',
-    note: 'Lụa Tơ Tằm Bảo Lộc 22 Momme — ánh ngà ấm và phom dáng mềm rủ cho tiết xuân Hà Nội.',
+    note: 'Lụa Tơ Tằm Bảo Lộc 22 Momme — áo sơ mi lụa kem ngà phối chân váy xếp ly kem sữa và ví clutch champagne.',
     isCurrent: true,
+    outfitFormula: 'TOP_BOTTOM_ACCESSORY',
+    defaultMacroSlotKey: 'TOP',
     baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/xuan-tam-xuan-base.webp',
     wearableSlots: [
       {
         slotKey: 'TOP',
         productSlug: 'ao-so-mi-lua-to-tam-tam-xuan',
-        pinPosition: { xPercent: 46.0, yPercent: 36.0 },
+        shortPinLabel: 'Áo Sơ Mi Lụa',
+        defaultColorKey: 'ivory',
+        pinPosition: { xPercent: 52.0, yPercent: 34.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-top.png',
-        maskBbox: { x: 0.2927, y: 0.3183, w: 0.5083, h: 0.3767 },
+        maskBbox: { x: 0.3479, y: 0.2133, w: 0.3083, h: 0.3442 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.45, shadowDepth: 0.34 },
         variants: [
           {
@@ -144,9 +157,11 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'BOTTOM',
         productSlug: 'chan-vay-xep-ly-midi-cap-cao',
-        pinPosition: { xPercent: 42.0, yPercent: 75.0 },
+        shortPinLabel: 'Chân Váy Xếp Ly',
+        defaultColorKey: 'ivory',
+        pinPosition: { xPercent: 56.0, yPercent: 72.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-bottom.png',
-        maskBbox: { x: 0.2469, y: 0.62, w: 0.4688, h: 0.3767 },
+        maskBbox: { x: 0.3417, y: 0.4392, w: 0.3333, h: 0.4175 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.36, shadowDepth: 0.38 },
         variants: [
           {
@@ -186,9 +201,11 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ACCESSORY',
         productSlug: 'vi-cam-tay-clutch-champagne',
-        pinPosition: { xPercent: 60.0, yPercent: 56.0 },
+        shortPinLabel: 'Ví Clutch',
+        defaultColorKey: 'champagne',
+        pinPosition: { xPercent: 44.0, yPercent: 56.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/xuan-tam-xuan-mask-accessory.png',
-        maskBbox: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+        maskBbox: { x: 0.3854, y: 0.5117, w: 0.1365, h: 0.0717 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.52, shadowDepth: 0.34 },
         variants: [
           {
@@ -226,16 +243,20 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
     name: 'Hạ Linen Hữu Cơ',
     shortName: 'Hạ Linen',
     materialHeadline: '100% Organic French Linen Thoáng Khí',
-    note: '100% Organic French Linen Thoáng Khí — đường cắt khoáng đạt và thoáng nhẹ dưới nắng hạ.',
+    note: '100% Organic French Linen Thoáng Khí — áo sơ mi ngà sữa phối quần culottes linen cát biển và khăn lụa hoa mai.',
     isCurrent: false,
+    outfitFormula: 'TOP_BOTTOM_ACCESSORY',
+    defaultMacroSlotKey: 'TOP',
     baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/ha-pho-co-base.webp',
     wearableSlots: [
       {
         slotKey: 'TOP',
         productSlug: 'ao-so-mi-lua-to-tam-bao-loc',
-        pinPosition: { xPercent: 38.0, yPercent: 55.0 },
+        shortPinLabel: 'Áo Sơ Mi Bảo Lộc',
+        defaultColorKey: 'ivory',
+        pinPosition: { xPercent: 39.0, yPercent: 49.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/ha-pho-co-mask-top.png',
-        maskBbox: { x: 0.1052, y: 0.3025, w: 0.6615, h: 0.4275 },
+        maskBbox: { x: 0.224, y: 0.28, w: 0.575, h: 0.3383 },
         materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.16, shadowDepth: 0.28 },
         variants: [
           {
@@ -267,9 +288,11 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'BOTTOM',
         productSlug: 'quan-culottes-linen-huu-co',
-        pinPosition: { xPercent: 52.0, yPercent: 75.0 },
+        shortPinLabel: 'Quần Culottes Linen',
+        defaultColorKey: 'sand',
+        pinPosition: { xPercent: 50.0, yPercent: 76.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/ha-pho-co-mask-bottom.png',
-        maskBbox: { x: 0.35, y: 0.6442, w: 0.4229, h: 0.3542 },
+        maskBbox: { x: 0.3083, y: 0.6083, w: 0.4062, h: 0.3892 },
         materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.14, shadowDepth: 0.30 },
         variants: [
           {
@@ -301,9 +324,11 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ACCESSORY',
         productSlug: 'khan-lua-hoa-tiet-tam-xuan',
-        pinPosition: { xPercent: 56.0, yPercent: 36.0 },
+        shortPinLabel: 'Khăn Lụa Họa Tiết',
+        defaultColorKey: 'ivory',
+        pinPosition: { xPercent: 60.0, yPercent: 34.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/ha-pho-co-mask-accessory.png',
-        maskBbox: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+        maskBbox: { x: 0.4594, y: 0.2392, w: 0.2323, h: 0.3775 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.42, shadowDepth: 0.26 },
         variants: [
           {
@@ -340,17 +365,21 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
     months: 'T5–T6',
     name: 'Resort Biển & Lụa Bay',
     shortName: 'Resort Biển',
-    materialHeadline: 'Lụa Organza & Tơ Sống Dệt Nhẹ',
-    note: 'Lụa Organza & Tơ Sống Dệt Nhẹ — thiết kế nghỉ dưỡng bay bổng đón gió biển ban mai.',
+    materialHeadline: 'Linen Tự Nhiên & Len Merino Mỏng Nhẹ',
+    note: 'Linen & Tơ Sống dệt thoáng kết hợp cardigan Merino khoác nhẹ đón gió biển ban mai.',
     isCurrent: false,
+    outfitFormula: 'ONE_PIECE_OUTERWEAR_ACCESSORY',
+    defaultMacroSlotKey: 'ONE_PIECE',
     baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/resort-ban-mai-base.webp',
     wearableSlots: [
       {
         slotKey: 'ONE_PIECE',
         productSlug: 'dam-midi-linen-phoi-dai',
-        pinPosition: { xPercent: 56.0, yPercent: 57.0 },
+        shortPinLabel: 'Đầm Midi Linen',
+        defaultColorKey: 'sand',
+        pinPosition: { xPercent: 54.0, yPercent: 64.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/resort-ban-mai-mask-one_piece.png',
-        maskBbox: { x: 0.3458, y: 0.3775, w: 0.4417, h: 0.6192 },
+        maskBbox: { x: 0.1292, y: 0.2242, w: 0.7208, h: 0.7633 },
         materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.20, shadowDepth: 0.30 },
         variants: [
           {
@@ -382,9 +411,11 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'OUTERWEAR',
         productSlug: 'ao-cardigan-len-merino-khuy-sung',
-        pinPosition: { xPercent: 28.0, yPercent: 38.0 },
+        shortPinLabel: 'Cardigan Merino',
+        defaultColorKey: 'ivory',
+        pinPosition: { xPercent: 31.0, yPercent: 46.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/resort-ban-mai-mask-outerwear.png',
-        maskBbox: { x: 0.0521, y: 0.4492, w: 0.3563, h: 0.5483 },
+        maskBbox: { x: 0.1531, y: 0.2483, w: 0.6208, h: 0.6042 },
         materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.16, shadowDepth: 0.34 },
         variants: [
           {
@@ -416,9 +447,11 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ACCESSORY',
         productSlug: 'khan-lua-hoa-tiet-tam-xuan',
-        pinPosition: { xPercent: 46.0, yPercent: 75.0 },
+        shortPinLabel: 'Khăn Lụa Họa Tiết',
+        defaultColorKey: 'ivory',
+        pinPosition: { xPercent: 56.0, yPercent: 27.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/resort-ban-mai-mask-accessory.png',
-        maskBbox: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+        maskBbox: { x: 0.4396, y: 0.1992, w: 0.2698, h: 0.1625 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.42, shadowDepth: 0.26 },
         variants: [
           {
@@ -455,51 +488,57 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
     months: 'T7–T8',
     name: 'Thu Công Sở Thanh Lịch',
     shortName: 'Thu Công Sở',
-    materialHeadline: 'Wool Silk Blend & Crepe Đứng Phom',
-    note: 'Wool Silk Blend & Crepe Đứng Phom — blazer dựng vai chuẩn mực và quần âu xếp ly thanh lịch.',
+    materialHeadline: 'Lụa Organza & Wool Silk Blend Đứng Phom',
+    note: 'Áo lụa Organza kem ngà phối quần tây xếp ly đôi xám than và thắt lưng da khóa đồng chuẩn mực công sở.',
     isCurrent: false,
+    outfitFormula: 'TOP_BOTTOM_ACCESSORY',
+    defaultMacroSlotKey: 'TOP',
     baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/thu-hoang-hon-base.webp',
     wearableSlots: [
       {
-        slotKey: 'OUTERWEAR',
-        productSlug: 'ao-blazer-linen-dang-suong',
-        pinPosition: { xPercent: 36.0, yPercent: 36.0 },
-        garmentRegionMask: '/images/seasons-vitrine/masks/thu-hoang-hon-mask-outerwear.png',
-        maskBbox: { x: 0.1656, y: 0.3058, w: 0.5958, h: 0.6917 },
-        materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.18, shadowDepth: 0.35 },
+        slotKey: 'TOP',
+        productSlug: 'ao-kieu-lua-organza-phoi-no',
+        shortPinLabel: 'Áo Lụa Organza',
+        defaultColorKey: 'ivory',
+        pinPosition: { xPercent: 47.0, yPercent: 29.0 },
+        garmentRegionMask: '/images/seasons-vitrine/masks/thu-hoang-hon-mask-top.png',
+        maskBbox: { x: 0.3792, y: 0.19, w: 0.3135, h: 0.2208 },
+        materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.44, shadowDepth: 0.28 },
         variants: [
           {
-            colorKey: 'sand',
-            colorName: 'Cát Ngà',
-            colorHex: '#D8C9B4',
-            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-blazer-linen-dang-suong-sand.webp',
-            macroSwatchUrl: '/images/seasons-vitrine/macros/linen-sand.webp',
-            fabricSpecText: 'Wool Silk & Linen Bỉ · Cát Ngà · Dựng vai mảnh chuẩn mực',
+            colorKey: 'ivory',
+            colorName: 'Kem Ngà',
+            colorHex: '#F4EFE6',
+            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-kieu-lua-organza-phoi-no-ivory.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/silk-ivory.webp',
+            fabricSpecText: 'Lụa Organza Tơ Tằm · Kem Ngà · Nẹp cổ thanh lịch công sở',
           },
           {
-            colorKey: 'espresso',
-            colorName: 'Cacao Đậm',
-            colorHex: '#3A2A22',
-            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-blazer-linen-dang-suong-espresso.webp',
-            macroSwatchUrl: '/images/seasons-vitrine/macros/linen-espresso.webp',
-            fabricSpecText: 'Wool Silk & Linen Bỉ · Cacao Đậm · Lót lụa Habotai mềm mát',
+            colorKey: 'champagne',
+            colorName: 'Hồng Phấn Đất',
+            colorHex: '#DFC5BE',
+            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-kieu-lua-organza-phoi-no-champagne.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/silk-champagne.webp',
+            fabricSpecText: 'Lụa Organza Tơ Tằm · Hồng Phấn Đất · Xuyên thấu tinh tế',
           },
           {
             colorKey: 'jet-black',
             colorName: 'Đen Tuyền',
             colorHex: '#171615',
-            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-blazer-linen-dang-suong-jet-black.webp',
-            macroSwatchUrl: '/images/seasons-vitrine/macros/linen-jet-black.webp',
-            fabricSpecText: 'Wool Silk & Linen Bỉ · Đen Tuyền · Khí chất công sở hiện đại',
+            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-kieu-lua-organza-phoi-no-jet-black.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/silk-jet-black.webp',
+            fabricSpecText: 'Lụa Organza Tơ Tằm · Đen Tuyền · Sắc nét chuẩn mực',
           },
         ],
       },
       {
         slotKey: 'BOTTOM',
         productSlug: 'quan-tay-ong-suong-xep-ly-doi',
-        pinPosition: { xPercent: 48.0, yPercent: 76.0 },
+        shortPinLabel: 'Quần Tây Xếp Ly',
+        defaultColorKey: 'charcoal',
+        pinPosition: { xPercent: 48.0, yPercent: 68.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/thu-hoang-hon-mask-bottom.png',
-        maskBbox: { x: 0.4531, y: 0.7117, w: 0.2604, h: 0.2858 },
+        maskBbox: { x: 0.3521, y: 0.4525, w: 0.3042, h: 0.5442 },
         materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.18, shadowDepth: 0.36 },
         variants: [
           {
@@ -508,7 +547,7 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
             colorHex: '#3B3D40',
             studioCutoutUrl: '/images/seasons-vitrine/variants/quan-tay-ong-suong-xep-ly-doi-charcoal.webp',
             macroSwatchUrl: '/images/seasons-vitrine/macros/tweed-charcoal.webp',
-            fabricSpecText: 'Wool Silk Blend · Xám Than · Đường ép ly sắc nét',
+            fabricSpecText: 'Wool Silk Blend · Xám Than · Đường ép ly đôi sắc nét',
           },
           {
             colorKey: 'sand',
@@ -531,9 +570,11 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ACCESSORY',
         productSlug: 'that-lung-da-khoa-dong',
-        pinPosition: { xPercent: 56.0, yPercent: 58.0 },
+        shortPinLabel: 'Thắt Lưng Da',
+        defaultColorKey: 'espresso',
+        pinPosition: { xPercent: 52.0, yPercent: 44.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/thu-hoang-hon-mask-accessory.png',
-        maskBbox: { x: 0.4521, y: 0.68, w: 0.1948, h: 0.0417 },
+        maskBbox: { x: 0.3698, y: 0.3792, w: 0.2344, h: 0.0775 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.50, shadowDepth: 0.36 },
         variants: [
           {
@@ -570,51 +611,57 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
     months: 'T9–T10',
     name: 'Dạ Tweed & Cashmere',
     shortName: 'Dạ Tweed',
-    materialHeadline: 'Len Cashmere Mông Cổ & Dạ Tweed Dệt Nổi',
-    note: 'Len Cashmere Mông Cổ & Dạ Tweed Dệt Nổi — cấu trúc dệt thủ công ấm áp đầy khí chất.',
+    materialHeadline: 'Dạ Tweed Dệt Nổi Thủ Công & Đầm Midi Chiết Eo',
+    note: 'Áo khoác Dạ Tweed dệt thủ công khoác ngoài đầm midi cổ vuông chiết eo trắng ngọc đầy khí chất.',
     isCurrent: false,
+    outfitFormula: 'ONE_PIECE_OUTERWEAR_ACCESSORY',
+    defaultMacroSlotKey: 'OUTERWEAR',
     baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/dong-cashmere-base.webp',
     wearableSlots: [
       {
-        slotKey: 'TOP',
-        productSlug: 'ao-len-cashmere-co-lo',
-        pinPosition: { xPercent: 44.0, yPercent: 36.0 },
-        garmentRegionMask: '/images/seasons-vitrine/masks/dong-cashmere-mask-top.png',
-        maskBbox: { x: 0.3292, y: 0.2908, w: 0.2469, h: 0.2883 },
-        materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.16, shadowDepth: 0.34 },
+        slotKey: 'ONE_PIECE',
+        productSlug: 'dam-midi-co-vuong-chiet-eo',
+        shortPinLabel: 'Đầm Midi Cổ Vuông',
+        defaultColorKey: 'ivory',
+        pinPosition: { xPercent: 52.0, yPercent: 51.0 },
+        garmentRegionMask: '/images/seasons-vitrine/masks/dong-cashmere-mask-one_piece.png',
+        maskBbox: { x: 0.3438, y: 0.265, w: 0.3521, h: 0.725 },
+        materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.24, shadowDepth: 0.32 },
         variants: [
           {
             colorKey: 'ivory',
-            colorName: 'Kem Cashmere',
-            colorHex: '#EFE6D8',
-            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-len-cashmere-co-lo-ivory.webp',
-            macroSwatchUrl: '/images/seasons-vitrine/macros/tweed-ivory.webp',
-            fabricSpecText: 'Cashmere Nội Mông 14 Gauge · Kem Cashmere · Siêu nhẹ không dặm',
+            colorName: 'Trắng Ngọc',
+            colorHex: '#F3ECE0',
+            studioCutoutUrl: '/images/seasons-vitrine/variants/dam-midi-co-vuong-chiet-eo-ivory.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/linen-ivory.webp',
+            fabricSpecText: 'Tơ Linen Ép Phom · Trắng Ngọc · Cổ vuông hàng khuy bất đối xứng',
           },
           {
             colorKey: 'espresso',
-            colorName: 'Cacao Đậm',
-            colorHex: '#2E221B',
-            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-len-cashmere-co-lo-espresso.webp',
-            macroSwatchUrl: '/images/seasons-vitrine/macros/tweed-espresso.webp',
-            fabricSpecText: 'Cashmere Nội Mông 14 Gauge · Cacao Đậm · Ấm áp tinh giản',
+            colorName: 'Nâu Espresso',
+            colorHex: '#46332A',
+            studioCutoutUrl: '/images/seasons-vitrine/variants/dam-midi-co-vuong-chiet-eo-espresso.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/linen-espresso.webp',
+            fabricSpecText: 'Tơ Linen Ép Phom · Nâu Espresso · Chiết eo chuẩn couture',
           },
           {
-            colorKey: 'wine-red',
-            colorName: 'Đỏ Rượu Vang',
-            colorHex: '#5E1924',
-            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-len-cashmere-co-lo-wine-red.webp',
-            macroSwatchUrl: '/images/seasons-vitrine/macros/tweed-wine-red.webp',
-            fabricSpecText: 'Cashmere Nội Mông 14 Gauge · Đỏ Rượu Vang · Điểm nhấn mùa lạnh',
+            colorKey: 'jet-black',
+            colorName: 'Đen Tuyền',
+            colorHex: '#171615',
+            studioCutoutUrl: '/images/seasons-vitrine/variants/dam-midi-co-vuong-chiet-eo-jet-black.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/linen-jet-black.webp',
+            fabricSpecText: 'Tơ Linen Ép Phom · Đen Tuyền · Thanh mảnh sang trọng',
           },
         ],
       },
       {
         slotKey: 'OUTERWEAR',
         productSlug: 'ao-khoac-tweed-det-thu-cong',
-        pinPosition: { xPercent: 64.0, yPercent: 55.0 },
+        shortPinLabel: 'Áo Khoác Tweed',
+        defaultColorKey: 'ivory',
+        pinPosition: { xPercent: 65.0, yPercent: 35.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/dong-cashmere-mask-outerwear.png',
-        maskBbox: { x: 0.2823, y: 0.2675, w: 0.5656, h: 0.6033 },
+        maskBbox: { x: 0.2583, y: 0.1958, w: 0.5042, h: 0.4217 },
         materialOpticalProfile: { sheen: 'tweed', specularIntensity: 0.20, shadowDepth: 0.40 },
         variants: [
           {
@@ -646,11 +693,21 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       {
         slotKey: 'ACCESSORY',
         productSlug: 'vi-cam-tay-clutch-champagne',
-        pinPosition: { xPercent: 44.0, yPercent: 74.0 },
+        shortPinLabel: 'Ví Clutch',
+        defaultColorKey: 'jet-black',
+        pinPosition: { xPercent: 41.0, yPercent: 69.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/dong-cashmere-mask-accessory.png',
-        maskBbox: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+        maskBbox: { x: 0.3052, y: 0.63, w: 0.1875, h: 0.1317 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.52, shadowDepth: 0.34 },
         variants: [
+          {
+            colorKey: 'jet-black',
+            colorName: 'Đen Tuyền',
+            colorHex: '#171615',
+            studioCutoutUrl: '/images/seasons-vitrine/variants/vi-cam-tay-clutch-champagne-jet-black.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/leather-jet-black.webp',
+            fabricSpecText: 'Lụa Satin Khung Đồng · Đen Tuyền · Hoàn thiện set Dạ Tweed',
+          },
           {
             colorKey: 'champagne',
             colorName: 'Champagne Ánh Kim',
@@ -658,14 +715,6 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
             studioCutoutUrl: '/images/seasons-vitrine/variants/vi-cam-tay-clutch-champagne-champagne.webp',
             macroSwatchUrl: '/images/seasons-vitrine/macros/leather-champagne.webp',
             fabricSpecText: 'Lụa Satin Khung Đồng · Champagne Ánh Kim · Sang trọng mùa thu đông',
-          },
-          {
-            colorKey: 'jet-black',
-            colorName: 'Đen Tuyền',
-            colorHex: '#171615',
-            studioCutoutUrl: '/images/seasons-vitrine/variants/vi-cam-tay-clutch-champagne-jet-black.webp',
-            macroSwatchUrl: '/images/seasons-vitrine/macros/leather-jet-black.webp',
-            fabricSpecText: 'Lụa Satin Khung Đồng · Đen Tuyền · Hoàn thiện set Tweed',
           },
           {
             colorKey: 'wine-red',
@@ -686,16 +735,20 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
     name: 'Dạ Tiệc Cuối Năm',
     shortName: 'Dạ Tiệc',
     materialHeadline: 'Lụa Satin Ánh Ngọc & Nhung Couture',
-    note: 'Lụa Satin Ánh Ngọc & Nhung Couture — đầm cắt thiên bias-cut tôn vinh kỹ nghệ dạ tiệc cuối năm.',
+    note: 'Đầm dự tiệc lụa satin đỏ rượu vang cắt thiên bias-cut khoác hờ blazer cát ngà và ví clutch champagne.',
     isCurrent: false,
+    outfitFormula: 'ONE_PIECE_OUTERWEAR_ACCESSORY',
+    defaultMacroSlotKey: 'ONE_PIECE',
     baseEditorialImageUrl: '/images/seasons-vitrine/lookbooks/atelier-di-san-base.webp',
     wearableSlots: [
       {
         slotKey: 'ONE_PIECE',
         productSlug: 'dam-du-tiec-lua-satin-co-do',
-        pinPosition: { xPercent: 48.0, yPercent: 38.0 },
+        shortPinLabel: 'Đầm Satin Cổ Đổ',
+        defaultColorKey: 'wine-red',
+        pinPosition: { xPercent: 47.0, yPercent: 71.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/atelier-di-san-mask-one_piece.png',
-        maskBbox: { x: 0.2396, y: 0.3167, w: 0.4719, h: 0.6808 },
+        maskBbox: { x: 0.3187, y: 0.2133, w: 0.3427, h: 0.7492 },
         materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.50, shadowDepth: 0.36 },
         variants: [
           {
@@ -726,44 +779,48 @@ export const CANONICAL_SEASONS_METADATA: Readonly<Record<string, CanonicalSeason
       },
       {
         slotKey: 'OUTERWEAR',
-        productSlug: 'ao-kieu-lua-organza-phoi-no',
-        pinPosition: { xPercent: 70.0, yPercent: 56.0 },
+        productSlug: 'ao-blazer-linen-dang-suong',
+        shortPinLabel: 'Blazer Kem Ngà',
+        defaultColorKey: 'sand',
+        pinPosition: { xPercent: 36.0, yPercent: 34.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/atelier-di-san-mask-outerwear.png',
-        maskBbox: { x: 0.1969, y: 0.365, w: 0.6823, h: 0.3658 },
-        materialOpticalProfile: { sheen: 'silk', specularIntensity: 0.44, shadowDepth: 0.28 },
+        maskBbox: { x: 0.3073, y: 0.2033, w: 0.4156, h: 0.3492 },
+        materialOpticalProfile: { sheen: 'linen', specularIntensity: 0.22, shadowDepth: 0.34 },
         variants: [
           {
-            colorKey: 'champagne',
-            colorName: 'Hồng Phấn Đất',
-            colorHex: '#DFC5BE',
-            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-kieu-lua-organza-phoi-no-champagne.webp',
-            macroSwatchUrl: '/images/seasons-vitrine/macros/silk-champagne.webp',
-            fabricSpecText: 'Lụa Organza Tơ Tằm · Hồng Phấn Đất · Xuyên thấu tinh tế',
+            colorKey: 'sand',
+            colorName: 'Cát Ngà',
+            colorHex: '#D8C9B4',
+            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-blazer-linen-dang-suong-sand.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/linen-sand.webp',
+            fabricSpecText: 'Linen Bỉ & Lót Lụa Habotai · Cát Ngà · Khoác hờ dạ tiệc thanh lịch',
           },
           {
-            colorKey: 'ivory',
-            colorName: 'Kem Ngà',
-            colorHex: '#F4EFE6',
-            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-kieu-lua-organza-phoi-no-ivory.webp',
-            macroSwatchUrl: '/images/seasons-vitrine/macros/silk-ivory.webp',
-            fabricSpecText: 'Lụa Organza Tơ Tằm · Kem Ngà · Nơ cổ thắt thủ công',
+            colorKey: 'espresso',
+            colorName: 'Cacao Đậm',
+            colorHex: '#3A2A22',
+            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-blazer-linen-dang-suong-espresso.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/linen-espresso.webp',
+            fabricSpecText: 'Linen Bỉ & Lót Lụa Habotai · Cacao Đậm · Phom dựng vai mềm',
           },
           {
             colorKey: 'jet-black',
             colorName: 'Đen Tuyền',
             colorHex: '#171615',
-            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-kieu-lua-organza-phoi-no-jet-black.webp',
-            macroSwatchUrl: '/images/seasons-vitrine/macros/silk-jet-black.webp',
-            fabricSpecText: 'Lụa Organza Tơ Tằm · Đen Tuyền · Huyền bí dạ tiệc',
+            studioCutoutUrl: '/images/seasons-vitrine/variants/ao-blazer-linen-dang-suong-jet-black.webp',
+            macroSwatchUrl: '/images/seasons-vitrine/macros/linen-jet-black.webp',
+            fabricSpecText: 'Linen Bỉ & Lót Lụa Habotai · Đen Tuyền · Khí chất dạ hội',
           },
         ],
       },
       {
         slotKey: 'ACCESSORY',
         productSlug: 'vi-cam-tay-clutch-champagne',
-        pinPosition: { xPercent: 46.0, yPercent: 75.0 },
+        shortPinLabel: 'Ví Clutch',
+        defaultColorKey: 'champagne',
+        pinPosition: { xPercent: 59.0, yPercent: 54.0 },
         garmentRegionMask: '/images/seasons-vitrine/masks/atelier-di-san-mask-accessory.png',
-        maskBbox: { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
+        maskBbox: { x: 0.5521, y: 0.4925, w: 0.0625, h: 0.0675 },
         materialOpticalProfile: { sheen: 'leather', specularIntensity: 0.52, shadowDepth: 0.34 },
         variants: [
           {
@@ -990,6 +1047,27 @@ function buildSizeSkuMap(dbVariant: ProductVariantDto | undefined): Record<strin
   return map;
 }
 
+function resolveOutfitFormulaFromSlots(
+  slots: readonly SeasonWearableSlot[],
+  explicitFormula?: SeasonOutfitFormula,
+): SeasonOutfitFormula {
+  const keys = slots.map((s) => s.slotKey);
+  const hasOnePiece = keys.includes('ONE_PIECE');
+  const hasTopOrBottom = keys.includes('TOP') || keys.includes('BOTTOM');
+  if (hasOnePiece && hasTopOrBottom) {
+    throw new Error(
+      `Invalid Outfit-Bound season slots: cannot mix ONE_PIECE with TOP/BOTTOM (${keys.join(' + ')})`,
+    );
+  }
+  if (
+    explicitFormula === 'TOP_BOTTOM_ACCESSORY' ||
+    explicitFormula === 'ONE_PIECE_OUTERWEAR_ACCESSORY'
+  ) {
+    return explicitFormula;
+  }
+  return hasOnePiece ? 'ONE_PIECE_OUTERWEAR_ACCESSORY' : 'TOP_BOTTOM_ACCESSORY';
+}
+
 function sanitizeSlotKey(raw: unknown, fallback: SeasonWearableSlotKey): SeasonWearableSlotKey {
   if (
     raw === 'TOP' ||
@@ -1193,7 +1271,7 @@ export function hydrateSeasonCollectionDto(
       seasonMatchedProducts[wearableSlots.length] ??
       cleanProducts[0];
 
-    if (dbProduct && dbLinkedProducts.length === 0) {
+    if (dbProduct) {
       heroProductsMap.set(dbProduct.slug, dbProduct);
     }
 
@@ -1294,11 +1372,21 @@ export function hydrateSeasonCollectionDto(
           : fallbackSlot.maskBbox.h,
     };
 
+    const shortPinLabel =
+      (manifestSlot?.shortPinLabel && manifestSlot.shortPinLabel.trim()) ||
+      fallbackSlot.shortPinLabel;
+    const defaultColorKey =
+      (manifestSlot?.defaultColorKey && manifestSlot.defaultColorKey.trim()) ||
+      fallbackSlot.defaultColorKey ||
+      hydratedVariants[0]?.colorKey;
+
     wearableSlots.push({
       slotKey,
       productId: dbProduct?.id ?? `product-${desiredSlug}`,
       productSlug: dbProduct?.slug ?? desiredSlug,
       productName: dbProduct?.name ?? desiredSlug,
+      shortPinLabel,
+      defaultColorKey,
       basePriceVnd: Math.max(0, Math.round(basePriceVnd)),
       pinPosition,
       garmentRegionMask: pickVerifiedVitrineUrl(
@@ -1353,15 +1441,22 @@ export function hydrateSeasonCollectionDto(
     (manifest?.materialHeadline && manifest.materialHeadline.trim()) ||
     canonical?.materialHeadline ||
     row.subtitle;
-  const baseEditorialImageUrl =
-    (row.hero_image_url && row.hero_image_url.trim()) ||
+
+  const rawHeroUrl =
+    typeof row.hero_image_url === 'string' ? row.hero_image_url.trim() : '';
+  const isLegacySeedSeasonUrl =
+    rawHeroUrl.includes(`/seed/season-${row.slug}.webp`) ||
+    rawHeroUrl.includes(`/seasons/season-${row.slug}.webp`);
+  const canonicalVitrineBaseUrl = pickVerifiedVitrineUrl(
+    manifest?.baseEditorialImageUrl,
     pickVerifiedVitrineUrl(
-      manifest?.baseEditorialImageUrl,
-      pickVerifiedVitrineUrl(
-        canonical?.baseEditorialImageUrl,
-        `${VITRINE_URL_PREFIX}lookbooks/${row.slug}-base.webp`,
-      ),
-    );
+      canonical?.baseEditorialImageUrl,
+      `${VITRINE_URL_PREFIX}lookbooks/${row.slug}-base.webp`,
+    ),
+  );
+  // Always bind the interactive lookbook stage to the 1:1 Outfit-Bound portrait aligned with masks & pins
+  const baseEditorialImageUrl =
+    rawHeroUrl && !isLegacySeedSeasonUrl ? rawHeroUrl : canonicalVitrineBaseUrl;
 
   const restyleCacheMap: Record<string, string> = {};
   if (manifest?.restyleCacheMap && typeof manifest.restyleCacheMap === 'object') {
@@ -1372,6 +1467,18 @@ export function hydrateSeasonCollectionDto(
     }
   }
 
+  const outfitFormula =
+    wearableSlots.length > 0
+      ? resolveOutfitFormulaFromSlots(
+          wearableSlots,
+          manifest?.outfitFormula ?? canonical?.outfitFormula,
+        )
+      : undefined;
+  const defaultMacroSlotKey =
+    manifest?.defaultMacroSlotKey ??
+    canonical?.defaultMacroSlotKey ??
+    wearableSlots[0]?.slotKey;
+
   const interactiveLookbook: SeasonInteractiveLookbook | null =
     wearableSlots.length > 0
       ? {
@@ -1379,6 +1486,8 @@ export function hydrateSeasonCollectionDto(
           materialHeadline,
           shortName,
           totalDesigns: Math.max(allSeasonSlugs.length, wearableSlots.length),
+          outfitFormula,
+          defaultMacroSlotKey,
           wearableSlots,
           restyleCacheMap,
         }
@@ -1422,7 +1531,8 @@ export function hydrateSeasonCollectionDto(
 
   const isCurrent = Boolean(row.is_current);
   const sortOrder = Number(row.sort_order ?? 0);
-  const coverUrl = row.hero_image_url ?? baseEditorialImageUrl;
+  const coverUrl =
+    rawHeroUrl && !isLegacySeedSeasonUrl ? rawHeroUrl : baseEditorialImageUrl;
 
   return {
     id: row.id,

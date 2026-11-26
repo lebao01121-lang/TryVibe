@@ -20,6 +20,11 @@ import {
   type WarehouseDto,
 } from '@atelier/contracts';
 import {
+  AnimatedTelemetryNumber,
+  LiveStackedHealthBar,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
+import {
   adminFetch,
   buildQueryString,
   extractList,
@@ -957,7 +962,7 @@ export function InventoryLedgerTab({
               Sẵn bán (Available)
             </p>
             <p className="mt-1 font-mono text-2xl font-semibold text-[#1C1410]">
-              {kpiTotals.available}
+              <AnimatedTelemetryNumber value={kpiTotals.available} />
             </p>
           </div>
           <div className="rounded-2xl border border-[#B08A4A]/30 bg-[#FFF8EB] p-3.5">
@@ -965,7 +970,7 @@ export function InventoryLedgerTab({
               Đang giữ chỗ (Reserved)
             </p>
             <p className="mt-1 font-mono text-2xl font-semibold text-[#8A5A12]">
-              {kpiTotals.reserved}
+              <AnimatedTelemetryNumber value={kpiTotals.reserved} />
             </p>
           </div>
           <div className="rounded-2xl border border-[#2E6B47]/25 bg-[#F2FBF6] p-3.5">
@@ -973,7 +978,7 @@ export function InventoryLedgerTab({
               Đã chốt đơn (Committed)
             </p>
             <p className="mt-1 font-mono text-2xl font-semibold text-[#1E4B32]">
-              {kpiTotals.committed}
+              <AnimatedTelemetryNumber value={kpiTotals.committed} />
             </p>
           </div>
           <div className="rounded-2xl border border-[#D9822B]/35 bg-[#FFF6E5] p-3.5">
@@ -981,7 +986,7 @@ export function InventoryLedgerTab({
               Dưới ngưỡng cảnh báo
             </p>
             <p className="mt-1 font-mono text-2xl font-semibold text-[#9A5B13]">
-              {kpiTotals.lowStockCount}
+              <AnimatedTelemetryNumber value={kpiTotals.lowStockCount} />
             </p>
           </div>
           <div className="rounded-2xl border border-[#8B2E2E]/35 bg-[#FFF5F4] p-3.5">
@@ -989,9 +994,34 @@ export function InventoryLedgerTab({
               Hết hàng (0)
             </p>
             <p className="mt-1 font-mono text-2xl font-semibold text-[#8B2E2E]">
-              {kpiTotals.outOfStockCount}
+              <AnimatedTelemetryNumber value={kpiTotals.outOfStockCount} />
             </p>
           </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[#B08A4A]/20 bg-[#FBF7EF]/75 px-4 py-3">
+          <LiveStackedHealthBar
+            segments={[
+              {
+                id: 'available',
+                label: 'Sẵn bán',
+                value: kpiTotals.available,
+                tone: 'emerald',
+              },
+              {
+                id: 'reserved',
+                label: 'Đang giữ chỗ 15p',
+                value: kpiTotals.reserved,
+                tone: 'amber',
+              },
+              {
+                id: 'committed',
+                label: 'Đã chốt đơn',
+                value: kpiTotals.committed,
+                tone: 'gold',
+              },
+            ]}
+          />
         </div>
       </section>
 
@@ -1094,7 +1124,22 @@ export function InventoryLedgerTab({
                         </p>
                       </td>
                       <td className="px-3.5 py-2.5 text-right font-mono font-semibold text-[#1C1410]">
-                        {row.availableQty}
+                        <span>{row.availableQty}</span>
+                        <div className="ml-auto mt-1 w-20">
+                          <LiveStreamProgressBar
+                            percent={Math.min(
+                              100,
+                              Math.round(
+                                (row.availableQty /
+                                  Math.max(1, threshold * 2)) *
+                                  100,
+                              ),
+                            )}
+                            tone={isOut ? 'crimson' : isLow ? 'amber' : 'emerald'}
+                            height="xs"
+                            ariaLabel={`Tồn kho ${row.availableQty} so với ngưỡng an toàn ${threshold}`}
+                          />
+                        </div>
                       </td>
                       <td className="px-3.5 py-2.5 text-right font-mono text-[#8A5A12]">
                         {row.reservedQty}

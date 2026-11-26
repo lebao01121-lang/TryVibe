@@ -26,6 +26,7 @@
     "verify:phase4": "node scripts/verify-phase4.mjs",
     "verify:phase5": "node scripts/verify-phase5.mjs",
     "verify:ui": "node scripts/verify-ui-atelier.mjs",
+    "verify:live-motion": "node scripts/verify-live-telemetry-motion.mjs",
     "test:flash-sale": "node scripts/stress-flash-sale.mjs",
     "ai:export-sft": "node scripts/export-ai-preference-dataset.mjs",
     "ai:build-model": "node scripts/build-ollama-custom-model.mjs",

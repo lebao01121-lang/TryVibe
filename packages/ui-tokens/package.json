@@ -12,9 +12,11 @@
     "./tokens.css": "./src/tokens.css",
     "./theme.css": "./src/theme.css",
     "./editorial.css": "./src/editorial.css",
+    "./live-telemetry-motion.css": "./src/live-telemetry-motion.css",
     "./src/tokens.css": "./src/tokens.css",
     "./src/theme.css": "./src/theme.css",
-    "./src/editorial.css": "./src/editorial.css"
+    "./src/editorial.css": "./src/editorial.css",
+    "./src/live-telemetry-motion.css": "./src/live-telemetry-motion.css"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

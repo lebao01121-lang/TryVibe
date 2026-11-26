@@ -14,6 +14,7 @@ import { io, type Socket } from 'socket.io-client';
 import {
   FitFeedback,
   OrderStatus,
+  PaymentMethod,
   RMA_CUSTOMER_NOTE_MAX_LEN,
   RmaExchangeMode,
   RmaReasonCode,
@@ -22,6 +23,7 @@ import {
   type CustomerBodyProfileDto,
   type OrderDTO,
   type RmaRequestDTO,
+  type SePayOrderStatusDTO,
   type VerifiedReviewDto,
 } from '@atelier/contracts';
 import { useScrollLock } from '@atelier/motion-kit';
@@ -183,6 +185,15 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
   const [rmaList, setRmaList] = useState<RmaRequestDTO[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [realtimeBanner, setRealtimeBanner] = useState<string | null>(null);
+  const [packPhotoFallbackStage, setPackPhotoFallbackStage] = useState<0 | 1 | 2>(0);
+  const [sepayQrStage, setSepayQrStage] = useState<0 | 1 | 2>(0);
+  const [sepayCopiedKey, setSepayCopiedKey] = useState<string | null>(null);
+  const [checkingSePay, setCheckingSePay] = useState(false);
+  const [simulatingSePay, setSimulatingSePay] = useState(false);
+  const [sepayNotice, setSepayNotice] = useState<{
+    kind: 'info' | 'success' | 'warning';
+    text: string;
+  } | null>(null);
 
   // 1-Click RMA Modal state
   const [rmaModalOpen, setRmaModalOpen] = useState(false);
@@ -223,18 +234,15 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
   useScrollLock(rmaModalOpen);
 
   const fetchOrderAndRma = useCallback(async () => {
-    const [orderRes, rmaRes] = await Promise.all([
-      apiFetch<OrderDTO>(`/bff/v1/storefront/orders/${encodeURIComponent(orderCode)}`, {
-        skipAuthRefresh: true,
-      }),
-      apiFetch<RmaRequestDTO[]>(
-        `/bff/v1/storefront/orders/${encodeURIComponent(orderCode)}/rma`,
-        { skipAuthRefresh: true },
-      ),
-    ]);
+    const orderRes = await apiFetch<OrderDTO>(
+      `/bff/v1/storefront/orders/${encodeURIComponent(orderCode)}`,
+      { skipAuthRefresh: true },
+    );
 
     if (orderRes.ok && orderRes.data) {
       setOrder(orderRes.data);
+      setPackPhotoFallbackStage(0);
+      setSepayQrStage(0);
       setErrorMsg(null);
       const firstReturnable =
         orderRes.data.items.find((i) => i.isReturnable) ?? orderRes.data.items[0];
@@ -242,14 +250,20 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
         setRmaItemId((prev) => prev || firstReturnable.id);
         setReviewItemId((prev) => prev || firstReturnable.id);
       }
+
+      const rmaRes = await apiFetch<RmaRequestDTO[]>(
+        `/bff/v1/storefront/orders/${encodeURIComponent(orderCode)}/rma`,
+        { skipAuthRefresh: true },
+      );
+      if (rmaRes.ok && Array.isArray(rmaRes.data)) {
+        setRmaList(rmaRes.data);
+      }
     } else {
+      setOrder(null);
+      setRmaList([]);
       setErrorMsg(
         orderRes.error?.message || `Không tìm thấy đơn hàng #${orderCode}.`,
       );
-    }
-
-    if (rmaRes.ok && Array.isArray(rmaRes.data)) {
-      setRmaList(rmaRes.data);
     }
 
     setLoading(false);
@@ -258,6 +272,93 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
   useEffect(() => {
     void fetchOrderAndRma();
   }, [fetchOrderAndRma]);
+
+  const handleCopySePayField = useCallback(async (key: string, value: string) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setSepayCopiedKey(key);
+      window.setTimeout(() => {
+        setSepayCopiedKey((prev) => (prev === key ? null : prev));
+      }, 2000);
+    } catch {
+      // Ignore clipboard restrictions
+    }
+  }, []);
+
+  const handleCheckSePayOrderStatus = useCallback(async () => {
+    if (!order || checkingSePay) return;
+    setCheckingSePay(true);
+    setSepayNotice(null);
+
+    const res = await apiFetch<SePayOrderStatusDTO>(
+      `/bff/v1/storefront/payments/sepay/status/${encodeURIComponent(order.orderCode)}`,
+      { skipAuthRefresh: true, timeoutMs: 12_000 },
+    );
+
+    setCheckingSePay(false);
+    if (!res.ok || !res.data) {
+      setSepayNotice({
+        kind: 'warning',
+        text:
+          res.error?.message ||
+          'Chưa thể kiểm tra trạng thái thanh toán SePay lúc này. Vui lòng thử lại sau giây lát.',
+      });
+      return;
+    }
+
+    if (res.data.paid) {
+      setSepayNotice({
+        kind: 'success',
+        text:
+          res.data.message ||
+          'SePay đã xác nhận thanh toán thành công! Đang cập nhật trạng thái đơn hàng...',
+      });
+      await fetchOrderAndRma();
+      return;
+    }
+
+    setSepayNotice({
+      kind: 'info',
+      text:
+        res.data.message ||
+        'Chưa ghi nhận chuyển khoản mới. Nếu bạn vừa chuyển, vui lòng đợi 5–15 giây rồi kiểm tra lại.',
+    });
+  }, [checkingSePay, fetchOrderAndRma, order]);
+
+  const handleSimulateSePayOrder = useCallback(async () => {
+    if (!order || simulatingSePay) return;
+    setSimulatingSePay(true);
+    setSepayNotice(null);
+
+    const res = await apiFetch<Record<string, unknown>>(
+      '/bff/v1/storefront/payments/sepay/simulate',
+      {
+        method: 'POST',
+        skipAuthRefresh: true,
+        body: JSON.stringify({
+          orderId: order.id,
+          orderCode: order.orderCode,
+          amountVnd: order.totalAmountVnd,
+        }),
+      },
+    );
+
+    setSimulatingSePay(false);
+    if (!res.ok) {
+      setSepayNotice({
+        kind: 'warning',
+        text: res.error?.message || 'Không thể giả lập chuyển khoản SePay lúc này.',
+      });
+      return;
+    }
+
+    setSepayNotice({
+      kind: 'success',
+      text: `Đã giả lập chuyển khoản SePay thành công cho đơn #${order.orderCode}.`,
+    });
+    await fetchOrderAndRma();
+  }, [fetchOrderAndRma, order, simulatingSePay]);
 
   // Pre-populate reviewer height/weight from CustomerBodyProfile if logged in
   useEffect(() => {
@@ -770,6 +871,206 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
         </div>
       ) : null}
 
+      {/* Compact SePay VietQR Payment Card while awaiting payment */}
+      {order.status === OrderStatus.AWAITING_PAYMENT &&
+      order.paymentMethod === PaymentMethod.VIETQR &&
+      order.paymentIntent ? (
+        (() => {
+          const intent = order.paymentIntent;
+          const isSePayLive = intent.providerMode === 'LIVE';
+          const bankInfo = intent.bankInfo ?? null;
+          const bankLabel = bankInfo?.bankName
+            ? bankInfo.bankCode &&
+              !bankInfo.bankName.toUpperCase().includes(bankInfo.bankCode.toUpperCase())
+              ? `${bankInfo.bankName} (${bankInfo.bankCode})`
+              : bankInfo.bankName
+            : bankInfo?.bankCode || 'MBBank (MB)';
+          const transferContent = intent.transferContent?.trim() || order.orderCode;
+          const primaryQr = intent.sepayQrImageUrl || intent.vietQrImageUrl || null;
+          const fallbackQr =
+            intent.sepayQrImageUrl &&
+            intent.vietQrImageUrl &&
+            intent.vietQrImageUrl !== intent.sepayQrImageUrl
+              ? intent.vietQrImageUrl
+              : null;
+          const activeQr =
+            sepayQrStage === 0 ? primaryQr : sepayQrStage === 1 ? fallbackQr : null;
+          const canDevSimulate =
+            process.env.NEXT_PUBLIC_PAYMENT_MODE !== 'live' && !isSePayLive;
+
+          return (
+            <section
+              data-testid="order-sepay-payment-card"
+              className="mt-6 rounded-[28px] border border-[#B08A4A]/45 bg-[#FBF7EF] p-6 shadow-md"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#B08A4A]/20 pb-4">
+                <div>
+                  <p className="eyebrow text-[#8A672C]">
+                    Chờ thanh toán · VietQR SePay Tự động
+                  </p>
+                  <h2 className="mt-1 font-editorial text-2xl font-light text-[#1C1410]">
+                    Quét mã QR hoặc chuyển khoản để xác nhận đơn #{order.orderCode}
+                  </h2>
+                </div>
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                    isSePayLive
+                      ? 'border-emerald-700/35 bg-emerald-50 text-emerald-900'
+                      : 'border-[#B08A4A]/50 bg-[#F4EBDA] text-[#5C431C]'
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      isSePayLive ? 'bg-emerald-600' : 'bg-[#B08A4A]'
+                    }`}
+                  />
+                  {isSePayLive ? 'SePay Live Tự Động' : 'SePay · VietQR Sandbox'}
+                </span>
+              </div>
+
+              <div className="mt-5 grid items-center gap-6 md:grid-cols-[200px_1fr]">
+                <div className="mx-auto flex w-full max-w-[200px] flex-col items-center rounded-2xl border border-[#B08A4A]/30 bg-white p-3.5 shadow-xs">
+                  {activeQr ? (
+                    <img
+                      src={activeQr}
+                      alt={`Mã VietQR SePay đơn #${order.orderCode}`}
+                      onError={() => {
+                        setSepayQrStage((prev) =>
+                          prev === 0 && fallbackQr ? 1 : 2,
+                        );
+                      }}
+                      className="aspect-square w-full rounded-lg object-contain"
+                    />
+                  ) : (
+                    <div className="flex aspect-square w-full flex-col items-center justify-center rounded-lg border border-dashed border-[#B08A4A]/45 bg-[#FBF7EF] p-3 text-center">
+                      <span className="font-editorial text-lg text-[#8A672C]">
+                        VietQR · SePay
+                      </span>
+                      <span className="mt-1 font-mono text-[10px] break-all text-[#2B2019]">
+                        {transferContent}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="grid gap-2.5 rounded-2xl border border-[#B08A4A]/25 bg-white p-4 sm:grid-cols-2">
+                    <div>
+                      <span className="text-[10px] uppercase tracking-[0.14em] text-[#7A6A5B]">
+                        Ngân hàng
+                      </span>
+                      <p className="mt-0.5 font-medium text-[#1C1410]">{bankLabel}</p>
+                    </div>
+                    {bankInfo?.accountNo ? (
+                      <div>
+                        <span className="text-[10px] uppercase tracking-[0.14em] text-[#7A6A5B]">
+                          Số tài khoản
+                        </span>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <code className="font-mono font-semibold text-[#1C1410]">
+                            {bankInfo.accountNo}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleCopySePayField('accountNo', bankInfo.accountNo)
+                            }
+                            className="text-[10px] font-medium text-[#8A672C] underline"
+                          >
+                            {sepayCopiedKey === 'accountNo' ? 'Đã chép' : 'Chép'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {bankInfo?.accountName ? (
+                      <div>
+                        <span className="text-[10px] uppercase tracking-[0.14em] text-[#7A6A5B]">
+                          Chủ tài khoản
+                        </span>
+                        <p className="mt-0.5 font-medium uppercase text-[#1C1410]">
+                          {bankInfo.accountName}
+                        </p>
+                      </div>
+                    ) : null}
+                    <div>
+                      <span className="text-[10px] uppercase tracking-[0.14em] text-[#7A6A5B]">
+                        Số tiền cần chuyển
+                      </span>
+                      <p className="mt-0.5 font-editorial text-xl font-medium text-[#1C1410]">
+                        {FORMAT_VND(order.totalAmountVnd)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#B08A4A]/40 bg-[#F4EBDA]/80 px-3.5 py-2.5">
+                    <div>
+                      <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8A672C]">
+                        Nội dung chuyển khoản (giữ chính xác)
+                      </span>
+                      <code className="mt-0.5 inline-block rounded bg-white px-2 py-0.5 font-mono text-xs font-semibold text-[#1C1410]">
+                        {transferContent}
+                      </code>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleCopySePayField('content', transferContent)
+                      }
+                      className="rounded-lg bg-[#1C1410] px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-[#EBCF8F]"
+                    >
+                      {sepayCopiedKey === 'content' ? 'Đã chép' : 'Sao chép nội dung'}
+                    </button>
+                  </div>
+
+                  {sepayNotice ? (
+                    <p
+                      role="status"
+                      className={`rounded-xl border px-3 py-2 text-xs ${
+                        sepayNotice.kind === 'success'
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-950'
+                          : sepayNotice.kind === 'warning'
+                            ? 'border-red-300 bg-red-50 text-red-900'
+                            : 'border-[#B08A4A]/40 bg-white text-[#3B2E25]'
+                      }`}
+                    >
+                      {sepayNotice.text}
+                    </p>
+                  ) : null}
+
+                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                    <button
+                      type="button"
+                      data-testid="order-sepay-check-btn"
+                      disabled={checkingSePay}
+                      onClick={() => void handleCheckSePayOrderStatus()}
+                      className="btn btn--gold !px-4 !py-2 !text-xs disabled:opacity-50"
+                    >
+                      {checkingSePay
+                        ? 'Đang kiểm tra SePay...'
+                        : 'Kiểm tra thanh toán SePay'}
+                    </button>
+
+                    {canDevSimulate ? (
+                      <button
+                        type="button"
+                        data-testid="order-sepay-simulate-btn"
+                        disabled={simulatingSePay}
+                        onClick={() => void handleSimulateSePayOrder()}
+                        className="rounded-full border border-[#8A672C]/50 bg-[#F4EBDA] px-4 py-2 text-[11px] font-medium tracking-[0.1em] text-[#5C431C] transition-colors hover:bg-[#EBCF8F] disabled:opacity-50"
+                      >
+                        {simulatingSePay
+                          ? 'Đang giả lập...'
+                          : 'Giả lập chuyển khoản SePay (Dev)'}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </section>
+          );
+        })()
+      ) : null}
+
       {/* Editorial 6-Step Order Timeline */}
       <section className="mt-8 rounded-[28px] border border-[#B08A4A]/28 bg-white/95 p-6 shadow-sm">
         <p className="eyebrow text-[#8A672C]">Hành trình đơn hàng</p>
@@ -823,11 +1124,31 @@ export function OrderDetailClient({ orderCode }: OrderDetailClientProps) {
 
               <div className="mt-5 grid items-center gap-5 sm:grid-cols-[220px_1fr]">
                 <div className="overflow-hidden rounded-2xl border border-[#EBCF8F]/35 bg-[#120C09]">
-                  <img
-                    src={order.shipment.packPhotoUrl}
-                    alt={`Ảnh chụp hộp trang phục đơn #${order.orderCode} trước khi niêm phong`}
-                    className="aspect-[4/3] w-full object-cover"
-                  />
+                  {packPhotoFallbackStage < 2 ? (
+                    <img
+                      src={
+                        packPhotoFallbackStage === 0
+                          ? order.shipment.packPhotoUrl
+                          : '/packaging/hop-lua-co-dien.webp'
+                      }
+                      alt={`Ảnh chụp hộp trang phục đơn #${order.orderCode} trước khi niêm phong`}
+                      onError={() => {
+                        setPackPhotoFallbackStage((prev) =>
+                          prev === 0 ? 1 : 2,
+                        );
+                      }}
+                      className="aspect-[4/3] w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1.5 bg-[#1A120E] px-4 text-center text-[#EBCF8F]/80">
+                      <span className="font-editorial text-lg tracking-widest">
+                        T&amp;V
+                      </span>
+                      <span className="text-[10px] uppercase tracking-[0.16em] text-[#FBF7EF]/60">
+                        Hộp niêm phong Atelier
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2 text-xs text-[#FBF7EF]/80">
                   <p>

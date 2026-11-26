@@ -319,7 +319,7 @@ export function normalizeWebhookProviderParam(
   rawProvider: string,
 ): 'VIETQR' | 'VNPAY' | 'MOMO' | null {
   const normalized = rawProvider.trim().toLowerCase();
-  if (normalized === 'vietqr' || normalized === 'payos') {
+  if (normalized === 'vietqr' || normalized === 'payos' || normalized === 'sepay') {
     return PaymentProvider.VIETQR;
   }
   if (normalized === 'vnpay') {

@@ -62,6 +62,23 @@ export interface AuthCustomerConfig {
     internalServiceSecret: string;
     allowedOrigins: string[];
   };
+  oauth: {
+    google: {
+      clientId: string;
+      clientSecret: string;
+      callbackUrl: string;
+      enabled: boolean;
+    };
+    github: {
+      clientId: string;
+      clientSecret: string;
+      callbackUrl: string;
+      enabled: boolean;
+    };
+    adminExceptionEmails: string[];
+    storefrontRedirectBase: string;
+    adminRedirectBase: string;
+  };
   infra: {
     redisConfigured: boolean;
     rabbitmqConfigured: boolean;
@@ -142,6 +159,20 @@ function parseAllowedOrigins(raw: string | undefined): string[] {
   return [...merged];
 }
 
+function parseEmailList(raw: string | undefined, fallback: readonly string[]): string[] {
+  if (raw === undefined) {
+    return [...fallback];
+  }
+  const unique = new Set<string>();
+  for (const part of raw.split(',')) {
+    const normalized = part.trim().toLowerCase();
+    if (normalized) {
+      unique.add(normalized);
+    }
+  }
+  return [...unique];
+}
+
 export function loadAuthCustomerConfig(): AuthCustomerConfig {
   loadRootEnv();
   const repoRoot = findRepoRoot(__dirname);
@@ -155,6 +186,32 @@ export function loadAuthCustomerConfig(): AuthCustomerConfig {
   const smtpPass = process.env.SMTP_PASS?.trim() || undefined;
   const smtpFrom =
     process.env.SMTP_FROM?.trim() || smtpUser || 'atelier@fashion-atelier.local';
+
+  const googleClientId = process.env.GOOGLE_OAUTH_CLIENT_ID?.trim() || '';
+  const googleClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim() || '';
+  const googleCallbackUrl =
+    process.env.GOOGLE_OAUTH_CALLBACK_URL?.trim() ||
+    'http://localhost:4000/api/v1/auth/oauth/google/callback';
+
+  const githubClientId = process.env.GITHUB_OAUTH_CLIENT_ID?.trim() || '';
+  const githubClientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET?.trim() || '';
+  const githubCallbackUrl =
+    process.env.GITHUB_OAUTH_CALLBACK_URL?.trim() ||
+    'http://localhost:4000/api/v1/auth/oauth/github/callback';
+
+  const adminExceptionEmails = parseEmailList(process.env.OAUTH_ADMIN_EXCEPTION_EMAILS, [
+    'lebao01121@gmail.com',
+  ]);
+  const storefrontRedirectBase = (
+    process.env.OAUTH_STOREFRONT_REDIRECT_BASE?.trim() ||
+    process.env.NEXT_PUBLIC_STOREFRONT_URL?.trim() ||
+    'http://localhost:3000'
+  ).replace(/\/+$/, '');
+  const adminRedirectBase = (
+    process.env.OAUTH_ADMIN_REDIRECT_BASE?.trim() ||
+    process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL?.trim() ||
+    'http://localhost:3001'
+  ).replace(/\/+$/, '');
 
   return {
     serviceName: SERVICE_NAME,
@@ -190,6 +247,23 @@ export function loadAuthCustomerConfig(): AuthCustomerConfig {
       internalServiceSecret:
         process.env.INTERNAL_SERVICE_SECRET?.trim() || 'Atelier_Internal_Svc_2026!',
       allowedOrigins: parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS),
+    },
+    oauth: {
+      google: {
+        clientId: googleClientId,
+        clientSecret: googleClientSecret,
+        callbackUrl: googleCallbackUrl,
+        enabled: Boolean(googleClientId && googleClientSecret),
+      },
+      github: {
+        clientId: githubClientId,
+        clientSecret: githubClientSecret,
+        callbackUrl: githubCallbackUrl,
+        enabled: Boolean(githubClientId && githubClientSecret),
+      },
+      adminExceptionEmails,
+      storefrontRedirectBase,
+      adminRedirectBase,
     },
     infra: {
       redisConfigured: Boolean(process.env.REDIS_URL?.trim()),

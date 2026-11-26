@@ -48,6 +48,8 @@ export interface SeasonWearableSlotView {
   productId: string;
   productSlug: string;
   productName: string;
+  shortPinLabel?: string;
+  defaultColorKey?: string;
   basePriceVnd: number;
   pinPosition: { xPercent: number; yPercent: number };
   garmentRegionMask: string;
@@ -170,6 +172,10 @@ export function resolveSeasonsVitrineUrl(
   return fallbackUrl;
 }
 
+export type SeasonOutfitFormula =
+  | 'TOP_BOTTOM_ACCESSORY'
+  | 'ONE_PIECE_OUTERWEAR_ACCESSORY';
+
 export interface SeasonChapterView {
   id: string;
   slug: string;
@@ -182,6 +188,8 @@ export interface SeasonChapterView {
   note: string;
   isCurrent: boolean;
   totalDesigns: number;
+  outfitFormula?: SeasonOutfitFormula;
+  defaultMacroSlotKey?: WearableSlotKey;
   baseEditorialImageUrl: string;
   wearableSlots: SeasonWearableSlotView[];
   restyleCacheMap: Record<string, string>;
@@ -213,36 +221,26 @@ export interface InteractiveAiLookbookStageProps {
   onOpenSetTryOn: () => void;
 }
 
-const SLOT_SHORT_LABEL_VI: Record<WearableSlotKey, string> = {
-  TOP: 'Áo thân trên',
-  BOTTOM: 'Chân váy / Quần',
-  ONE_PIECE: 'Đầm liền thân',
-  OUTERWEAR: 'Áo khoác',
-  ACCESSORY: 'Phụ kiện',
-};
-
-function resolvePinLabel(slot: SeasonWearableSlotView): string {
-  const nameLower = slot.productName.toLowerCase();
-  let shortNoun = SLOT_SHORT_LABEL_VI[slot.slotKey];
-  if (slot.slotKey === 'TOP') {
-    if (nameLower.includes('lụa')) shortNoun = 'Áo lụa';
-    else if (nameLower.includes('len') || nameLower.includes('cashmere')) shortNoun = 'Áo len';
-    else if (nameLower.includes('sơ mi')) shortNoun = 'Áo sơ mi';
-  } else if (slot.slotKey === 'BOTTOM') {
-    if (nameLower.includes('chân váy')) shortNoun = 'Chân váy';
-    else if (nameLower.includes('quần')) shortNoun = 'Quần âu';
-  } else if (slot.slotKey === 'ONE_PIECE') {
-    shortNoun = 'Đầm liền';
-  } else if (slot.slotKey === 'OUTERWEAR') {
-    if (nameLower.includes('blazer')) shortNoun = 'Blazer';
-    else if (nameLower.includes('tweed')) shortNoun = 'Áo Tweed';
-    else if (nameLower.includes('cardigan')) shortNoun = 'Cardigan';
-    else shortNoun = 'Áo khoác';
-  } else if (slot.slotKey === 'ACCESSORY') {
-    shortNoun = 'Phụ kiện';
+function resolveCompactProductName(slot: SeasonWearableSlotView): string {
+  if (slot.shortPinLabel && slot.shortPinLabel.trim().length > 0) {
+    return slot.shortPinLabel.trim();
   }
-  const colorCount = Math.max(1, slot.variants.length);
-  return `${shortNoun} · ${colorCount} màu`;
+  const clean = slot.productName.trim();
+  if (clean.length <= 20) return clean;
+  const words = clean.split(/\s+/);
+  return words.slice(0, 4).join(' ');
+}
+
+function resolvePinLabel(
+  slot: SeasonWearableSlotView,
+  activeVariant?: SeasonWearableVariantView,
+): string {
+  const shortName = resolveCompactProductName(slot);
+  const colorName = activeVariant?.colorName?.trim();
+  if (colorName) {
+    return `${shortName} · ${colorName}`;
+  }
+  return shortName;
 }
 
 export interface ResolvedHotspotPinLayout {
@@ -252,13 +250,13 @@ export interface ResolvedHotspotPinLayout {
   reverse: boolean;
 }
 
-const PIN_SAFE_MIN_X = 22;
-const PIN_SAFE_MAX_X = 78;
-const PIN_SAFE_MIN_Y = 26;
-const PIN_SAFE_MAX_Y = 76;
-const PIN_MIN_GAP_Y = 14;
-const PIN_FLIP_RIGHT_X = 44;
-const PIN_FLIP_LEFT_X = 56;
+const PIN_SAFE_MIN_X = 20;
+const PIN_SAFE_MAX_X = 80;
+const PIN_SAFE_MIN_Y = 24;
+const PIN_SAFE_MAX_Y = 77;
+const PIN_MIN_GAP_Y = 13;
+const PIN_FLIP_RIGHT_X = 48;
+const PIN_FLIP_LEFT_X = 50;
 const MIN_MASK_BBOX_SPAN = 0.005;
 const MIN_MASK_PIXEL_COUNT = 16;
 
@@ -969,12 +967,14 @@ export function InteractiveAiLookbookStage({
             ),
             reverse: slot.pinPosition.xPercent > PIN_FLIP_LEFT_X,
           };
-          const pinLabel = resolvePinLabel(slot);
           const activeColorKey =
-            selectedColorBySlot[slot.slotKey] ?? slot.variants[0]?.colorKey;
+            selectedColorBySlot[slot.slotKey] ??
+            slot.defaultColorKey ??
+            slot.variants[0]?.colorKey;
           const activeVariant =
             slot.variants.find((v) => v.colorKey === activeColorKey) ??
             slot.variants[0];
+          const pinLabel = resolvePinLabel(slot, activeVariant);
 
           return (
             <button
@@ -983,6 +983,8 @@ export function InteractiveAiLookbookStage({
               data-hotspot-pin="true"
               data-testid={`season-hotspot-${slot.slotKey.toLowerCase()}`}
               data-slot-key={slot.slotKey}
+              data-product-id={slot.productId}
+              data-product-slug={slot.productSlug}
               data-pin-x={pinLayout.xPercent}
               data-pin-y={pinLayout.yPercent}
               data-pin-reverse={pinLayout.reverse ? 'true' : 'false'}

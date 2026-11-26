@@ -5,6 +5,7 @@ import {
   Dancing_Script,
 } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { LiveMotionProvider } from '@atelier/motion-kit';
 import { AtelierToastProvider } from '@/components/AtelierToastProvider';
 import { SiteHeader } from '@/components/layout/SiteHeader';
 import { StorefrontShellOverlays } from '@/components/layout/StorefrontShellOverlays';
@@ -61,18 +62,20 @@ export default function RootLayout({ children }: RootLayoutProps) {
       className={`${cormorant.variable} ${beVietnamPro.variable} ${dancingScript.variable}`}
     >
       <body className="min-h-[100svh] bg-[#FBF7EF] text-[#2B2019]">
-        <AdaptivePerformanceProvider>
-          <SmoothScrollProvider>
-            <CustomCursor />
-            <GlintsCanvas />
-            <FabricParticleCanvas />
-            <SiteHeader />
-            <LookbookAutoTour />
-            <main>{children}</main>
-            <StorefrontShellOverlays />
-            <AtelierToastProvider />
-          </SmoothScrollProvider>
-        </AdaptivePerformanceProvider>
+        <LiveMotionProvider>
+          <AdaptivePerformanceProvider>
+            <SmoothScrollProvider>
+              <CustomCursor />
+              <GlintsCanvas />
+              <FabricParticleCanvas />
+              <SiteHeader />
+              <LookbookAutoTour />
+              <main>{children}</main>
+              <StorefrontShellOverlays />
+              <AtelierToastProvider />
+            </SmoothScrollProvider>
+          </AdaptivePerformanceProvider>
+        </LiveMotionProvider>
       </body>
     </html>
   );

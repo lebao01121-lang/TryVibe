@@ -210,9 +210,13 @@ async function loadCorsSafeImage(url: string): Promise<{
         };
       }
       URL.revokeObjectURL(objectUrl);
+    } else if (res.status >= 400 && res.status < 500) {
+      // Definitive client error (e.g. 404 Not Found / 403 / 410): stop immediately
+      // instead of amplifying into 2 additional failing <img> / ?atelier_cors=1 requests.
+      return null;
     }
   } catch {
-    // Fall through to crossOrigin Image attempts
+    // Network or CORS TypeError — fall through to crossOrigin Image attempts
   }
 
   // Secondary path: direct anonymous CORS Image load

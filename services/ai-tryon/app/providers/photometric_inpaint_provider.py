@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 import asyncio
 import hashlib
+import importlib.util
 import io
 import logging
 import math
@@ -56,6 +57,7 @@ YUNET_MODEL_PATH = (
 
 _MODEL_LOCK = threading.Lock()
 _REMBG_GENERAL_SESSION: Any | None = None
+_REMBG_GENERAL_FAILED: bool = False
 _REMBG_CLOTH_SESSION: Any | None = None
 _REMBG_CLOTH_FAILED: bool = False
 _YUNET_DETECTOR: Any | None = None
@@ -88,11 +90,26 @@ def _lru_set(cache: OrderedDict[str, Any], key: str, value: Any, max_size: int) 
             cache.popitem(last=False)
 
 
+def _is_onnxruntime_available() -> bool:
+    try:
+        return importlib.util.find_spec("onnxruntime") is not None
+    except Exception:
+        return False
+
+
 def _get_rembg_general_session() -> Any | None:
-    global _REMBG_GENERAL_SESSION
+    global _REMBG_GENERAL_SESSION, _REMBG_GENERAL_FAILED
     with _MODEL_LOCK:
         if _REMBG_GENERAL_SESSION is not None:
             return _REMBG_GENERAL_SESSION
+        if _REMBG_GENERAL_FAILED:
+            return None
+        if not _is_onnxruntime_available():
+            logger.warning(
+                "onnxruntime backend not installed; skipping rembg import to avoid SystemExit and using GrabCut fallback"
+            )
+            _REMBG_GENERAL_FAILED = True
+            return None
         try:
             from rembg import new_session
 
@@ -102,8 +119,9 @@ def _get_rembg_general_session() -> Any | None:
                 "Loaded rembg isnet-general-use session from D: drive in %.2fs",
                 time.perf_counter() - t0,
             )
-        except Exception as exc:
+        except (Exception, SystemExit) as exc:
             logger.warning("rembg isnet-general-use unavailable (%s); using GrabCut fallback", exc)
+            _REMBG_GENERAL_FAILED = True
             _REMBG_GENERAL_SESSION = None
         return _REMBG_GENERAL_SESSION
 
@@ -115,6 +133,12 @@ def _get_rembg_cloth_session() -> Any | None:
             return _REMBG_CLOTH_SESSION
         if _REMBG_CLOTH_FAILED:
             return None
+        if not _is_onnxruntime_available():
+            logger.warning(
+                "onnxruntime backend not installed; skipping rembg u2net_cloth_seg to avoid SystemExit and using skin/torso parser"
+            )
+            _REMBG_CLOTH_FAILED = True
+            return None
         try:
             from rembg import new_session
 
@@ -124,7 +148,7 @@ def _get_rembg_cloth_session() -> Any | None:
                 "Loaded rembg u2net_cloth_seg session from D: drive in %.2fs",
                 time.perf_counter() - t0,
             )
-        except Exception as exc:
+        except (Exception, SystemExit) as exc:
             logger.warning("rembg u2net_cloth_seg unavailable (%s); using skin/torso parser", exc)
             _REMBG_CLOTH_FAILED = True
             _REMBG_CLOTH_SESSION = None
@@ -848,10 +872,13 @@ def prepare_clean_garment_rgba(
         if any(ca > 16 for ca in post_corners):
             sess = _get_rembg_general_session()
             if sess is not None:
-                from rembg import remove
+                try:
+                    from rembg import remove
 
-                cut = remove(rgba.convert("RGB"), session=sess, post_process_mask=True).convert("RGBA")
-                arr = _strip_studio_white_border_floodfill(np.array(cut, dtype=np.uint8))
+                    cut = remove(rgba.convert("RGB"), session=sess, post_process_mask=True).convert("RGBA")
+                    arr = _strip_studio_white_border_floodfill(np.array(cut, dtype=np.uint8))
+                except (Exception, SystemExit) as exc:
+                    logger.warning("rembg garment cleanup failed (%s); keeping floodfill result", exc)
 
     arr = _decontaminate_edge_halos(arr)
 
@@ -999,7 +1026,7 @@ def _extract_person_silhouette(rgb_img: Image.Image, person_hash: str = "") -> n
             cand = ndimage.binary_fill_holes(alpha_full > 40)
             if int(np.count_nonzero(cand)) > 500:
                 mask = cand
-        except Exception as exc:
+        except (Exception, SystemExit) as exc:
             logger.warning("rembg silhouette failed (%s); falling back to GrabCut", exc)
 
     if mask is None:
@@ -1087,7 +1114,7 @@ def _extract_old_cloth_mask(
             cand = cand & person_mask
             if int(np.count_nonzero(cand)) > 300:
                 full_mask = cand
-        except Exception as exc:
+        except (Exception, SystemExit) as exc:
             logger.debug("u2net_cloth_seg parse skipped (%s); using YCrCb skin-exclusion parser", exc)
 
     if full_mask is None:

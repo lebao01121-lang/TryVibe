@@ -654,6 +654,48 @@ export class StorefrontCheckoutController {
     );
   }
 
+  @Get('payments/sepay/status/:orderCode')
+  async getSePayOrderStatus(
+    @Param('orderCode') orderCode: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ): Promise<void> {
+    const extraHeaders = await this.resolveCallerHeaders(req);
+    const upstream = await this.proxy.request({
+      method: 'GET',
+      url: `${this.config.paymentPromoServiceUrl}/v1/payments/sepay/status/${encodeURIComponent(orderCode)}`,
+      req,
+      extraHeaders,
+      timeoutMs: 20_000,
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    this.proxy.sendProxyResponse(res, upstream, (payload) =>
+      stripStorefrontSensitiveFields(payload),
+    );
+  }
+
+  @Post('payments/sepay/simulate')
+  @HttpCode(HttpStatus.OK)
+  async simulateSePayPayment(
+    @Body() body: unknown,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ): Promise<void> {
+    const extraHeaders = await this.resolveCallerHeaders(req);
+    const upstream = await this.proxy.request({
+      method: 'POST',
+      url: `${this.config.paymentPromoServiceUrl}/v1/payments/sepay/simulate`,
+      req,
+      body: body ?? {},
+      extraHeaders,
+      timeoutMs: 20_000,
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    this.proxy.sendProxyResponse(res, upstream, (payload) =>
+      stripStorefrontSensitiveFields(payload),
+    );
+  }
+
   // ============================================================================
   // Payment Gateway Return Verification & Provider Webhooks (payment-promo:4007)
   // ============================================================================

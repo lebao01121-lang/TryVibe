@@ -1200,11 +1200,12 @@ async function main() {
     }
 
     // ------------------------------------------------------------------------
-    // BƯỚC 5: Khởi chạy Đồng thời Toàn bộ 14 Tiến trình với Log Màu Sắc
+    // BƯỚC 5: Khởi chạy theo tầng (11 Backend + Smart Auto-Seed TRƯỚC, 3 Portals SAU)
     // ------------------------------------------------------------------------
-    logStep(5, `Khởi chạy đồng thời 14 tiến trình (11 Backend + 3 Portals · chế độ ${flags.devMode ? 'DEV' : 'START'})`);
+    const backendSpecs = specs.filter((s) => s.kind === 'backend');
+    const portalSpecs = specs.filter((s) => s.kind === 'portal');
 
-    for (const spec of specs) {
+    function spawnServiceProcess(spec) {
       const prefix = `${spec.color}[${spec.tag}]${ANSI.reset}`;
       const child = spawn(spec.cmd, spec.args, {
         cwd: spec.cwd,
@@ -1242,13 +1243,19 @@ async function main() {
       attachPipe(child.stderr, true);
     }
 
-    // ------------------------------------------------------------------------
-    // BƯỚC 6: Poll 200 OK cho 14/14 Endpoints, Smart Auto-Seed & In Dashboard
-    // ------------------------------------------------------------------------
-    logStep(6, 'Chờ 14/14 cổng (4000..4010 /health & 3000..3002) phản hồi 200 OK');
+    logStep(
+      5,
+      `Khởi chạy 11 dịch vụ nền (4000..4010) trước & nạp dữ liệu mẫu trước khi mở 3 Portals · chế độ ${flags.devMode ? 'DEV' : 'START'}`,
+    );
 
-    const backendSpecs = specs.filter((s) => s.kind === 'backend');
-    const portalSpecs = specs.filter((s) => s.kind === 'portal');
+    for (const spec of backendSpecs) {
+      spawnServiceProcess(spec);
+    }
+
+    // ------------------------------------------------------------------------
+    // BƯỚC 6: Poll Backend 200 OK -> Smart Auto-Seed -> Khởi chạy 3 Portals -> In Dashboard
+    // ------------------------------------------------------------------------
+    logStep(6, 'Chờ 11/11 Backend (4000..4010 /health) sẵn sàng, nạp Seed rồi mới mở 3 Portals (3000..3002)');
 
     const backendResults = await Promise.all(
       backendSpecs.map(async (s) => {
@@ -1257,9 +1264,13 @@ async function main() {
       }),
     );
 
+    if (earlyFailures.length > 0) {
+      throw new Error(`Phát hiện tiến trình nền thoát sớm khi khởi chạy: ${earlyFailures.join('; ')}`);
+    }
+
     let seededThisRun = false;
     if (needsSeed) {
-      logInfo('Đang thực thi Smart Auto-Seed (`pnpm db:seed`) trên cụm dịch vụ đang sống...');
+      logInfo('Đang thực thi Smart Auto-Seed (`pnpm db:seed`) trên cụm dịch vụ nền đang sống...');
       const seedRes = await runForeground('pnpm', ['db:seed'], { env: envVars });
       if (!seedRes.ok) {
         throw new Error('Smart Auto-Seed (`pnpm db:seed`) thất bại.');
@@ -1271,7 +1282,12 @@ async function main() {
         'utf8',
       );
       seededThisRun = true;
-      logOk('Đã hoàn tất Smart Auto-Seed và ghi dấu `.secrets/.seeded-v3`.');
+      logOk('Đã hoàn tất Smart Auto-Seed (MinIO + 10 DB sẵn sàng) và ghi dấu `.secrets/.seeded-v3`.');
+    }
+
+    logInfo('Toàn bộ 11 Backend & dữ liệu mẫu đã sẵn sàng -> khởi chạy 3 cổng Next.js (3000..3002)...');
+    for (const spec of portalSpecs) {
+      spawnServiceProcess(spec);
     }
 
     const portalResults = await Promise.all(
@@ -1280,6 +1296,30 @@ async function main() {
         return { tag: s.tag, color: s.color, url: s.healthUrl, status: res.status, latencyMs: res.latencyMs };
       }),
     );
+
+    if (seededThisRun || flags.seed) {
+      try {
+        const revalidateSecret = String(envVars.REVALIDATE_SECRET || 'Atelier_Isr_Revalidate_2026!').trim();
+        const revRes = await fetch('http://127.0.0.1:3000/api/revalidate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-revalidate-secret': revalidateSecret,
+          },
+          body: '{}',
+          signal: AbortSignal.timeout(5000),
+        });
+        if (revRes.ok) {
+          logOk('Đã làm mới ISR Storefront (`POST http://127.0.0.1:3000/api/revalidate` -> 200 OK).');
+        } else {
+          logWarn(`ISR Storefront revalidate trả về HTTP ${revRes.status} (không ảnh hưởng khởi chạy).`);
+        }
+      } catch (revErr) {
+        logWarn(
+          `Không thể gọi ISR Storefront revalidate (${revErr instanceof Error ? revErr.message : String(revErr)}) — bỏ qua an toàn.`,
+        );
+      }
+    }
 
     const allResults = [...portalResults, ...backendResults];
     if (earlyFailures.length > 0) {

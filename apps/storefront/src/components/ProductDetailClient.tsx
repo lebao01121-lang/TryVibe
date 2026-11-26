@@ -14,6 +14,11 @@ import {
   type VerifiedReviewDto,
 } from '@atelier/contracts';
 import {
+  AnimatedTelemetryNumber,
+  LiveStackedHealthBar,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
+import {
   AnatomicalFitVisualizer,
   BODY_FIT_PREFERENCE_OPTIONS,
   BODY_PROFILE_UPDATED_EVENT,
@@ -1583,27 +1588,42 @@ export function ProductDetailClient({
                     </span>
                   </div>
 
-                  {/* 3-Segment Horizontal Fit Distribution Bar */}
-                  <div className="space-y-2.5">
+                  {/* 3-Segment Horizontal Fit Distribution Bar (Luxury Atelier Live Flow) */}
+                  <div className="space-y-3">
                     <div
                       aria-label="Biểu đồ phân bổ độ vừa 3 mức"
                       className="flex h-3.5 w-full overflow-hidden rounded-full bg-[#EBD9B4]/55"
                     >
                       <div
                         style={{ width: `${effectiveFitStats.runsSmallPct}%` }}
-                        className="bg-[#8B4B3B] transition-all duration-500"
+                        className="relative overflow-hidden bg-[#8B4B3B] transition-all duration-500"
                         title={`Hơi chật ${effectiveFitStats.runsSmallPct}%`}
-                      />
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="telemetry-anim telemetry-sheen opacity-55"
+                        />
+                      </div>
                       <div
                         style={{ width: `${effectiveFitStats.trueToSizePct}%` }}
-                        className="bg-[#1C1410] transition-all duration-500"
+                        className="relative overflow-hidden bg-[#1C1410] transition-all duration-500"
                         title={`Chuẩn size ${effectiveFitStats.trueToSizePct}%`}
-                      />
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="telemetry-anim telemetry-sheen opacity-65"
+                        />
+                      </div>
                       <div
                         style={{ width: `${effectiveFitStats.runsLargePct}%` }}
-                        className="bg-[#B08A4A] transition-all duration-500"
+                        className="relative overflow-hidden bg-[#B08A4A] transition-all duration-500"
                         title={`Hơi rộng ${effectiveFitStats.runsLargePct}%`}
-                      />
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="telemetry-anim telemetry-sheen opacity-60"
+                        />
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
@@ -1612,24 +1632,54 @@ export function ProductDetailClient({
                           Hơi chật
                         </p>
                         <p className="mt-0.5 font-mono font-semibold text-[#1C1410]">
-                          {effectiveFitStats.runsSmallPct}%
+                          <AnimatedTelemetryNumber
+                            value={effectiveFitStats.runsSmallPct}
+                            format="percent"
+                          />
                         </p>
+                        <div className="mt-1.5">
+                          <LiveStreamProgressBar
+                            percent={effectiveFitStats.runsSmallPct}
+                            tone="crimson"
+                            height="xs"
+                          />
+                        </div>
                       </div>
                       <div className="rounded-xl border border-[#1C1410]/25 bg-white px-2 py-2">
                         <p className="text-[10px] uppercase tracking-[0.12em] text-[#1C1410]">
                           Chuẩn size
                         </p>
                         <p className="mt-0.5 font-mono font-semibold text-[#1C1410]">
-                          {effectiveFitStats.trueToSizePct}%
+                          <AnimatedTelemetryNumber
+                            value={effectiveFitStats.trueToSizePct}
+                            format="percent"
+                          />
                         </p>
+                        <div className="mt-1.5">
+                          <LiveStreamProgressBar
+                            percent={effectiveFitStats.trueToSizePct}
+                            tone="espresso"
+                            height="xs"
+                          />
+                        </div>
                       </div>
                       <div className="rounded-xl border border-[#B08A4A]/30 bg-white px-2 py-2">
                         <p className="text-[10px] uppercase tracking-[0.12em] text-[#8A672C]">
                           Hơi rộng
                         </p>
                         <p className="mt-0.5 font-mono font-semibold text-[#1C1410]">
-                          {effectiveFitStats.runsLargePct}%
+                          <AnimatedTelemetryNumber
+                            value={effectiveFitStats.runsLargePct}
+                            format="percent"
+                          />
                         </p>
+                        <div className="mt-1.5">
+                          <LiveStreamProgressBar
+                            percent={effectiveFitStats.runsLargePct}
+                            tone="gold"
+                            height="xs"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1666,32 +1716,30 @@ export function ProductDetailClient({
                     </span>
                   </div>
 
-                  <div
-                    aria-label="Phân bổ cảm nhận đánh giá đã xác thực"
-                    className="flex h-2 w-full overflow-hidden rounded-full bg-[#F4EBDA]"
-                  >
-                    <div
-                      style={{
-                        width: `${effectiveSentimentSummary.positivePct}%`,
-                      }}
-                      className="bg-[#2E6B47] transition-all duration-500"
-                      title={`Tích cực ${effectiveSentimentSummary.positivePct}%`}
-                    />
-                    <div
-                      style={{
-                        width: `${effectiveSentimentSummary.neutralPct}%`,
-                      }}
-                      className="bg-[#B08A4A] transition-all duration-500"
-                      title={`Trung lập ${effectiveSentimentSummary.neutralPct}%`}
-                    />
-                    <div
-                      style={{
-                        width: `${effectiveSentimentSummary.negativePct}%`,
-                      }}
-                      className="bg-[#8B2E2E] transition-all duration-500"
-                      title={`Cần lưu ý ${effectiveSentimentSummary.negativePct}%`}
-                    />
-                  </div>
+                  <LiveStackedHealthBar
+                    showLegend={false}
+                    heightClass="h-2"
+                    segments={[
+                      {
+                        id: 'positive',
+                        label: 'Tích cực',
+                        value: effectiveSentimentSummary.positivePct,
+                        tone: 'emerald',
+                      },
+                      {
+                        id: 'neutral',
+                        label: 'Trung lập',
+                        value: effectiveSentimentSummary.neutralPct,
+                        tone: 'gold',
+                      },
+                      {
+                        id: 'negative',
+                        label: 'Cần lưu ý',
+                        value: effectiveSentimentSummary.negativePct,
+                        tone: 'crimson',
+                      },
+                    ]}
+                  />
 
                   <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#5C4B41]">
                     <span className="inline-flex items-center gap-1">

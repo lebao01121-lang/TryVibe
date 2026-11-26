@@ -117,6 +117,7 @@ export function StorefrontShellOverlays() {
         lower: opts.lower ?? null,
         onePiece: opts.onePiece ?? null,
         outerwear: opts.outerwear ?? null,
+        accessory: opts.accessory ?? null,
       });
       setBagOpen(false);
       setChatOpen(false);

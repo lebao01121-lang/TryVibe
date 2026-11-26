@@ -15,6 +15,8 @@ export default defineConfig({
         'src/payments/adapters/vnpay.adapter.ts',
         'src/payments/adapters/momo.adapter.ts',
         'src/payments/adapters/payos.adapter.ts',
+        'src/payments/adapters/sepay-banks.ts',
+        'src/payments/adapters/sepay.adapter.ts',
         'src/payments/payments.service.ts',
         'src/promotions/promotions.service.ts',
       ],

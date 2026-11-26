@@ -5,7 +5,13 @@ import {
   Permission,
   Role,
   hasAnyPermission,
+  type SePayConfigStatusDTO,
+  type SePaySyncResultDTO,
 } from '@atelier/contracts';
+import {
+  AnimatedTelemetryNumber,
+  LiveStackedHealthBar,
+} from '@atelier/motion-kit';
 import {
   adminFetch,
   getAdminSession,
@@ -355,6 +361,18 @@ export function PaymentLedgerTab({
   const [inspectedWebhook, setInspectedWebhook] =
     useState<WebhookLogRecord | null>(null);
 
+  // SePay Auto-Reconciliation state
+  const [sepayConfig, setSepayConfig] = useState<SePayConfigStatusDTO | null>(null);
+  const [sepayConfigLoading, setSepayConfigLoading] = useState(true);
+  const [sepayConfigError, setSepayConfigError] = useState<string | null>(null);
+  const [sepaySyncing, setSepaySyncing] = useState(false);
+  const [sepaySyncResult, setSepaySyncResult] = useState<SePaySyncResultDTO | null>(
+    null,
+  );
+  const [sepayCopiedKey, setSepayCopiedKey] = useState<
+    'webhookUrl' | 'authHeader' | null
+  >(null);
+
   // Refund Modal state
   const [refundTarget, setRefundTarget] =
     useState<PaymentTransactionRecord | null>(null);
@@ -434,9 +452,93 @@ export function PaymentLedgerTab({
     setWhLoading(false);
   }, [whProvider, whSigFilter, whOrderSearch, whPage]);
 
+  const loadSePayConfig = useCallback(async () => {
+    setSepayConfigLoading(true);
+    setSepayConfigError(null);
+    const res = await adminFetch<SePayConfigStatusDTO>(
+      '/api/v1/admin/payments/sepay/config',
+    );
+    if (res.ok && res.data) {
+      setSepayConfig(res.data);
+    } else {
+      setSepayConfigError(
+        res.error?.message ||
+          'Chưa thể tải cấu hình đối soát SePay từ payment-promo (:4007).',
+      );
+    }
+    setSepayConfigLoading(false);
+  }, []);
+
+  const handleCopySePayText = useCallback(
+    async (key: 'webhookUrl' | 'authHeader', text: string) => {
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        setSepayCopiedKey(key);
+        window.setTimeout(() => {
+          setSepayCopiedKey((prev) => (prev === key ? null : prev));
+        }, 2000);
+      } catch {
+        // Ignore clipboard errors
+      }
+    },
+    [],
+  );
+
+  const handleSyncSePay = useCallback(async () => {
+    if (sepaySyncing) return;
+    setSepaySyncing(true);
+    const res = await adminFetch<SePaySyncResultDTO>(
+      '/api/v1/admin/payments/sepay/sync',
+      {
+        method: 'POST',
+        body: JSON.stringify({}),
+      },
+    );
+    setSepaySyncing(false);
+
+    if (res.ok && res.data) {
+      setSepaySyncResult(res.data);
+      const settledCount = res.data.settledOrderCodes.length;
+      notify({
+        kind: settledCount > 0 ? 'success' : 'info',
+        title: 'ĐỒNG BỘ SEPAY',
+        message:
+          settledCount > 0
+            ? `Đã đối soát tự động ${settledCount} đơn hàng: ${res.data.settledOrderCodes.join(', ')}.`
+            : res.data.skippedReason
+              ? `Hoàn tất kiểm tra SePay (${res.data.skippedReason}).`
+              : `Đã kiểm tra ${res.data.checkedPendingCount} đơn chờ và ${res.data.fetchedTransactionsCount} giao dịch ngân hàng — chưa có đơn mới được thanh toán.`,
+      });
+      await loadSePayConfig();
+      if (settledCount > 0) {
+        await Promise.all([loadTransactions(), loadWebhooks()]);
+        onRefreshOverview?.();
+      }
+    } else {
+      notify({
+        kind: 'error',
+        title: 'LỖI ĐỒNG BỘ SEPAY',
+        message:
+          res.error?.message || 'Không thể đồng bộ giao dịch SePay lúc này.',
+      });
+    }
+  }, [
+    loadSePayConfig,
+    loadTransactions,
+    loadWebhooks,
+    notify,
+    onRefreshOverview,
+    sepaySyncing,
+  ]);
+
   useEffect(() => {
     void loadTransactions();
   }, [loadTransactions]);
+
+  useEffect(() => {
+    void loadSePayConfig();
+  }, [loadSePayConfig]);
 
   useEffect(() => {
     if (subTab === 'WEBHOOKS') {
@@ -581,26 +683,30 @@ export function PaymentLedgerTab({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className={`ledger-eyebrow ${goldTextCls}`}>
-              Payment Reconciliation Ledger · HMAC-SHA256 Webhook Verification
+              Payment Reconciliation Ledger · SePay Auto-Match &amp; Webhook Verification
             </p>
             <h2 className="font-editorial mt-1 text-3xl font-normal tracking-tight">
               Sổ Cái Thanh toán, Hoàn tiền &amp; Đối soát Webhook
             </h2>
             <p className={`mt-1 text-xs leading-relaxed ${mutedCls}`}>
-              Theo dõi giao dịch VietQR / VNPay / MoMo / COD, thực hiện hoàn tiền
-              một phần hoặc toàn phần trong hạn mức <code>netRefundableVnd</code>{' '}
-              và kiểm định chữ ký HMAC bảng <code>processed_webhooks</code>.
+              Theo dõi giao dịch VietQR (SePay / PayOS) / VNPay / MoMo / COD, thực hiện
+              hoàn tiền một phần hoặc toàn phần trong hạn mức{' '}
+              <code>netRefundableVnd</code> và kiểm định xác thực Webhook (HMAC-SHA256 &amp;
+              SePay API Key) bảng <code>processed_webhooks</code>.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() =>
-                subTab === 'TRANSACTIONS'
-                  ? void loadTransactions()
-                  : void loadWebhooks()
-              }
+              onClick={() => {
+                void loadSePayConfig();
+                if (subTab === 'TRANSACTIONS') {
+                  void loadTransactions();
+                } else {
+                  void loadWebhooks();
+                }
+              }}
               className={`rounded-full px-4 py-2 text-xs font-medium uppercase tracking-[0.14em] ${
                 darkMode
                   ? 'bg-[#EBCF8F] text-[#1C1410]'
@@ -644,37 +750,37 @@ export function PaymentLedgerTab({
                   : 'border border-[#B08A4A]/35 bg-[#FBF7EF] text-[#5C4B41]'
             }`}
           >
-            Nhật ký Đối soát Webhook HMAC (processed_webhooks)
+            Nhật ký Đối soát Webhook · HMAC &amp; SePay (processed_webhooks)
           </button>
         </div>
 
         {/* KPI Cards */}
         <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}>
               Thực thu trên trang
             </p>
             <p className="adm-tabular mt-1.5 font-mono text-2xl font-semibold">
-              {FORMAT_VND(kpis.totalCollected)}
+              <AnimatedTelemetryNumber value={kpis.totalCollected} format="vnd" />
             </p>
             <p className={`mt-1 text-[11px] ${secondaryCls}`}>
               Giao dịch SUCCEEDED &amp; LATE_SUCCEEDED
             </p>
           </div>
 
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}>
               Tổng đã hoàn tiền
             </p>
             <p className={`adm-tabular mt-1.5 font-mono text-2xl font-semibold ${goldTextCls}`}>
-              {FORMAT_VND(kpis.totalRefunded)}
+              <AnimatedTelemetryNumber value={kpis.totalRefunded} format="vnd" />
             </p>
             <p className={`mt-1 text-[11px] ${secondaryCls}`}>
               Bao gồm hoàn một phần &amp; hoàn toàn bộ
             </p>
           </div>
 
-          <div className={`rounded-2xl border p-4 ${subCardCls}`}>
+          <div className={`telemetry-spotlight-card rounded-2xl border p-4 ${subCardCls}`}>
             <p className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${mutedCls}`}>
               Số dư có thể hoàn (netRefundable)
             </p>
@@ -683,7 +789,7 @@ export function PaymentLedgerTab({
                 darkMode ? 'text-emerald-300' : 'text-[#1E4B32]'
               }`}
             >
-              {FORMAT_VND(kpis.totalNetRefundable)}
+              <AnimatedTelemetryNumber value={kpis.totalNetRefundable} format="vnd" />
             </p>
             <p className={`mt-1 text-[11px] ${secondaryCls}`}>
               Khóa trần chống hoàn vượt số tiền
@@ -691,7 +797,7 @@ export function PaymentLedgerTab({
           </div>
 
           <div
-            className={`rounded-2xl border p-4 ${
+            className={`telemetry-spotlight-card rounded-2xl border p-4 ${
               kpis.lateCount > 0
                 ? darkMode
                   ? 'border-rose-500/45 bg-rose-950/35 text-[#FBF7EF]'
@@ -703,7 +809,7 @@ export function PaymentLedgerTab({
               Cảnh báo Thanh toán trễ
             </p>
             <p className="adm-tabular mt-1.5 font-mono text-2xl font-semibold">
-              {kpis.lateCount}
+              <AnimatedTelemetryNumber value={kpis.lateCount} />
             </p>
             <p className={`mt-1 text-[11px] ${secondaryCls}`}>
               {kpis.lateCount > 0
@@ -712,6 +818,293 @@ export function PaymentLedgerTab({
             </p>
           </div>
         </div>
+
+        <div className={`mt-4 rounded-2xl border px-4 py-3 ${subCardCls}`}>
+          <LiveStackedHealthBar
+            isDark={darkMode}
+            segments={[
+              {
+                id: 'net-collected',
+                label: 'Số dư giữ ròng (VND)',
+                value: kpis.totalNetRefundable,
+                tone: 'emerald',
+              },
+              {
+                id: 'refunded',
+                label: 'Đã hoàn tiền (VND)',
+                value: kpis.totalRefunded,
+                tone: 'amber',
+              },
+            ]}
+          />
+        </div>
+      </section>
+
+      {/* SePay Auto-Reconciliation Panel */}
+      <section
+        data-testid="admin-sepay-panel"
+        className={`rounded-3xl border p-6 ${cardCls}`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className={`ledger-eyebrow ${goldTextCls}`}>
+                SePay Automated VietQR Reconciliation
+              </p>
+              {sepayConfig ? (
+                <>
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-semibold ${
+                      sepayConfig.mode === 'LIVE'
+                        ? darkMode
+                          ? 'border-emerald-500/45 bg-emerald-950/55 text-emerald-300'
+                          : 'border-[#2E6B47]/35 bg-[#EBF9F1] text-[#1E4B32]'
+                        : darkMode
+                          ? 'border-amber-500/45 bg-amber-950/50 text-amber-300'
+                          : 'border-[#D9822B]/40 bg-[#FFF6E5] text-[#9A5B13]'
+                    }`}
+                  >
+                    <span className="relative flex h-2 w-2 items-center justify-center">
+                      {sepayConfig.mode === 'LIVE' ? (
+                        <span
+                          aria-hidden="true"
+                          className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-500/75"
+                        />
+                      ) : null}
+                      <span
+                        className={`relative h-1.5 w-1.5 rounded-full ${
+                          sepayConfig.mode === 'LIVE' ? 'bg-emerald-500' : 'bg-amber-500'
+                        }`}
+                      />
+                    </span>
+                    {sepayConfig.mode}
+                  </span>
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] ${
+                      darkMode
+                        ? 'border-[#B08A4A]/35 bg-[#231912] text-[#EBCF8F]'
+                        : 'border-[#B08A4A]/35 bg-[#F4EBDA]/80 text-[#5C431C]'
+                    }`}
+                  >
+                    VietQR Active: {sepayConfig.activeVietQrProvider}
+                  </span>
+                </>
+              ) : null}
+            </div>
+            <h3 className="font-editorial mt-1 text-2xl font-normal tracking-tight">
+              Đối soát Chuyển khoản Tự động SePay
+            </h3>
+            <p className={`mt-0.5 text-xs ${mutedCls}`}>
+              Cấu hình Webhook <code>my.sepay.vn</code> và kích hoạt đồng bộ thủ công các đơn
+              VietQR đang chờ thanh toán qua SePay User API.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            data-testid="admin-sepay-sync-btn"
+            disabled={sepaySyncing || sepayConfigLoading}
+            onClick={() => void handleSyncSePay()}
+            className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-opacity disabled:opacity-50 ${
+              darkMode
+                ? 'bg-[#EBCF8F] text-[#1C1410] hover:opacity-90'
+                : 'bg-[#1C1410] text-[#EBCF8F] hover:opacity-90'
+            }`}
+          >
+            {sepaySyncing ? 'Đang đồng bộ SePay...' : 'Đồng bộ giao dịch SePay'}
+          </button>
+        </div>
+
+        {sepayConfigError ? (
+          <div className="mt-4 rounded-2xl border border-[#8B2E2E]/35 bg-[#FFF5F4] px-4 py-3 text-xs text-[#8B2E2E] dark:border-rose-500/40 dark:bg-rose-950/35 dark:text-rose-200">
+            {sepayConfigError}
+          </div>
+        ) : sepayConfigLoading && !sepayConfig ? (
+          <div className={`mt-4 text-xs ${mutedCls}`}>
+            Đang tải trạng thái tích hợp SePay...
+          </div>
+        ) : sepayConfig ? (
+          <>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className={`rounded-2xl border p-3.5 text-xs ${subCardCls}`}>
+                <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${mutedCls}`}>
+                  Tài khoản nhận VietQR
+                </p>
+                <p className="mt-1 font-medium">
+                  {sepayConfig.bankName} ({sepayConfig.bankCode})
+                </p>
+                <p className="mt-0.5 font-mono text-[11px] font-semibold">
+                  {sepayConfig.accountNoMasked}
+                </p>
+                <p className={`mt-0.5 truncate text-[11px] uppercase ${secondaryCls}`}>
+                  {sepayConfig.accountName}
+                </p>
+              </div>
+
+              <div className={`rounded-2xl border p-3.5 text-xs ${subCardCls}`}>
+                <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${mutedCls}`}>
+                  Khóa xác thực SePay
+                </p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${
+                      sepayConfig.apiTokenConfigured
+                        ? darkMode
+                          ? 'border-emerald-500/45 bg-emerald-950/55 text-emerald-300'
+                          : 'border-[#2E6B47]/35 bg-[#EBF9F1] text-[#1E4B32]'
+                        : darkMode
+                          ? 'border-[#B08A4A]/30 bg-[#1A130E] text-[#B4A391]'
+                          : 'border-[#B08A4A]/30 bg-white text-[#7A6A5B]'
+                    }`}
+                  >
+                    API Token: {sepayConfig.apiTokenConfigured ? 'ON' : 'OFF'}
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${
+                      sepayConfig.webhookApiKeyConfigured
+                        ? darkMode
+                          ? 'border-emerald-500/45 bg-emerald-950/55 text-emerald-300'
+                          : 'border-[#2E6B47]/35 bg-[#EBF9F1] text-[#1E4B32]'
+                        : darkMode
+                          ? 'border-[#B08A4A]/30 bg-[#1A130E] text-[#B4A391]'
+                          : 'border-[#B08A4A]/30 bg-white text-[#7A6A5B]'
+                    }`}
+                  >
+                    Webhook Key: {sepayConfig.webhookApiKeyConfigured ? 'ON' : 'OFF'}
+                  </span>
+                </div>
+                <p className={`mt-1.5 text-[11px] ${secondaryCls}`}>
+                  Tiền tố nội dung: <code>{sepayConfig.orderPrefix}</code>
+                </p>
+              </div>
+
+              <div className={`rounded-2xl border p-3.5 text-xs ${subCardCls}`}>
+                <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${mutedCls}`}>
+                  Auto-Poll &amp; Hàng chờ
+                </p>
+                <p className="mt-1 font-mono text-sm font-semibold">
+                  {sepayConfig.autoPollEnabled
+                    ? `Bật · mỗi ${Math.round(sepayConfig.pollIntervalMs / 1000)}s`
+                    : 'Đang tắt'}
+                </p>
+                <p className={`mt-1 text-[11px] ${secondaryCls}`}>
+                  Đơn VietQR đang chờ:{' '}
+                  <strong className="font-mono">{sepayConfig.pendingVietQrCount}</strong>
+                </p>
+              </div>
+
+              <div className={`rounded-2xl border p-3.5 text-xs ${subCardCls}`}>
+                <p className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${mutedCls}`}>
+                  Đồng bộ gần nhất
+                </p>
+                <p className="mt-1 font-mono text-[11px] font-semibold">
+                  {formatDateTime(sepayConfig.lastPollAt)}
+                </p>
+                {sepayConfig.lastPollError ? (
+                  <p className="mt-1 line-clamp-2 text-[10.5px] text-[#8B2E2E] dark:text-rose-300">
+                    Lỗi: {sepayConfig.lastPollError}
+                  </p>
+                ) : (
+                  <p className={`mt-1 text-[11px] ${secondaryCls}`}>
+                    Sẵn sàng nhận Webhook &amp; Sync API
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Copyable Webhook URL & Auth Header Format for my.sepay.vn */}
+            <div className="mt-3.5 grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className={`rounded-2xl border p-3.5 text-xs ${subCardCls}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${mutedCls}`}>
+                    SePay Webhook URL (dán vào my.sepay.vn)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleCopySePayText('webhookUrl', sepayConfig.webhookUrl)
+                    }
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium ${
+                      darkMode
+                        ? 'border-[#B08A4A]/45 text-[#EBCF8F] hover:bg-[#2E2118]'
+                        : 'border-[#B08A4A]/45 bg-white text-[#5C431C] hover:bg-[#F4EBDA]'
+                    }`}
+                  >
+                    {sepayCopiedKey === 'webhookUrl' ? 'Đã chép' : 'Sao chép'}
+                  </button>
+                </div>
+                <code className="mt-1.5 block break-all font-mono text-[11px]">
+                  {sepayConfig.webhookUrl}
+                </code>
+              </div>
+
+              <div className={`rounded-2xl border p-3.5 text-xs ${subCardCls}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${mutedCls}`}>
+                    Header Xác thực (Kiểu chứng thực: API Key)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleCopySePayText(
+                        'authHeader',
+                        sepayConfig.webhookAuthHeaderExample,
+                      )
+                    }
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium ${
+                      darkMode
+                        ? 'border-[#B08A4A]/45 text-[#EBCF8F] hover:bg-[#2E2118]'
+                        : 'border-[#B08A4A]/45 bg-white text-[#5C431C] hover:bg-[#F4EBDA]'
+                    }`}
+                  >
+                    {sepayCopiedKey === 'authHeader' ? 'Đã chép' : 'Sao chép'}
+                  </button>
+                </div>
+                <code className="mt-1.5 block break-all font-mono text-[11px]">
+                  {sepayConfig.webhookAuthHeaderExample}
+                </code>
+              </div>
+            </div>
+
+            {sepaySyncResult ? (
+              <div
+                role="status"
+                data-testid="admin-sepay-sync-result"
+                className={`mt-3.5 rounded-2xl border px-4 py-3 text-xs ${
+                  sepaySyncResult.settledOrderCodes.length > 0
+                    ? darkMode
+                      ? 'border-emerald-500/45 bg-emerald-950/45 text-emerald-200'
+                      : 'border-[#2E6B47]/35 bg-[#EBF9F1] text-[#1E4B32]'
+                    : subCardCls
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong>
+                    Kết quả đồng bộ SePay ({sepaySyncResult.mode}): kiểm tra{' '}
+                    {sepaySyncResult.checkedPendingCount} đơn chờ · quét{' '}
+                    {sepaySyncResult.fetchedTransactionsCount} giao dịch ngân hàng
+                  </strong>
+                  <span className={`font-mono text-[10.5px] ${mutedCls}`}>
+                    {formatDateTime(sepaySyncResult.syncedAt)}
+                  </span>
+                </div>
+                {sepaySyncResult.settledOrderCodes.length > 0 ? (
+                  <p className="mt-1 font-mono text-[11px]">
+                    Đã chốt thanh toán: {sepaySyncResult.settledOrderCodes.join(', ')}
+                  </p>
+                ) : sepaySyncResult.skippedReason ? (
+                  <p className={`mt-1 text-[11px] ${secondaryCls}`}>
+                    Ghi chú: {sepaySyncResult.skippedReason}
+                  </p>
+                ) : (
+                  <p className={`mt-1 text-[11px] ${secondaryCls}`}>
+                    Chưa có giao dịch chuyển khoản mới khớp với các đơn hàng đang chờ.
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </>
+        ) : null}
       </section>
 
       {/* SUB-TAB A: Transactions & Refunds */}
@@ -979,12 +1372,12 @@ export function PaymentLedgerTab({
                   setWhSigFilter(e.target.value as 'ALL' | 'true' | 'false');
                   setWhPage(1);
                 }}
-                aria-label="Lọc trạng thái chữ ký HMAC"
+                aria-label="Lọc trạng thái xác thực Webhook"
                 className={`rounded-full border px-3.5 py-1.5 text-xs outline-none ${inputCls}`}
               >
-                <option value="ALL">Tất cả chữ ký HMAC</option>
-                <option value="true">HMAC Hợp lệ (Verified)</option>
-                <option value="false">HMAC Không hợp lệ (Rejected)</option>
+                <option value="ALL">Tất cả xác thực Webhook</option>
+                <option value="true">Hợp lệ (Verified)</option>
+                <option value="false">Từ chối (Invalid)</option>
               </select>
             </div>
 
@@ -1019,7 +1412,7 @@ export function PaymentLedgerTab({
                   <tr>
                     <th className="px-5 py-3">Cổng &amp; Event ID</th>
                     <th className="px-4 py-3">Mã đơn</th>
-                    <th className="px-4 py-3">Xác thực HMAC-SHA256</th>
+                    <th className="px-4 py-3">Xác thực Webhook</th>
                     <th className="px-4 py-3">Trạng thái xử lý</th>
                     <th className="px-4 py-3">Thời gian nhận</th>
                     <th className="px-5 py-3 text-right">Payload</th>
@@ -1056,7 +1449,9 @@ export function PaymentLedgerTab({
                               wh.signatureValid ? 'bg-emerald-500' : 'bg-rose-500'
                             }`}
                           />
-                          {wh.signatureValid ? 'HMAC Hợp lệ' : 'HMAC Sai / Từ chối'}
+                          {wh.signatureValid
+                            ? 'Hợp lệ (Verified)'
+                            : 'Từ chối (Invalid)'}
                         </span>
                       </td>
                       <td className="px-4 py-3.5 font-mono text-[11px]">
@@ -1312,7 +1707,7 @@ export function PaymentLedgerTab({
 
             <div className={`mt-4 grid gap-2 rounded-2xl border p-3.5 font-mono text-[11px] sm:grid-cols-2 ${subCardCls}`}>
               <div>
-                <span className={mutedCls}>HMAC Verification: </span>
+                <span className={mutedCls}>Xác thực (HMAC / SePay API Key): </span>
                 <strong
                   className={
                     inspectedWebhook.signatureValid
@@ -1320,7 +1715,9 @@ export function PaymentLedgerTab({
                       : 'text-rose-600 dark:text-rose-300'
                   }
                 >
-                  {inspectedWebhook.signatureValid ? 'VALID' : 'INVALID'}
+                  {inspectedWebhook.signatureValid
+                    ? 'Hợp lệ (Verified)'
+                    : 'Từ chối (Invalid)'}
                 </strong>
               </div>
               <div>

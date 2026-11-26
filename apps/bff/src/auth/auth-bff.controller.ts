@@ -44,11 +44,70 @@ export class AuthProxyService {
     });
     this.proxy.sendProxyResponse(res, upstream);
   }
+
+  async forwardAuthRedirect(
+    downstreamPath: string,
+    req: Request,
+    res: Response,
+  ): Promise<void> {
+    const rawOriginal = req.originalUrl || req.url || '';
+    const qIdx = rawOriginal.indexOf('?');
+    const querySuffix = qIdx >= 0 ? rawOriginal.slice(qIdx) : '';
+
+    const upstream = await this.proxy.request({
+      method: 'GET',
+      url: `${this.config.upstreams.authCustomerUrl}${downstreamPath}${querySuffix}`,
+      req,
+      redirect: 'manual',
+      disableRetry: true,
+    });
+    this.proxy.sendProxyResponse(res, upstream);
+  }
 }
 
 @Controller('bff/v1/auth')
 export class StorefrontAuthBffController {
   constructor(@Inject(AuthProxyService) private readonly authProxy: AuthProxyService) {}
+
+  @Get('oauth/providers')
+  async oauthProviders(@Req() req: Request, @Res() res: Response): Promise<void> {
+    await this.authProxy.forwardAuth('GET', '/v1/auth/oauth/providers', req, res);
+  }
+
+  @Get('oauth/:provider/start')
+  async oauthStart(
+    @Param('provider') provider: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.authProxy.forwardAuthRedirect(
+      `/v1/auth/oauth/${encodeURIComponent(provider)}/start`,
+      req,
+      res,
+    );
+  }
+
+  @Get('oauth/:provider/callback')
+  async oauthCallback(
+    @Param('provider') provider: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.authProxy.forwardAuthRedirect(
+      `/v1/auth/oauth/${encodeURIComponent(provider)}/callback`,
+      req,
+      res,
+    );
+  }
+
+  @Post('oauth/exchange')
+  async oauthExchange(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ): Promise<void> {
+    await this.authProxy.forwardAuth('POST', '/v1/auth/oauth/exchange', req, res, body);
+  }
 
   @Post('register')
   async register(@Req() req: Request, @Res() res: Response, @Body() body: unknown): Promise<void> {
@@ -150,6 +209,46 @@ export class StorefrontAuthBffController {
 @Controller('api/v1/auth')
 export class ApiAuthBffController {
   constructor(@Inject(AuthProxyService) private readonly authProxy: AuthProxyService) {}
+
+  @Get('oauth/providers')
+  async oauthProviders(@Req() req: Request, @Res() res: Response): Promise<void> {
+    await this.authProxy.forwardAuth('GET', '/v1/auth/oauth/providers', req, res);
+  }
+
+  @Get('oauth/:provider/start')
+  async oauthStart(
+    @Param('provider') provider: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.authProxy.forwardAuthRedirect(
+      `/v1/auth/oauth/${encodeURIComponent(provider)}/start`,
+      req,
+      res,
+    );
+  }
+
+  @Get('oauth/:provider/callback')
+  async oauthCallback(
+    @Param('provider') provider: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.authProxy.forwardAuthRedirect(
+      `/v1/auth/oauth/${encodeURIComponent(provider)}/callback`,
+      req,
+      res,
+    );
+  }
+
+  @Post('oauth/exchange')
+  async oauthExchange(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: unknown,
+  ): Promise<void> {
+    await this.authProxy.forwardAuth('POST', '/v1/auth/oauth/exchange', req, res, body);
+  }
 
   @Post('register')
   async register(@Req() req: Request, @Res() res: Response, @Body() body: unknown): Promise<void> {

@@ -4,7 +4,9 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
+  Query,
   Req,
   Res,
 } from '@nestjs/common';
@@ -14,10 +16,12 @@ import {
   createApiResponse,
   EmailOtpSendRequestSchema,
   LoginRequestSchema,
+  OAuthExchangeRequestSchema,
   RegisterRequestSchema,
   TwoFactorMethodSchema,
   type ApiResponse,
   type LoginResponse,
+  type OAuthProvidersStatusResponse,
   type RefreshResponse,
   type TotpSetupResponse,
   type UserSummaryDto,
@@ -32,6 +36,7 @@ import {
   type TwoFactorVerifyResponse,
 } from '../services/auth.service';
 import { CustomerService, type TryOnQuotaViewDto } from '../services/customer.service';
+import { OAuthService } from '../services/oauth.service';
 
 const FlexibleTwoFactorVerifySchema = z.object({
   method: TwoFactorMethodSchema.optional(),
@@ -73,7 +78,70 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly customerService: CustomerService,
+    private readonly oauthService: OAuthService,
   ) {}
+
+  @Get('oauth/providers')
+  getOAuthProviders(@Req() req: Request): ApiResponse<OAuthProvidersStatusResponse> {
+    const data = this.oauthService.getProvidersStatus();
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
+
+  @Get('oauth/:provider/start')
+  async startOAuth(
+    @Param('provider') provider: string,
+    @Query('portal') portal: string | undefined,
+    @Query('returnTo') returnTo: string | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { redirectUrl } = await this.oauthService.startOAuth({
+      providerRaw: provider,
+      portalRaw: portal,
+      returnToRaw: returnTo,
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.redirect(HttpStatus.FOUND, redirectUrl);
+  }
+
+  @Get('oauth/:provider/callback')
+  async handleOAuthCallback(
+    @Param('provider') provider: string,
+    @Query('code') code: string | undefined,
+    @Query('state') state: string | undefined,
+    @Query('error') error: string | undefined,
+    @Query('error_description') errorDescription: string | undefined,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { redirectUrl } = await this.oauthService.handleOAuthCallback({
+      providerRaw: provider,
+      code,
+      state,
+      error,
+      errorDescription,
+      req,
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.redirect(HttpStatus.FOUND, redirectUrl);
+  }
+
+  @Post('oauth/exchange')
+  @HttpCode(HttpStatus.OK)
+  async exchangeOAuthTicket(
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ApiResponse<LoginResponse>> {
+    const input = parseWithZod(OAuthExchangeRequestSchema, body);
+    const data = await this.oauthService.exchangeOAuthTicket(input.ticket, req, res);
+    return createApiResponse(data, {
+      correlationId: getCorrelationIdFromRequest(req),
+      service: SERVICE_NAME,
+    });
+  }
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)

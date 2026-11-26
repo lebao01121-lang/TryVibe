@@ -403,14 +403,17 @@ class TryOnAutoPurgeTask:
                     timeout=float(self.interval_seconds),
                 )
             except asyncio.TimeoutError:
-                report = await self.run_once()
-                if report.purged_images or report.purged_results or report.deleted_keys:
-                    logger.info(
-                        "Auto-purge removed %d images, %d results, %d MinIO objects",
-                        report.purged_images,
-                        report.purged_results,
-                        len(report.deleted_keys),
-                    )
+                try:
+                    report = await self.run_once()
+                    if report.purged_images or report.purged_results or report.deleted_keys:
+                        logger.info(
+                            "Auto-purge removed %d images, %d results, %d MinIO objects",
+                            report.purged_images,
+                            report.purged_results,
+                            len(report.deleted_keys),
+                        )
+                except Exception as exc:
+                    logger.warning("Auto-purge cycle encountered unexpected error: %s", exc)
 
     def start(self) -> None:
         if self._task is None or self._task.done():

@@ -13,6 +13,7 @@ import { AuditService } from './services/audit.service';
 import { AuthService } from './services/auth.service';
 import { CustomerService } from './services/customer.service';
 import { IamService } from './services/iam.service';
+import { OAuthService } from './services/oauth.service';
 
 @Module({
   controllers: [
@@ -33,6 +34,7 @@ import { IamService } from './services/iam.service';
     MailService,
     AuditService,
     AuthService,
+    OAuthService,
     CustomerService,
     IamService,
   ],

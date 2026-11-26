@@ -1,0 +1,530 @@
+/* ============================================================================
+ * TryVibe Continuous Live Telemetry Motion Core (60 FPS GPU Compositor)
+ * Zero-React-Rerender optical motion layer for Admin (:3001), Partner (:3002),
+ * and Storefront (:3000). Supports Kem Sáng (Light) & Espresso Tối (Dark).
+ * ============================================================================ */
+
+:root {
+  --telemetry-gold-beam: rgba(176, 138, 74, 0.78);
+  --telemetry-gold-soft: rgba(176, 138, 74, 0.24);
+  --telemetry-gold-bright: #b08a4a;
+  --telemetry-emerald-comet: #059669;
+  --telemetry-emerald-glow: rgba(5, 150, 105, 0.34);
+  --telemetry-crimson-alert: #dc2626;
+  --telemetry-crimson-glow: rgba(220, 38, 38, 0.28);
+  --telemetry-amber-pulse: #d97706;
+  --telemetry-amber-glow: rgba(217, 119, 6, 0.32);
+  --telemetry-scanline: rgba(176, 138, 74, 0.065);
+  --telemetry-sheen-highlight: rgba(255, 250, 238, 0.56);
+  --telemetry-spotlight-color: rgba(176, 138, 74, 0.22);
+  --telemetry-radar-beam: linear-gradient(
+    90deg,
+    rgba(176, 138, 74, 0) 0%,
+    rgba(176, 138, 74, 0.045) 45%,
+    rgba(176, 138, 74, 0.14) 50%,
+    rgba(176, 138, 74, 0.03) 56%,
+    rgba(176, 138, 74, 0) 100%
+  );
+  --telemetry-sync-gradient: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(176, 138, 74, 0.85) 35%,
+    rgba(5, 150, 105, 0.9) 55%,
+    rgba(235, 207, 143, 0.95) 75%,
+    transparent 100%
+  );
+  --telemetry-tooltip-bg: rgba(28, 20, 16, 0.92);
+  --telemetry-tooltip-border: rgba(235, 207, 143, 0.38);
+  --telemetry-tooltip-fg: #fbf7ef;
+  --telemetry-surface-ring: rgba(176, 138, 74, 0.22);
+  --telemetry-orbital-stroke: rgba(176, 138, 74, 0.52);
+}
+
+.atelier-admin-dark,
+[data-theme='dark'] {
+  --telemetry-gold-beam: rgba(243, 210, 153, 0.88);
+  --telemetry-gold-soft: rgba(243, 210, 153, 0.26);
+  --telemetry-gold-bright: #f3d299;
+  --telemetry-emerald-comet: #34d399;
+  --telemetry-emerald-glow: rgba(52, 211, 153, 0.45);
+  --telemetry-crimson-alert: #f87171;
+  --telemetry-crimson-glow: rgba(248, 113, 113, 0.42);
+  --telemetry-amber-pulse: #fbbf24;
+  --telemetry-amber-glow: rgba(251, 191, 36, 0.42);
+  --telemetry-scanline: rgba(243, 210, 153, 0.07);
+  --telemetry-sheen-highlight: rgba(255, 248, 224, 0.42);
+  --telemetry-spotlight-color: rgba(243, 210, 153, 0.26);
+  --telemetry-radar-beam: linear-gradient(
+    90deg,
+    rgba(243, 210, 153, 0) 0%,
+    rgba(243, 210, 153, 0.04) 44%,
+    rgba(52, 211, 153, 0.14) 50%,
+    rgba(243, 210, 153, 0.05) 56%,
+    rgba(243, 210, 153, 0) 100%
+  );
+  --telemetry-sync-gradient: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(243, 210, 153, 0.9) 30%,
+    rgba(52, 211, 153, 0.95) 55%,
+    rgba(243, 210, 153, 0.9) 80%,
+    transparent 100%
+  );
+  --telemetry-tooltip-bg: rgba(16, 11, 8, 0.94);
+  --telemetry-tooltip-border: rgba(243, 210, 153, 0.44);
+  --telemetry-tooltip-fg: #fbf7ef;
+  --telemetry-surface-ring: rgba(243, 210, 153, 0.24);
+  --telemetry-orbital-stroke: rgba(243, 210, 153, 0.48);
+}
+
+/* ============================================================================
+ * 1. Core 60 FPS GPU Compositor @keyframes
+ * ============================================================================ */
+
+/* Comet / Laser flow along normalized pathLength="100" SVG paths */
+@keyframes telemetryCometFlow {
+  0% {
+    stroke-dashoffset: 118;
+    opacity: 0.25;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -18;
+    opacity: 0.25;
+  }
+}
+
+/* Diagonal liquid metallic shimmer gliding inside horizontal progress & status bars */
+@keyframes telemetryLiquidSheen {
+  0% {
+    transform: translate3d(-120%, 0, 0) skewX(-22deg);
+  }
+  100% {
+    transform: translate3d(220%, 0, 0) skewX(-22deg);
+  }
+}
+
+/* Vertical energy wave rising from base to cap of vertical bars */
+@keyframes telemetryVerticalBarWave {
+  0% {
+    transform: translate3d(0, 100%, 0);
+    opacity: 0.15;
+  }
+  35% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate3d(0, -100%, 0);
+    opacity: 0.1;
+  }
+}
+
+/* Soft vertical radar scanner beam sweeping left -> right across chart grid */
+@keyframes telemetryRadarSweep {
+  0% {
+    transform: translate3d(-15%, 0, 0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(115%, 0, 0);
+    opacity: 0;
+  }
+}
+
+/* Dual concentric radar ping for live nodes & online status indicators */
+@keyframes telemetryBeaconPing {
+  0% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  75% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+
+/* Continuous 360deg orbital spin for donut inner ring & AI Copilot halo */
+@keyframes telemetryOrbitalSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Calm breathing opacity for chart area fills & alert segments */
+@keyframes telemetryBreathingArea {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.92;
+  }
+}
+
+/* Continuous ECG heartbeat pulse along SVG stroke */
+@keyframes telemetryEcgPulse {
+  0% {
+    stroke-dashoffset: 100;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Thin 1.5px optical laser line sweeping along Header bottom edge during background sync */
+@keyframes telemetrySyncSweep {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+    opacity: 0.2;
+  }
+  20% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(200%, 0, 0);
+    opacity: 0.1;
+  }
+}
+
+/* Subtle top scanline sweeping across KPI card top edge */
+@keyframes telemetryTopScanline {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+  }
+  100% {
+    transform: translate3d(260%, 0, 0);
+  }
+}
+
+/* Staggered sparkbar sequential luminance wave */
+@keyframes telemetrySparkBarPulse {
+  0%,
+  100% {
+    opacity: 0.68;
+    filter: brightness(1);
+  }
+  30% {
+    opacity: 1;
+    filter: brightness(1.32);
+  }
+}
+
+/* Smooth tab panel entrance (fade + translateY(6px) 220ms) */
+@keyframes telemetryTabEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* 800ms highlight flash on genuine numeric API updates */
+@keyframes telemetryValueFlash {
+  0% {
+    text-shadow: 0 0 14px var(--telemetry-gold-beam);
+    filter: brightness(1.22);
+  }
+  100% {
+    text-shadow: none;
+    filter: brightness(1);
+  }
+}
+
+/* 1.5s Champagne border glow for newly pushed orders/RMA rows */
+@keyframes telemetryRowFlash {
+  0% {
+    box-shadow: 0 0 0 1.5px var(--telemetry-gold-bright), 0 0 22px -4px var(--telemetry-gold-beam);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* Staggered row entrance (55ms * --row-idx) */
+@keyframes telemetryRowStagger {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* One-turn refresh icon spin during silent background sync */
+@keyframes telemetryRefreshSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* ============================================================================
+ * 2. Reusable Utility Classes (all tagged .telemetry-anim for GPU pause)
+ * ============================================================================ */
+
+.telemetry-anim {
+  will-change: transform, opacity;
+}
+
+.telemetry-comet {
+  animation: telemetryCometFlow 3.2s cubic-bezier(0.35, 0, 0.25, 1) infinite;
+}
+
+.telemetry-comet-fast {
+  animation: telemetryCometFlow 2.6s cubic-bezier(0.35, 0, 0.25, 1) infinite;
+}
+
+.telemetry-sheen {
+  position: absolute;
+  inset: 0;
+  width: 46%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--telemetry-sheen-highlight) 50%,
+    transparent 100%
+  );
+  animation: telemetryLiquidSheen 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.telemetry-bar-wave {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 250, 235, 0) 0%,
+    rgba(255, 247, 222, 0.44) 50%,
+    rgba(255, 250, 235, 0) 100%
+  );
+  animation: telemetryVerticalBarWave 3s ease-in-out infinite;
+  animation-delay: calc(var(--bar-idx, 0) * 140ms);
+}
+
+.telemetry-radar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 24%;
+  pointer-events: none;
+  background: var(--telemetry-radar-beam);
+  animation: telemetryRadarSweep 5.5s linear infinite;
+}
+
+.telemetry-beacon-ring {
+  animation: telemetryBeaconPing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.telemetry-beacon-ring-delay {
+  animation: telemetryBeaconPing 2.2s cubic-bezier(0, 0, 0.2, 1) 1.1s infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.telemetry-orbital {
+  animation: telemetryOrbitalSpin 18s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.telemetry-orbital-fast {
+  animation: telemetryOrbitalSpin 7s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.telemetry-breathing {
+  animation: telemetryBreathingArea 3.8s ease-in-out infinite;
+}
+
+.telemetry-ecg-path {
+  stroke-dasharray: 28 72;
+  animation: telemetryEcgPulse 2.4s linear infinite;
+}
+
+.telemetry-sync-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.5px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.telemetry-sync-bar::after {
+  content: '';
+  display: block;
+  width: 48%;
+  height: 100%;
+  background: var(--telemetry-sync-gradient);
+  animation: telemetrySyncSweep 1.35s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.telemetry-top-scanline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.telemetry-top-scanline::after {
+  content: '';
+  display: block;
+  width: 36%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--telemetry-gold-beam),
+    transparent
+  );
+  animation: telemetryTopScanline 4.8s ease-in-out infinite;
+  animation-delay: calc(var(--card-idx, 0) * 650ms);
+}
+
+.telemetry-spark-bar {
+  animation: telemetrySparkBarPulse 2.6s ease-in-out infinite;
+  animation-delay: calc(var(--bar-idx, 0) * 120ms);
+}
+
+.telemetry-tab-enter {
+  animation: telemetryTabEnter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.telemetry-value-flash {
+  animation: telemetryValueFlash 800ms ease-out;
+}
+
+.telemetry-row-flash {
+  animation: telemetryRowFlash 1.5s ease-out;
+}
+
+.telemetry-row-stagger {
+  animation: telemetryRowStagger 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--row-idx, 0) * 55ms);
+}
+
+.telemetry-refresh-spin {
+  animation: telemetryRefreshSpin 0.85s linear infinite;
+}
+
+/* Cursor border spotlight card (pointer coordinates updated directly via style ref) */
+.telemetry-spotlight-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.telemetry-spotlight-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  opacity: var(--spot-opacity, 0);
+  transition: opacity 240ms ease;
+  background: radial-gradient(
+    240px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    var(--telemetry-gold-beam),
+    var(--telemetry-spotlight-color) 42%,
+    transparent 74%
+  );
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+/* AI Copilot Floating Launcher Orbital Halo (Champagne Gold -> Emerald) */
+.telemetry-copilot-halo-wrap {
+  position: relative;
+  border-radius: 1.05rem;
+  padding: 1.5px;
+  overflow: hidden;
+}
+
+.telemetry-copilot-halo-ring {
+  position: absolute;
+  inset: -75%;
+  pointer-events: none;
+  background: conic-gradient(
+    from 0deg,
+    rgba(243, 210, 153, 0.12) 0deg,
+    rgba(243, 210, 153, 0.92) 70deg,
+    rgba(52, 211, 153, 0.88) 140deg,
+    rgba(243, 210, 153, 0.14) 220deg,
+    rgba(243, 210, 153, 0.85) 300deg,
+    rgba(243, 210, 153, 0.12) 360deg
+  );
+  animation: telemetryOrbitalSpin 6.5s linear infinite;
+}
+
+/* ============================================================================
+ * 3. Mandatory Global GPU Auto-Pause Rules (16 GB RAM & Camera Protection)
+ * ============================================================================ */
+
+html[data-live-motion='paused'] *,
+html[data-live-motion='paused'] *::before,
+html[data-live-motion='paused'] *::after,
+html[data-tab-hidden='true'] *,
+html[data-tab-hidden='true'] *::before,
+html[data-tab-hidden='true'] *::after,
+[data-telemetry-offscreen='true'] .telemetry-anim,
+[data-telemetry-offscreen='true'] .telemetry-anim::before,
+[data-telemetry-offscreen='true'] .telemetry-anim::after,
+body[data-camera-active='true'] .telemetry-anim,
+body[data-camera-active='true'] .telemetry-anim::before,
+body[data-camera-active='true'] .telemetry-anim::after {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .telemetry-anim,
+  .telemetry-anim::before,
+  .telemetry-anim::after,
+  .telemetry-sync-bar::after,
+  .telemetry-top-scanline::after,
+  .telemetry-copilot-halo-ring,
+  .telemetry-tab-enter,
+  .telemetry-row-stagger {
+    animation-play-state: paused !important;
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

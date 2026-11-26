@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ProductSpuDto, StockLevelAdminDto } from '@atelier/contracts';
+import {
+  AnimatedTelemetryNumber,
+  LiveFunnelStageBar,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
 import { adminFetch } from '@/lib/api-client';
 import { emitPortalToast } from '../PortalToastBanner';
 
@@ -600,13 +605,6 @@ export function AiTryOnAnalyticsTab({
     : 'border-b border-[#B08A4A]/20 bg-[#F4EBDA]/75 text-[#8A672C]';
   const rowHoverCls = darkMode ? 'hover:bg-[#251B14]' : 'hover:bg-[#FBF7EF]/85';
 
-  const getFunnelBarCls = (tone: 'espresso' | 'gold' | 'blue' | 'emerald'): string => {
-    if (tone === 'gold') return 'bg-[#B08A4A]';
-    if (tone === 'blue') return 'bg-[#2E5A8B]';
-    if (tone === 'emerald') return 'bg-[#2E6B47]';
-    return darkMode ? 'bg-[#EBCF8F]' : 'bg-[#1C1410]';
-  };
-
   const getStockRiskBadge = (risk: EnrichedDemandRow['lowStockRisk']) => {
     if (risk === 'OUT') {
       return {
@@ -648,11 +646,19 @@ export function AiTryOnAnalyticsTab({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-[#EBCF8F]/45 bg-[#2A1E17] px-3 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[#EBCF8F]">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    vtonTelemetry.tryonServiceUp ? 'bg-emerald-400' : 'bg-amber-400'
-                  }`}
-                />
+                <span className="relative flex h-2 w-2 items-center justify-center">
+                  {vtonTelemetry.tryonServiceUp ? (
+                    <span
+                      aria-hidden="true"
+                      className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-400/75"
+                    />
+                  ) : null}
+                  <span
+                    className={`relative h-1.5 w-1.5 rounded-full ${
+                      vtonTelemetry.tryonServiceUp ? 'bg-emerald-400' : 'bg-amber-400'
+                    }`}
+                  />
+                </span>
                 AI TRY-ON HUB · VTON 4-TIER &amp; DEMAND SIGNALS
               </span>
               <span className="font-mono text-[11px] text-[#EBCF8F]/75">
@@ -781,7 +787,7 @@ export function AiTryOnAnalyticsTab({
 
                 <h4 className="mt-2 text-sm font-semibold">{stage.title}</h4>
                 <p className="mt-1 font-mono text-3xl font-bold tabular-nums">
-                  {new Intl.NumberFormat('vi-VN').format(stage.value)}
+                  <AnimatedTelemetryNumber value={stage.value} format="integer" />
                 </p>
                 <p className={`mt-0.5 font-mono text-[10px] ${mutedCls}`}>
                   {stage.code}
@@ -789,19 +795,26 @@ export function AiTryOnAnalyticsTab({
               </div>
 
               <div className="mt-4">
-                <div
-                  className={`h-2.5 w-full overflow-hidden rounded-full ${
-                    darkMode ? 'bg-[#140E0A]' : 'bg-[#E9DFCE]'
-                  }`}
-                >
-                  <div
-                    style={{ width: `${Math.max(stage.value > 0 ? 6 : 0, stage.barPct)}%` }}
-                    className={`h-full rounded-full transition-all duration-500 ${getFunnelBarCls(stage.tone)}`}
-                  />
-                </div>
+                <LiveStreamProgressBar
+                  percent={Math.max(stage.value > 0 ? 6 : 0, stage.barPct)}
+                  tone={
+                    stage.tone === 'emerald'
+                      ? 'emerald'
+                      : stage.tone === 'gold'
+                        ? 'gold'
+                        : stage.tone === 'blue'
+                          ? 'amber'
+                          : 'espresso'
+                  }
+                  height="sm"
+                  isDark={darkMode}
+                  ariaLabel={`${stage.title}: ${stage.barPct}%`}
+                />
                 <div className="mt-1.5 flex items-center justify-between font-mono text-[10px]">
                   <span className={mutedCls}>Tỷ trọng so với đỉnh</span>
-                  <span className="font-semibold">{stage.barPct}%</span>
+                  <span className="font-semibold">
+                    <AnimatedTelemetryNumber value={stage.barPct} format="percent" />
+                  </span>
                 </div>
               </div>
 
@@ -932,48 +945,26 @@ export function AiTryOnAnalyticsTab({
           </div>
 
           <div className="mt-4 space-y-3">
-            {vtonTelemetry.tiers.map((t) => (
-              <div key={t.providerCode} className={`rounded-2xl border p-3.5 ${subCardCls}`}>
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold ${
-                        darkMode
-                          ? 'bg-[#140E0A] text-[#EBCF8F]'
-                          : 'bg-[#1C1410] text-[#EBCF8F]'
-                      }`}
-                    >
-                      {t.tier}
-                    </span>
-                    <span className="font-semibold">{t.name}</span>
-                    <span className={`font-mono text-[10px] ${mutedCls}`}>
-                      ({t.costBadge})
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 font-mono text-[11px]">
-                    <span className="font-semibold tabular-nums">{t.count} lượt</span>
-                    <span className={mutedCls}>({t.pct}%)</span>
-                  </div>
-                </div>
-
-                <div className="mt-2 flex items-center gap-3">
-                  <div
-                    className={`h-2 flex-1 overflow-hidden rounded-full ${
-                      darkMode ? 'bg-[#140E0A]' : 'bg-[#E9DFCE]'
-                    }`}
-                  >
-                    <div
-                      style={{ width: `${Math.max(t.count > 0 ? 5 : 0, t.pct)}%` }}
-                      className={`h-full rounded-full ${t.barCls}`}
-                    />
-                  </div>
-                  <span className={`shrink-0 font-mono text-[10px] ${goldTextCls}`}>
-                    {t.status}
-                  </span>
-                </div>
-              </div>
-            ))}
+            <LiveFunnelStageBar
+              isDark={darkMode}
+              unitLabel="lượt dựng"
+              stages={vtonTelemetry.tiers.map((t, idx) => ({
+                id: t.providerCode,
+                stepNumber: idx + 1,
+                label: `${t.tier} · ${t.name} (${t.costBadge})`,
+                count: t.count,
+                ratePct: t.pct,
+                subLabel: t.status,
+                tone:
+                  idx === 0
+                    ? 'gold'
+                    : idx === 1
+                      ? 'amber'
+                      : idx === 2
+                        ? 'emerald'
+                        : 'slate',
+              }))}
+            />
           </div>
         </section>
       </div>
@@ -1063,16 +1054,14 @@ export function AiTryOnAnalyticsTab({
                       </td>
                       <td className="px-4 py-3 text-right">
                         <p className="font-mono font-semibold tabular-nums">
-                          {row.tryOnSessions}
+                          <AnimatedTelemetryNumber value={row.tryOnSessions} />
                         </p>
-                        <div
-                          className={`ml-auto mt-1 h-1.5 w-20 overflow-hidden rounded-full ${
-                            darkMode ? 'bg-[#140E0A]' : 'bg-[#E9DFCE]'
-                          }`}
-                        >
-                          <div
-                            style={{ width: `${sessionFillPct}%` }}
-                            className="h-full rounded-full bg-[#B08A4A]"
+                        <div className="ml-auto mt-1 w-20">
+                          <LiveStreamProgressBar
+                            percent={sessionFillPct}
+                            tone="gold"
+                            height="xs"
+                            isDark={darkMode}
                           />
                         </div>
                       </td>

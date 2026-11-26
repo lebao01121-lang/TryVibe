@@ -25,6 +25,23 @@ CREATE TABLE IF NOT EXISTS users (
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(24) NOT NULL DEFAULT 'LOCAL';
+
+CREATE TABLE IF NOT EXISTS user_oauth_accounts (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider VARCHAR(24) NOT NULL CHECK (provider IN ('GOOGLE', 'GITHUB')),
+  provider_account_id VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  avatar_url TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (provider, provider_account_id),
+  UNIQUE (user_id, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_oauth_accounts_user_provider
+  ON user_oauth_accounts (user_id, provider);
 
 CREATE TABLE IF NOT EXISTS roles (
   id UUID PRIMARY KEY,

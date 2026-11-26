@@ -29,10 +29,27 @@ let memorySession: PartnerStoredSession | null = null;
 let activeRefreshPromise: Promise<string | null> | null = null;
 
 export function getBffBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_BFF_URL?.replace(/\/$/, '') ||
-    'http://localhost:4000'
-  );
+  const configured = process.env.NEXT_PUBLIC_BFF_URL?.trim().replace(/\/+$/, '');
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    const isLocalBrowser = host === 'localhost' || host === '127.0.0.1';
+    if (!configured) {
+      return isLocalBrowser ? `http://${host}:4000` : 'http://localhost:4000';
+    }
+    if (isLocalBrowser) {
+      try {
+        const parsed = new URL(configured);
+        if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+          parsed.hostname = host;
+          return parsed.toString().replace(/\/+$/, '');
+        }
+      } catch {
+        // Keep configured URL as-is
+      }
+    }
+    return configured;
+  }
+  return configured || 'http://localhost:4000';
 }
 
 function generateCorrelationId(): string {

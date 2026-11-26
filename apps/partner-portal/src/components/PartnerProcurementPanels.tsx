@@ -8,6 +8,12 @@ import {
   type PurchaseOrderDTO,
   type SupplierPayableDTO,
 } from '@atelier/contracts';
+import {
+  AnimatedTelemetryNumber,
+  LiveKpiSparkCard,
+  LiveStackedHealthBar,
+  LiveStreamProgressBar,
+} from '@atelier/motion-kit';
 import { partnerFetch } from '@/lib/api-client';
 import { emitPortalToast } from './PortalToastBanner';
 
@@ -473,27 +479,59 @@ export function PartnerPurchaseOrdersTab({
                   </div>
                 ) : null}
 
-                {/* Line Items */}
-                {po.items.length > 0 ? (
-                  <div className="mt-3 grid gap-1.5 border-t border-[#B08A4A]/15 pt-2.5 sm:grid-cols-2">
-                    {po.items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between rounded-xl bg-white px-3 py-1.5 font-mono text-[11px]"
-                      >
-                        <span>
-                          {item.skuCode} · Đặt <strong>{item.orderedQty}</strong>{' '}
-                          (Đã nghiệm thu: {item.acceptedQty})
-                        </span>
-                        <span className="text-[#8A672C]">
-                          {item.unitCostVnd != null
-                            ? `${FORMAT_VND(item.unitCostVnd)}/sp`
-                            : '—'}
-                        </span>
+                {/* Line Items + PO -> GRN Delivery Progress Bar */}
+                {po.items.length > 0 ? (() => {
+                  const orderedSum = po.items.reduce(
+                    (sum, it) => sum + Math.max(0, it.orderedQty),
+                    0,
+                  );
+                  const acceptedSum = po.items.reduce(
+                    (sum, it) => sum + Math.max(0, it.acceptedQty),
+                    0,
+                  );
+                  const deliveryPct =
+                    orderedSum > 0
+                      ? Math.min(
+                          100,
+                          Math.round((acceptedSum / orderedSum) * 100),
+                        )
+                      : 0;
+                  return (
+                    <div className="mt-3 space-y-2.5 border-t border-[#B08A4A]/15 pt-2.5">
+                      <LiveStreamProgressBar
+                        percent={deliveryPct}
+                        tone={
+                          deliveryPct >= 100
+                            ? 'emerald'
+                            : deliveryPct > 0
+                              ? 'gold'
+                              : 'amber'
+                        }
+                        height="xs"
+                        label={`Tiến độ giao hàng PO → GRN (${acceptedSum}/${orderedSum} sp nghiệm thu)`}
+                        rightText={`${deliveryPct}%`}
+                      />
+                      <div className="grid gap-1.5 sm:grid-cols-2">
+                        {po.items.map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-center justify-between rounded-xl bg-white px-3 py-1.5 font-mono text-[11px]"
+                          >
+                            <span>
+                              {item.skuCode} · Đặt <strong>{item.orderedQty}</strong>{' '}
+                              (Đã nghiệm thu: {item.acceptedQty})
+                            </span>
+                            <span className="text-[#8A672C]">
+                              {item.unitCostVnd != null
+                                ? `${FORMAT_VND(item.unitCostVnd)}/sp`
+                                : '—'}
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                ) : null}
+                    </div>
+                  );
+                })() : null}
               </article>
             );
           })
@@ -627,6 +665,21 @@ export function PartnerGoodsReceiptsTab() {
     void loadGrns();
   }, [loadGrns]);
 
+  const qcStats = useMemo(() => {
+    const accepted = receipts.reduce(
+      (sum, r) => sum + Math.max(0, r.totalAcceptedQty),
+      0,
+    );
+    const rejected = receipts.reduce(
+      (sum, r) => sum + Math.max(0, r.totalRejectedQty),
+      0,
+    );
+    const total = accepted + rejected;
+    const passRatePct =
+      total > 0 ? Number(((accepted / total) * 100).toFixed(1)) : 100;
+    return { accepted, rejected, total, passRatePct };
+  }, [receipts]);
+
   return (
     <section className="rounded-3xl border border-[#B08A4A]/30 bg-white p-6">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#B08A4A]/20 pb-4">
@@ -635,7 +688,8 @@ export function PartnerGoodsReceiptsTab() {
             Goods Receipt Notes (GRN) · Nghiệm thu chất lượng &amp; Lô hàng
           </p>
           <h2 className="font-editorial mt-1 text-3xl text-[#1C1410]">
-            Biên bản nghiệm thu nhập kho ({receipts.length})
+            Biên bản nghiệm thu nhập kho (
+            <AnimatedTelemetryNumber value={receipts.length} />)
           </h2>
         </div>
         <button
@@ -646,6 +700,50 @@ export function PartnerGoodsReceiptsTab() {
         >
           {loading ? 'Đang tải...' : 'Làm mới GRN'}
         </button>
+      </div>
+
+      {/* Live QC Pass Rate Radial Gauge & Quality Breakdown */}
+      <div className="mt-5 grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <LiveKpiSparkCard
+          testId="partner-qc-pass-rate-card"
+          cardIndex={0}
+          title="Tỷ lệ Đạt kiểm định QC Pass Rate"
+          value={qcStats.passRatePct}
+          valueFormat="percent"
+          valueDecimals={1}
+          variant="radialGauge"
+          radialGauge={{
+            current: qcStats.accepted,
+            total: Math.max(1, qcStats.total),
+            centerText: `${Math.round(qcStats.passRatePct)}%`,
+            legendItems: [
+              { label: 'Đạt', value: qcStats.accepted, tone: 'emerald' },
+              { label: 'Lỗi', value: qcStats.rejected, tone: 'crimson' },
+            ],
+          }}
+          footerLeft={`Tổng kiểm định: ${qcStats.total} sp`}
+        />
+        <div className="flex flex-col justify-center rounded-2xl border border-[#B08A4A]/25 bg-[#FBF7EF]/80 p-4">
+          <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[#8A672C]">
+            Phân bổ Chất lượng Nghiệm thu Toàn bộ GRN
+          </p>
+          <LiveStackedHealthBar
+            segments={[
+              {
+                id: 'qc-pass',
+                label: 'Đạt chuẩn nhập kho',
+                value: qcStats.accepted,
+                tone: 'emerald',
+              },
+              {
+                id: 'qc-reject',
+                label: 'Lỗi trả xưởng',
+                value: qcStats.rejected,
+                tone: 'crimson',
+              },
+            ]}
+          />
+        </div>
       </div>
 
       {error ? (
@@ -859,30 +957,50 @@ export function PartnerPayablesTab({ supplierId }: PartnerPayablesTabProps = {})
     <section className="space-y-6">
       {/* KPI Totals */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-[#D9822B]/35 bg-[#FFF8EB] p-5">
+        <div className="telemetry-spotlight-card rounded-2xl border border-[#D9822B]/35 bg-[#FFF8EB] p-5">
           <p className="text-[11px] uppercase tracking-[0.14em] text-[#9A5B13]">
             Công nợ chờ thanh toán (UNPAID)
           </p>
           <p className="font-editorial mt-2 text-4xl text-[#1C1410]">
-            {FORMAT_VND(summary.unpaid)}
+            <AnimatedTelemetryNumber value={summary.unpaid} format="vnd" />
           </p>
         </div>
-        <div className="rounded-2xl border border-[#2E6B47]/30 bg-[#F2FBF6] p-5">
+        <div className="telemetry-spotlight-card rounded-2xl border border-[#2E6B47]/30 bg-[#F2FBF6] p-5">
           <p className="text-[11px] uppercase tracking-[0.14em] text-[#1E4B32]">
             Đã tất toán (PAID)
           </p>
           <p className="font-editorial mt-2 text-4xl text-[#1C1410]">
-            {FORMAT_VND(summary.paid)}
+            <AnimatedTelemetryNumber value={summary.paid} format="vnd" />
           </p>
         </div>
-        <div className="rounded-2xl border border-[#B08A4A]/30 bg-white p-5">
+        <div className="telemetry-spotlight-card rounded-2xl border border-[#B08A4A]/30 bg-white p-5">
           <p className="text-[11px] uppercase tracking-[0.14em] text-[#8A672C]">
-            Tổng giá trị đối soát ({payables.length} phiếu)
+            Tổng giá trị đối soát (<AnimatedTelemetryNumber value={payables.length} /> phiếu)
           </p>
           <p className="font-editorial mt-2 text-4xl text-[#1C1410]">
-            {FORMAT_VND(summary.total)}
+            <AnimatedTelemetryNumber value={summary.total} format="vnd" />
           </p>
         </div>
+      </div>
+
+      {/* Payables Reconciliation Progress Bar */}
+      <div className="rounded-2xl border border-[#B08A4A]/25 bg-white p-4">
+        <LiveStackedHealthBar
+          segments={[
+            {
+              id: 'paid-vnd',
+              label: 'Đã tất toán PAID (VND)',
+              value: summary.paid,
+              tone: 'emerald',
+            },
+            {
+              id: 'unpaid-vnd',
+              label: 'Chờ thanh toán UNPAID (VND)',
+              value: summary.unpaid,
+              tone: 'amber',
+            },
+          ]}
+        />
       </div>
 
       {/* Payables Table */}

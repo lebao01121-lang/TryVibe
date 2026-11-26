@@ -186,11 +186,7 @@ export function ReportsReconciliationTab({
 
       const fetchPurchaseOrders = async () => {
         if (!canReadPo) return null;
-        let res = await adminFetch<unknown>('/api/v1/admin/procurement/purchase-orders');
-        if (!res.ok && res.status === 404) {
-          res = await adminFetch<unknown>('/api/v1/admin/procurement/po');
-        }
-        return res;
+        return adminFetch<unknown>('/api/v1/admin/procurement/purchase-orders');
       };
 
       const [ordersRes, rmaRes, poRes, grnRes, supRes, ledgerRes] = await Promise.all([

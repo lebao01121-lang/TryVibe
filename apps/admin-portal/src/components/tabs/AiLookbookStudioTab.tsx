@@ -14,6 +14,7 @@ import {
   type MediaAssetDto,
   type ProductSpuDto,
 } from '@atelier/contracts';
+import { AnimatedTelemetryNumber } from '@atelier/motion-kit';
 import { adminFetch } from '@/lib/api-client';
 
 interface VirtualModelOption {
@@ -472,8 +473,16 @@ export function AiLookbookStudioTab() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-[#B08A4A]/45 bg-[#EFE6D5] px-3 py-1.5 font-mono text-[10px] font-semibold text-[#1C1410]">
-              HITL LOCK · autoAttach=false
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#B08A4A]/45 bg-[#EFE6D5] px-3 py-1.5 font-mono text-[10px] font-semibold text-[#1C1410]">
+              <span className="relative flex h-2 w-2 items-center justify-center">
+                <span
+                  aria-hidden="true"
+                  className="telemetry-anim telemetry-beacon-ring absolute inset-0 rounded-full bg-emerald-500/75"
+                />
+                <span className="relative h-1.5 w-1.5 rounded-full bg-emerald-600" />
+              </span>
+              HITL LOCK · <AnimatedTelemetryNumber value={products.length} /> SPU ·{' '}
+              <AnimatedTelemetryNumber value={sessions.length} /> phiên
             </span>
             <button
               type="button"
